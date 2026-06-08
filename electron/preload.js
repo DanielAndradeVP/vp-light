@@ -1,0 +1,76 @@
+/**
+ * preload.js — Bridge IPC segura (contextBridge)
+ *
+ * Expõe window.vp.* para o renderer.
+ * O renderer NUNCA acessa hardware diretamente — só via estas funções.
+ */
+
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('vp', {
+  // ─── ENGINE ───────────────────────────────────────────────
+  startEngine: () => ipcRenderer.invoke('engine:start'),
+  stopEngine:  () => ipcRenderer.invoke('engine:stop'),
+  getEngineStatus: () => ipcRenderer.invoke('engine:status'),
+
+  // ─── DMX ──────────────────────────────────────────────────
+  /**
+   * Ativa uma cena: aplica todos os seus canais no universo de uma vez.
+   * @param {Object} channels  Ex: { "1": 255, "4": 128 }
+   */
+  activateScene: (channels) => ipcRenderer.invoke('dmx:activateScene', channels),
+
+  /**
+   * Define um canal individual (usado no SceneEditor para preview ao vivo).
+   * @param {number} channel  1–512
+   * @param {number} value    0–255
+   */
+  setChannel: (channel, value) => ipcRenderer.invoke('dmx:setChannel', channel, value),
+
+  /**
+   * Zera todos os 512 canais imediatamente.
+   */
+  blackout: () => ipcRenderer.invoke('dmx:blackout'),
+
+  /**
+   * Retorna snapshot do universo atual (apenas canais > 0).
+   * @returns {Promise<Object>}  Ex: { "1": 255, "4": 128 }
+   */
+  getUniverse: () => ipcRenderer.invoke('dmx:getUniverse'),
+
+  // ─── SHOW ─────────────────────────────────────────────────
+  /**
+   * Carrega um .show.json. Abre diálogo de arquivo se path não for passado.
+   */
+  loadShow: (filePath) => ipcRenderer.invoke('show:load', filePath),
+
+  /**
+   * Salva o show atual no mesmo arquivo.
+   * @param {Object} showData  Estado completo do show vindo do renderer
+   */
+  saveShow: (showData) => ipcRenderer.invoke('show:save', showData),
+
+  /**
+   * Salva como novo arquivo. Abre diálogo de salvar.
+   */
+  saveShowAs: (showData) => ipcRenderer.invoke('show:saveAs', showData),
+
+  /**
+   * Retorna o show em memória (sem ler disco).
+   */
+  getShow: () => ipcRenderer.invoke('show:get'),
+
+  /**
+   * Atualiza uma cena específica em memória.
+   */
+  updateScene: (pageId, sceneKey, sceneData) =>
+    ipcRenderer.invoke('show:updateScene', pageId, sceneKey, sceneData),
+
+  // ─── SCRIPTS ──────────────────────────────────────────────────────────────
+  listScripts:   ()           => ipcRenderer.invoke('script:list'),
+  createScript:  (fkey, name) => ipcRenderer.invoke('script:create', fkey, name),
+  editScript:    (fkey)       => ipcRenderer.invoke('script:edit', fkey),
+  clearScript:   (fkey)       => ipcRenderer.invoke('script:clear', fkey),
+  toggleScript:  (fkey)       => ipcRenderer.invoke('script:toggle', fkey),
+  getAllScripts:  ()           => ipcRenderer.invoke('script:getAll'),
+});

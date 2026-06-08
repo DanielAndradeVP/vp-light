@@ -1,0 +1,30 @@
+# Dependências
+node_modules/
+
+# Build / saída
+dist/
+build/
+out/
+release/
+
+# Cache
+.vite/
+.cache/
+.parcel-cache/
+
+# Electron
+*.asar
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Ambiente
+.env
+.env.local
+
+# Sistema
+.DS_Store
+Thumbs.db

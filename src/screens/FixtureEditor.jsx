@@ -1,0 +1,154 @@
+/**
+ * FixtureEditor.jsx — Modal de edição de aparelho
+ * Abas: Básico | Descrição
+ */
+import React, { useState, useEffect } from 'react';
+import { useShow } from '../store/showStore.js';
+
+const C = {
+  bg: '#1a1a1a', surface: '#242424', border: '#383838',
+  text: '#e0e0e0', textMuted: '#888', white: '#ffffff',
+  overlay: 'rgba(0,0,0,0.7)', input: '#2e2e2e', inputBorder: '#444',
+};
+
+export default function FixtureEditor({ fixtureId, onClose }) {
+  const { show, updateFixture } = useShow();
+  const original = show.fixtures.find(f => f.id === fixtureId);
+
+  const [tab, setTab] = useState('basico');
+  const [name, setName] = useState(original?.name || '');
+  const [startChannel, setStartChannel] = useState(original?.startChannel || 1);
+  const [channelCount, setChannelCount] = useState(original?.channelCount || 1);
+  const [channels, setChannels] = useState(() => {
+    const base = original?.channels || [];
+    // garante array do tamanho channelCount
+    return Array.from({ length: original?.channelCount || 1 }, (_, i) => base[i] || '');
+  });
+
+  // Quando channelCount muda, ajusta o array de channels
+  function handleChannelCountChange(val) {
+    const n = Math.max(1, Math.min(512, Number(val)));
+    setChannelCount(n);
+    setChannels(prev => Array.from({ length: n }, (_, i) => prev[i] || ''));
+  }
+
+  function handleChannelName(i, val) {
+    setChannels(prev => { const next = [...prev]; next[i] = val; return next; });
+  }
+
+  useEffect(() => {
+    function handleEsc(e) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  function handleConfirm() {
+    const updatedFixture = {
+      name,
+      startChannel: Number(startChannel),
+      channelCount: Number(channelCount),
+      channels,
+    };
+    updateFixture(fixtureId, updatedFixture);
+    const updatedShow = {
+      ...show,
+      fixtures: show.fixtures.map(f => f.id === fixtureId ? { ...f, ...updatedFixture } : f),
+    };
+    window.vp.saveShow(updatedShow);
+    onClose();
+  }
+
+  return (
+    /* Overlay */
+    <div style={{ position:'fixed', inset:0, background:C.overlay, display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+      <div style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:6, width:460, maxHeight:'80vh', display:'flex', flexDirection:'column', fontFamily:'Segoe UI, system-ui, sans-serif', color:C.text }}>
+
+        {/* Cabeçalho */}
+        <div style={{ padding:'10px 16px', borderBottom:`1px solid ${C.border}`, fontSize:14, fontWeight:600, color:C.white }}>
+          Editor de Aparelho
+        </div>
+
+        {/* Abas */}
+        <div style={{ display:'flex', borderBottom:`1px solid ${C.border}` }}>
+          {['basico','descricao'].map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              padding:'7px 20px', fontSize:12, cursor:'pointer', border:'none',
+              background: tab === t ? C.surface : C.bg,
+              color: tab === t ? C.white : C.textMuted,
+              borderBottom: tab === t ? `2px solid ${C.white}` : '2px solid transparent',
+            }}>
+              {t === 'basico' ? 'Básico' : 'Descrição'}
+            </button>
+          ))}
+        </div>
+
+        {/* Conteúdo */}
+        <div style={{ flex:1, overflowY:'auto', padding:16 }}>
+          {tab === 'basico' && (
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <Field label="Id">
+                <input value={fixtureId} disabled style={inputStyle(true)} />
+              </Field>
+              <Field label="Nome">
+                <input value={name} onChange={e => setName(e.target.value)} style={inputStyle()} />
+              </Field>
+              <Field label="Número de canais">
+                <input type="number" min={1} max={512} value={channelCount}
+                  onChange={e => handleChannelCountChange(e.target.value)} style={inputStyle()} />
+              </Field>
+              <Field label="Canal de início">
+                <input type="number" min={1} max={512} value={startChannel}
+                  onChange={e => setStartChannel(e.target.value)} style={inputStyle()} />
+              </Field>
+            </div>
+          )}
+
+          {tab === 'descricao' && (
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {channels.map((ch, i) => (
+                <Field key={i} label={`Canal ${i + 1}`}>
+                  <input
+                    value={ch}
+                    onChange={e => handleChannelName(i, e.target.value)}
+                    placeholder={`Nome do canal ${i + 1}`}
+                    style={inputStyle()}
+                  />
+                </Field>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Rodapé */}
+        <div style={{ padding:'10px 16px', borderTop:`1px solid ${C.border}`, display:'flex', justifyContent:'flex-end', gap:8 }}>
+          <button onClick={onClose} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#2e2e2e', color:C.text, border:`1px solid #444` }}>
+            Cancelar
+          </button>
+          <button onClick={handleConfirm} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#383838', color:C.white, border:`1px solid #555` }}>
+            Confirmar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+      <label style={{ width:130, fontSize:12, color:'#888', flexShrink:0 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function inputStyle(disabled) {
+  return {
+    flex:1, padding:'5px 8px', borderRadius:3, fontSize:12,
+    background: disabled ? '#222' : '#2e2e2e',
+    color: disabled ? '#555' : '#e0e0e0',
+    border:'1px solid #444', outline:'none',
+  };
+}

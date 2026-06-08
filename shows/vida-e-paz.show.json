@@ -1,0 +1,58 @@
+{
+  "version": "1.0",
+  "meta": {
+    "name": "Vida e Paz — Show Principal",
+    "createdAt": "2025-01-01",
+    "notes": "Show base para o Fire. Salvar antes de sair!"
+  },
+  "fixtures": [
+    {
+      "id": "fixture_1780805067518",
+      "name": "parLed1",
+      "startChannel": 1,
+      "channelCount": 8,
+      "channels": [
+        "dimmer",
+        "strobo",
+        "",
+        "",
+        "red",
+        "green",
+        "blue",
+        "white"
+      ],
+      "posX": 10,
+      "posY": 10
+    }
+  ],
+  "pages": {
+    "1": {
+      "name": "LOUVOR",
+      "scenes": {
+        "A": {
+          "name": "roxo",
+          "color": "#aa00aa",
+          "channels": {
+            "1": 255,
+            "5": 255,
+            "7": 255
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "F1": {
+      "name": "rgb-loop",
+      "file": "C:\\vp-light\\scripts\\rgb-loop.js"
+    },
+    "F2": {
+      "name": "f1-color-pingpong",
+      "file": "C:\\vp-light\\scripts\\f1-color-pingpong.js"
+    },
+    "F3": {
+      "name": "altar-roxo-profundo",
+      "file": "C:\\vp-light\\scripts\\altar-roxo-profundo.js"
+    }
+  }
+}
