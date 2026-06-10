@@ -16,7 +16,7 @@ const DEFAULT_SHOW = {
 export function ShowProvider({ children }) {
   const [show, setShow] = useState(DEFAULT_SHOW);
   const [currentPage, setCurrentPage] = useState('1');
-  const [activeScene, setActiveScene] = useState(null);
+  const [activeScenes, setActiveScenes] = useState([]);
   const [selectedFixtureId, setSelectedFixtureId] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -44,7 +44,7 @@ export function ShowProvider({ children }) {
     if (result.ok) {
       setShow(result.show);
       setCurrentPage('1');
-      setActiveScene(null);
+      setActiveScenes([]);
     }
     return result;
   }, []);
@@ -83,12 +83,12 @@ export function ShowProvider({ children }) {
     const scene = page?.scenes?.[sceneKey];
     if (!scene) return;
     await window.vp.activateScene(scene.channels || {});
-    setActiveScene(sceneKey);
+    setActiveScenes(prev => prev.includes(sceneKey) ? prev : [...prev, sceneKey]);
   }, [show, currentPage]);
 
   const blackout = useCallback(async () => {
     await window.vp.blackout();
-    setActiveScene(null);
+    setActiveScenes([]);
   }, []);
 
   const updateScene = useCallback((pageId, sceneKey, sceneData) => {
@@ -113,7 +113,7 @@ export function ShowProvider({ children }) {
     <ShowContext.Provider value={{
       show, loading,
       currentPage, setCurrentPage,
-      activeScene, setActiveScene,
+      activeScenes, setActiveScenes,
       selectedFixtureId, setSelectedFixtureId,
       selectedFixture,
       pages, currentPageData,

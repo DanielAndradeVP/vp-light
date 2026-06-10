@@ -144,36 +144,27 @@ function OnTerminate(){ } // chamado ao desativar ou blackout
 
 Para criar: clique direito no botão F-key → Criar Script → define o nome → abre no VS Code.
 Para ativar/desativar: clique esquerdo no botão F-key.
+Blackout também desativa qualquer script em execução e chama `OnTerminate` nos scripts ativos.
 
 ---
 
 ## Agentes de IA
 
-O projeto usa agentes no VS Code via `.agents/` para auxiliar o desenvolvimento.
+Skills ficam em `.agents/skills/` (pastas com `SKILL.md`) e servem tarefas específicas. Principais:
 
-### desenvolvedor-senior-vplight
-Engenheiro sênior especialista em todo o projeto. Use para alterações de arquitetura, novos recursos, correção de bugs, IPC, engine DMX e React.
+- `desenvolvedor-backend-vplight`: backend/engine, Art‑Net, IPC, scripts de efeito.
+- `desenvolvedor-frontend-vplight`: UI, telas, tokens do `src/theme.js` e consistência visual.
+- `engenheiro-de-normalizacao-vplight`: normalização de fixtures e dados de aparelho.
+- `gerador-de-prompts-vplight`: gera prompts formatados para o CoWork.
+- `create-skill`: cria e documenta novas skills/fluxos de agente.
+- `sync-skills-projetct-vplight`: audita e valida skills contra o `README_SKILL.md`.
+- `sync-system`: sincroniza `README_SKILL.md` e `README.md` a partir de mudanças no código.
 
-### vp-light-gerador-de-scripts
-Gera scripts de efeito `.js` prontos para os botões F1–F12.
-
-Como usar:
-1. Abra um novo chat com o agente
-2. Cole o conteúdo do `shows/vp.show.json`
-3. Peça o script no formato:
-
-```
-Arquivo: nome-do-script.js
-parLed1 — descrição do efeito desejado
-```
-
-Se adicionar novos fixtures, diga "atualizei os equipamentos" e cole o show.json atualizado.
-PS: Para 
-
-### idealizador-de-cenas-vplight
-Agente criativo para planejar atmosferas de iluminação. Lê o show.json, entende os fixtures disponíveis e gera ideias de cenas em linguagem humana — sem código, sem números de canal. A saída serve de entrada para o gerador de scripts.
-
-Use quando quiser: ideias de cenas, planejar o louvor, atmosfera para o altar, preparar o Fire, ou qualquer criação criativa de iluminação.
+Uso rápido:
+1. Leia `.agents/skills/<nome>/SKILL.md` para entender o propósito da skill.
+2. Abra o chat do agente no VS Code e invoque a skill pelo nome.
+3. Para gerar scripts, cole `shows/vp.show.json` antes de pedir geração.
+4. Ao alterar equipamentos ou o show, atualize e cole `vp.show.json` antes de usar as skills.
 
 ---
 

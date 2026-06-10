@@ -72,13 +72,18 @@ class DmxUniverse {
 }
 
 const _universe = new DmxUniverse();
-const _activeScenesMap = {}; // { sceneId: { name, channels: { "1": 255 } } }
+let _activeScenesMap = {}; // { sceneId: { name, channels: { "1": 255 } } }
 
 function setChannel(channel, value) {
   _universe.setChannel(channel, value);
 }
 
 function applyScene(channelMap) {
+  _universe.applyChannelMap(channelMap);
+}
+
+function restoreState(channelMap) {
+  _universe.blackout();
   _universe.applyChannelMap(channelMap);
 }
 
@@ -95,7 +100,7 @@ function getUniverseSnapshot() {
 }
 
 function setActiveScenes(scenesMap) {
-  Object.assign(_activeScenesMap, scenesMap);
+  _activeScenesMap = { ...(scenesMap || {}) };
 }
 
 function detectConflicts() {
@@ -126,4 +131,4 @@ function detectConflicts() {
   return conflicts;
 }
 
-module.exports = { setChannel, applyScene, blackout, getUniverse, getUniverseSnapshot, setActiveScenes, detectConflicts };
+module.exports = { setChannel, applyScene, restoreState, blackout, getUniverse, getUniverseSnapshot, setActiveScenes, detectConflicts };

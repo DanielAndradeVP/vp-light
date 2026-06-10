@@ -182,12 +182,13 @@ ipcMain.handle('dmx:setChannel', (_, channel, value) => {
 });
 
 ipcMain.handle('dmx:blackout', () => {
+  stopAllRunningScripts('blackout');
   universe.blackout();
   return { ok: true };
 });
 
 ipcMain.handle('dmx:restoreState', (_, channels) => {
-  universe.applyScene(channels);
+  universe.restoreState(channels);
   return { ok: true };
 });
 
@@ -303,6 +304,31 @@ ipcMain.handle('show:updateScene', (_, pageId, sceneKey, sceneData) => {
 const runningScripts = {}; // { [fkey]: { interval, context } }
 const scriptMeta = {};     // { [fkey]: { name, file } }
 
+function stopRunningScript(fkey, reason) {
+  const running = runningScripts[fkey];
+  if (!running) return false;
+
+  const { interval, context } = running;
+  clearInterval(interval);
+
+  if (typeof context.OnTerminate === 'function') {
+    try {
+      context.OnTerminate();
+    } catch (e) {
+      console.error(`[script] OnTerminate error ao parar (${reason}) (${fkey}):`, e.message);
+    }
+  }
+
+  delete runningScripts[fkey];
+  return true;
+}
+
+function stopAllRunningScripts(reason) {
+  for (const fkey of Object.keys(runningScripts)) {
+    stopRunningScript(fkey, reason);
+  }
+}
+
 function saveScriptMeta() {
   const current = show.getShow();
   if (!current) return;
@@ -355,16 +381,7 @@ ipcMain.handle('script:edit', async (_, fkey, filePath) => {
 });
 
 ipcMain.handle('script:clear', (_, fkey) => {
-  if (runningScripts[fkey]) {
-    const { interval, context } = runningScripts[fkey];
-    clearInterval(interval);
-    if (typeof context.OnTerminate === 'function') {
-      try { context.OnTerminate(); } catch (e) {
-        console.error(`[script] OnTerminate error ao limpar (${fkey}):`, e.message);
-      }
-    }
-    delete runningScripts[fkey];
-  }
+  stopRunningScript(fkey, 'limpar');
   delete scriptMeta[fkey];
   saveScriptMeta();
   return { ok: true };
@@ -373,12 +390,7 @@ ipcMain.handle('script:clear', (_, fkey) => {
 ipcMain.handle('script:toggle', (_, fkey) => {
   if (runningScripts[fkey]) {
     // Parar
-    try {
-      const { interval, context } = runningScripts[fkey];
-      clearInterval(interval);
-      if (typeof context.OnTerminate === 'function') context.OnTerminate();
-    } catch (e) {}
-    delete runningScripts[fkey];
+    stopRunningScript(fkey, 'toggle');
     return { ok: true, running: false };
   }
   const meta = scriptMeta[fkey];
@@ -472,14 +484,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   // Encerra todos os scripts antes de parar o engine
-  for (const [fkey, { interval, context }] of Object.entries(runningScripts)) {
-    clearInterval(interval);
-    if (typeof context.OnTerminate === 'function') {
-      try { context.OnTerminate(); } catch (e) {
-        console.error(`[script] OnTerminate error no shutdown (${fkey}):`, e.message);
-      }
-    }
-  }
+  stopAllRunningScripts('shutdown');
   engine.stop();
   if (process.platform !== 'darwin') app.quit();
 });

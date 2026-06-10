@@ -10,6 +10,7 @@ const SCENE_KEYS = ['A','S','D','F','G','H','J','K','L','Z','X','C','V'];
 const RIGHT_PANEL_MIN_WIDTH = 260;
 const RIGHT_PANEL_MAX_WIDTH = 640;
 const DESK_MIN_WIDTH = 360;
+const MAX_PAGE = 10;
 
 const C = {
   bg: theme.colors.bgDarker, surface: theme.colors.panel, border: theme.colors.borderSoft,
@@ -22,12 +23,12 @@ const C = {
 export default function Main({ onOpenFixtures }) {
   const {
     show, currentPage, setCurrentPage,
+    activeScenes, setActiveScenes,
     selectedFixtureId, setSelectedFixtureId,
     selectedFixture, pages, saveShow, loadShow,
     updateScene, updateFixture,
   } = useShow();
 
-  const [activeScenes, setActiveScenes] = useState([]);
   const [blackoutActive, setBlackoutActive] = useState(false);
   const [toast, setToast] = useState(null); // string | null
 
@@ -39,9 +40,9 @@ export default function Main({ onOpenFixtures }) {
     }
   }
 
-  // Resolve o estado do universo DMX a partir das cenas e scripts ativos no momento.
-  // Chama restoreState(merged) se há canais de cena ou scripts rodando, blackout() se nada ativo.
-  // Também sincroniza o mapa de canais bloqueados com o main process.
+  // Resolve o estado do universo DMX a partir das cenas ativas no momento.
+  // Reconstrói o universo do zero: limpa todos os canais e reaplica apenas as
+  // cenas que continuam ativas. Também sincroniza o mapa de canais bloqueados.
   function resolveUniverseState(nextActiveScenes, nextScripts) {
     const merged = {};
     nextActiveScenes.forEach(key => {
@@ -52,36 +53,33 @@ export default function Main({ onOpenFixtures }) {
         });
       }
     });
-    const anyScriptRunning = Object.values(nextScripts).some(s => s.running);
     window.vp.setActiveSceneChannels(merged);
-    if (Object.keys(merged).length > 0 || anyScriptRunning) {
+    // Limpa o universo antes de reaplicar — caso contrário os canais da fonte
+    // removida (cena desmarcada ou script desligado) ficariam presos, pois
+    // applyScene é aditivo. Scripts ainda ativos voltam a escrever no tick
+    // seguinte (loop de 40ms via OnExecute).
+    window.vp.blackout();
+    if (Object.keys(merged).length > 0) {
       window.vp.restoreState(merged);
-    } else {
-      window.vp.blackout();
     }
     return merged;
   }
 
   function handleActivateScene(key) {
     const scene = scenes[key];
+    if (!scene?.channels || Object.keys(scene.channels).length === 0) return;
     setActiveScenes(prev => {
       if (prev.includes(key)) {
         // desmarcando — usa resolveUniverseState para decidir restore vs blackout
+        // o display da barra lateral é resolvido pelo orquestrador (resolveSidebarValues)
         const next = prev.filter(k => k !== key);
-        const merged = resolveUniverseState(next, scripts);
-        setLiveValues(next.length > 0 ? merged : {});
+        resolveUniverseState(next, scripts);
         return next;
       }
       if (prev.length >= 3) return prev;
       if (scene?.channels) {
         window.vp.activateScene(scene.channels);
-        setLiveValues(() => {
-          const newLive = {};
-          Object.entries(scene.channels).forEach(([ch, val]) => {
-            newLive[Number(ch)] = Number(val);
-          });
-          return newLive;
-        });
+        // o display da barra lateral é resolvido pelo orquestrador (resolveSidebarValues)
       }
       return [...prev, key];
     });
@@ -252,7 +250,7 @@ export default function Main({ onOpenFixtures }) {
 
     // Reset acknowledge quando novas cenas são ativadas
     setConflictAcknowledged(false);
-  }, [activeScenes, currentPageId, pages]);
+  }, [activeScenes, pages]);
 
   // Polling de conflitos a cada 100ms — SEMPRE ativo
   useEffect(() => {
@@ -370,27 +368,58 @@ export default function Main({ onOpenFixtures }) {
     return () => window.removeEventListener('click', handleClick);
   }, []);
 
+  // ─── ORQUESTRADOR DE ESTADO DA BARRA LATERAL ───────────────────────────────
+  // Resolve, em tempo de execução, a fonte ativa de cada canal do fixture
+  // selecionado. Prioridade: cena ativa (a mais recente sobrescreve) → script
+  // ativo (snapshot ao vivo do universo) → 0. Os labels vêm da descrição do
+  // fixture; os valores exibidos vêm deste estado resolvido.
+  const resolveSidebarValues = useCallback(async () => {
+    if (!selectedFixture) { setLiveValues({}); return; }
+
+    const start = selectedFixture.startChannel;
+    const count = selectedFixture.channelCount ?? (selectedFixture.channels || []).length;
+
+    // Cenas ativas — mescladas na ordem de ativação: a última (mais recente) vence
+    const currentScenes = (pages[currentPageId] || {}).scenes || {};
+    const sceneMerged = {};
+    activeScenes.forEach(key => {
+      const s = currentScenes[key];
+      if (s?.channels) {
+        Object.entries(s.channels).forEach(([ch, val]) => {
+          sceneMerged[Number(ch)] = Number(val);
+        });
+      }
+    });
+
+    // Snapshot do universo — só quando há script rodando (valores em tempo real)
+    const anyScriptRunning = Object.values(scripts).some(s => s?.running);
+    let snapshot = null;
+    if (anyScriptRunning) {
+      try { snapshot = await window.vp.getUniverse(); } catch { snapshot = null; }
+    }
+
+    // Resolve cada canal do fixture por prioridade
+    const resolved = {};
+    for (let i = 0; i < count; i++) {
+      const ch = start + i;
+      if (ch in sceneMerged)                       resolved[ch] = sceneMerged[ch];        // cena vence
+      else if (snapshot && snapshot[ch] != null)   resolved[ch] = Number(snapshot[ch]);   // script ao vivo
+      else                                         resolved[ch] = 0;
+    }
+    setLiveValues(resolved);
+  }, [selectedFixture, activeScenes, pages, currentPageId, scripts]);
+
+  // Dispara resolução imediata: muda fixture selecionado, cenas ativas ou scripts
+  useEffect(() => { resolveSidebarValues(); }, [resolveSidebarValues]);
+
+  // Mantém a barra lateral sincronizada em tempo real enquanto houver script ativo
   useEffect(() => {
-    if (!selectedFixtureId) {
-      setLiveValues({});
-      return;
-    }
-    // Se há cenas ativas, preenche os faders com os valores das cenas ativas
-    if (activeScenes.length > 0) {
-      const merged = {};
-      activeScenes.forEach(key => {
-        const scene = scenes[key];
-        if (scene?.channels) {
-          Object.entries(scene.channels).forEach(([ch, val]) => {
-            merged[Number(ch)] = Number(val);
-          });
-        }
-      });
-      setLiveValues(merged);
-    } else {
-      setLiveValues({});
-    }
-  }, [selectedFixtureId]);
+    const anyScriptRunning = Object.values(scripts).some(s => s?.running);
+    if (!anyScriptRunning || !selectedFixture) return;
+    let active = true;
+    const interval = setInterval(() => { if (active) resolveSidebarValues(); }, 100);
+    return () => { active = false; clearInterval(interval); };
+  }, [scripts, selectedFixture, resolveSidebarValues]);
 
   useEffect(() => {
     function handleEsc(e) {
@@ -425,7 +454,7 @@ export default function Main({ onOpenFixtures }) {
   }
 
   function pgDw() {
-    setCurrentPage(String(currentPageNumber + 1));
+    setCurrentPage(String(Math.min(MAX_PAGE, currentPageNumber + 1)));
   }
 
   async function handleFader(dmxChannel, value) {
