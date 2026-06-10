@@ -23,6 +23,83 @@ const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
 if (!fs.existsSync(SCRIPTS_DIR)) fs.mkdirSync(SCRIPTS_DIR);
 
+function getVSCodeCandidates() {
+  const candidates = ['code', 'code.cmd'];
+  const localAppData = process.env.LOCALAPPDATA;
+  const programFiles = process.env.ProgramFiles;
+  const programFilesX86 = process.env['ProgramFiles(x86)'];
+
+  if (localAppData) {
+    candidates.push(path.join(localAppData, 'Programs', 'Microsoft VS Code', 'Code.exe'));
+  }
+  if (programFiles) {
+    candidates.push(path.join(programFiles, 'Microsoft VS Code', 'Code.exe'));
+  }
+  if (programFilesX86) {
+    candidates.push(path.join(programFilesX86, 'Microsoft VS Code', 'Code.exe'));
+  }
+
+  return candidates;
+}
+
+function normalizeScriptFile(filePath) {
+  if (!filePath) return null;
+  const withExtension = path.extname(filePath) ? filePath : `${filePath}.js`;
+  return path.isAbsolute(withExtension)
+    ? withExtension
+    : path.join(SCRIPTS_DIR, withExtension);
+}
+
+function openScriptInVSCode(filePath) {
+  const targetFile = normalizeScriptFile(filePath);
+  if (!targetFile) {
+    console.error('[script:edit] caminho do script nao informado');
+    return Promise.resolve({ ok: false, error: 'Caminho do script nao informado' });
+  }
+  if (!fs.existsSync(targetFile)) {
+    console.error('[script:edit] arquivo do script nao encontrado:', targetFile);
+    return Promise.resolve({ ok: false, error: `Arquivo do script nao encontrado: ${targetFile}` });
+  }
+
+  const candidates = getVSCodeCandidates();
+  let index = 0;
+
+  return new Promise(resolve => {
+    function tryNext(lastError) {
+      if (index >= candidates.length) {
+        const message = lastError?.message || 'VSCode nao encontrado';
+        console.error('[script:edit] nao foi possivel abrir o script no VSCode:', targetFile);
+        console.error('[script:edit] tentei code/code.cmd e caminhos comuns do VSCode. Ultimo erro:', message);
+        resolve({ ok: false, error: `Nao foi possivel abrir o VSCode: ${message}`, file: targetFile });
+        return;
+      }
+
+      const candidate = candidates[index++];
+      const isPath = candidate.includes(path.sep);
+      if (isPath && !fs.existsSync(candidate)) {
+        tryNext(new Error(`VSCode nao encontrado em ${candidate}`));
+        return;
+      }
+
+      const lowerCandidate = candidate.toLowerCase();
+      const isCmd = lowerCandidate.endsWith('.cmd') || lowerCandidate === 'code.cmd';
+      const command = isCmd ? (process.env.ComSpec || 'cmd.exe') : candidate;
+      const args = isCmd ? ['/d', '/s', '/c', `"${candidate}" "${targetFile}"`] : [targetFile];
+
+      execFile(command, args, { windowsHide: true }, err => {
+        if (err) {
+          tryNext(err);
+          return;
+        }
+        console.log('[script:edit] script aberto no VSCode:', targetFile);
+        resolve({ ok: true, file: targetFile });
+      });
+    }
+
+    tryNext();
+  });
+}
+
 // ─────────────────────────────────────────────────────────────
 // JANELA
 // ─────────────────────────────────────────────────────────────

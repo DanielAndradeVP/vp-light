@@ -21,8 +21,8 @@
         "blue",
         "white"
       ],
-      "posX": 10,
-      "posY": 10
+      "posX": 338,
+      "posY": 357
     }
   ],
   "pages": {
@@ -43,8 +43,8 @@
   },
   "scripts": {
     "F1": {
-      "name": "rgb-loop",
-      "file": "C:\\vp-light\\scripts\\rgb-loop.js"
+      "name": "louvorzao-branco-fogo",
+      "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js"
     },
     "F2": {
       "name": "f1-color-pingpong",
@@ -61,6 +61,10 @@
     "F5": {
       "name": "vermelho-vivo",
       "file": "C:\\vp-light\\scripts\\vermelho-vivo.js"
+    },
+    "F6": {
+      "name": "louvorzao-branco-fogo",
+      "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js"
     }
   }
 }

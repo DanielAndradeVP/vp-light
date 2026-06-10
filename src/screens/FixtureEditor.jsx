@@ -4,6 +4,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useShow } from '../store/showStore.js';
+import theme from '../theme.js';
 
 const C = {
   bg: '#1a1a1a', surface: '#242424', border: '#383838',
@@ -63,15 +64,15 @@ export default function FixtureEditor({ fixtureId, onClose }) {
   return (
     /* Overlay */
     <div style={{ position:'fixed', inset:0, background:C.overlay, display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-      <div style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:6, width:460, maxHeight:'80vh', display:'flex', flexDirection:'column', fontFamily:'Segoe UI, system-ui, sans-serif', color:C.text }}>
+      <div style={{ background:theme.colors.surface, border:`1px solid ${theme.colors.hover}`, borderRadius:6, width:460, maxHeight:'80vh', display:'flex', flexDirection:'column', fontFamily:theme.typography.fontFamily, color:theme.colors.text, boxShadow:theme.elevation.z2 }}>
 
         {/* Cabeçalho */}
-        <div style={{ padding:'10px 16px', borderBottom:`1px solid ${C.border}`, fontSize:14, fontWeight:600, color:C.white }}>
+        <div style={{ padding:'10px 16px', borderBottom:`1px solid ${theme.colors.hover}`, fontSize:14, fontWeight:600, color:theme.colors.text }}>
           Editor de Aparelho
         </div>
 
         {/* Abas */}
-        <div style={{ display:'flex', borderBottom:`1px solid ${C.border}` }}>
+        <div style={{ display:'flex', borderBottom:`1px solid ${theme.colors.hover}` }}>
           {['basico','descricao'].map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
               padding:'7px 20px', fontSize:12, cursor:'pointer', border:'none',
@@ -122,11 +123,11 @@ export default function FixtureEditor({ fixtureId, onClose }) {
         </div>
 
         {/* Rodapé */}
-        <div style={{ padding:'10px 16px', borderTop:`1px solid ${C.border}`, display:'flex', justifyContent:'flex-end', gap:8 }}>
-          <button onClick={onClose} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#2e2e2e', color:C.text, border:`1px solid #444` }}>
+        <div style={{ padding:'10px 16px', borderTop:`1px solid ${theme.colors.hover}`, display:'flex', justifyContent:'flex-end', gap:8 }}>
+          <button onClick={onClose} style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}>
             Cancelar
           </button>
-          <button onClick={handleConfirm} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#383838', color:C.white, border:`1px solid #555` }}>
+          <button onClick={handleConfirm} style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:theme.colors.primary, color:'#ffffff', border:'none', boxShadow:theme.elevation.z2 }}>
             Confirmar
           </button>
         </div>
@@ -146,9 +147,15 @@ function Field({ label, children }) {
 
 function inputStyle(disabled) {
   return {
-    flex:1, padding:'5px 8px', borderRadius:3, fontSize:12,
-    background: disabled ? '#222' : '#2e2e2e',
-    color: disabled ? '#555' : '#e0e0e0',
-    border:'1px solid #444', outline:'none',
+    flex:1,
+    fontFamily: theme.typography.fontFamily,
+    fontSize: theme.typography.body.fontSize,
+    color: disabled ? theme.colors.textDisabled : theme.colors.text,
+    background: theme.colors.surface,
+    padding: theme.spacing.inputPadding,
+    marginTop: theme.spacing.inputMarginTop,
+    border: 'none',
+    borderBottom: `1px solid ${theme.colors.textSecondary}`,
+    outline: 'none',
   };
 }

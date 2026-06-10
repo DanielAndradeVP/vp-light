@@ -4,15 +4,19 @@
  */
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useShow } from '../store/showStore.js';
+import theme from '../theme.js';
 
 const SCENE_KEYS = ['A','S','D','F','G','H','J','K','L','Z','X','C','V'];
+const RIGHT_PANEL_MIN_WIDTH = 260;
+const RIGHT_PANEL_MAX_WIDTH = 640;
+const DESK_MIN_WIDTH = 360;
 
 const C = {
-  bg: '#1a1a1a', surface: '#242424', border: '#383838',
-  text: '#e0e0e0', textMuted: '#888', white: '#ffffff',
-  btnBg: '#2e2e2e', btnBorder: '#444',
-  rowSelected: '#383838', fixtureBg: '#2e2e2e', fixtureSelected: '#484848',
-  sceneActive: '#505050',
+  bg: theme.colors.bgDarker, surface: theme.colors.panel, border: theme.colors.borderSoft,
+  text: theme.colors.text, textMuted: theme.colors.textMuted, white: theme.colors.text,
+  btnBg: theme.colors.buttonSurface, btnBorder: theme.colors.borderSoft,
+  rowSelected: theme.colors.selection, fixtureBg: theme.colors.buttonSurface, fixtureSelected: theme.colors.selection,
+  sceneActive: theme.colors.selection,
 };
 
 export default function Main({ onOpenFixtures }) {
@@ -110,13 +114,63 @@ export default function Main({ onOpenFixtures }) {
   const [conflicts, setConflicts] = useState([]);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
+  const [rightPanelTab, setRightPanelTab] = useState('description');
+  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const [rightPanelResize, setRightPanelResize] = useState(null); // { startX, startWidth }
   const [testPanelPos, setTestPanelPos] = useState({ x: null, y: 56 });
   const [testPanelDrag, setTestPanelDrag] = useState(null); // { offsetX, offsetY }
+
+  function clampRightPanelWidth(width) {
+    const viewportMax = Math.max(RIGHT_PANEL_MIN_WIDTH, window.innerWidth - DESK_MIN_WIDTH);
+    const maxWidth = Math.min(RIGHT_PANEL_MAX_WIDTH, viewportMax);
+    return Math.min(maxWidth, Math.max(RIGHT_PANEL_MIN_WIDTH, width));
+  }
+
+  function handleRightPanelResizeStart(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setRightPanelResize({ startX: e.clientX, startWidth: rightPanelWidth });
+  }
 
   function handleTestPanelMouseDown(e) {
     const rect = e.currentTarget.parentElement.getBoundingClientRect();
     setTestPanelDrag({ offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top });
   }
+
+  useEffect(() => {
+    if (!rightPanelResize) return;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    function handleMove(e) {
+      const nextWidth = rightPanelResize.startWidth + (rightPanelResize.startX - e.clientX);
+      setRightPanelWidth(clampRightPanelWidth(nextWidth));
+    }
+
+    function handleUp() {
+      setRightPanelResize(null);
+    }
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [rightPanelResize]);
+
+  useEffect(() => {
+    function handleResize() {
+      setRightPanelWidth(width => clampRightPanelWidth(width));
+    }
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!testPanelDrag) return;
@@ -160,6 +214,8 @@ export default function Main({ onOpenFixtures }) {
   const [moveModal, setMoveModal] = useState(null); // { sourceFkey }
 
   const FKEYS = ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
+  const currentPageNumber = Math.max(1, Number.parseInt(currentPage, 10) || 1);
+  const currentPageId = String(currentPageNumber);
 
   useEffect(() => {
     const load = async () => {
@@ -172,7 +228,7 @@ export default function Main({ onOpenFixtures }) {
 
   // Sincroniza canais bloqueados por cenas com o main process sempre que activeScenes muda
   useEffect(() => {
-    const currentScenes = (pages[currentPage] || {}).scenes || {};
+    const currentScenes = (pages[currentPageId] || {}).scenes || {};
     const merged = {};
     activeScenes.forEach(key => {
       const s = currentScenes[key];
@@ -196,7 +252,7 @@ export default function Main({ onOpenFixtures }) {
 
     // Reset acknowledge quando novas cenas são ativadas
     setConflictAcknowledged(false);
-  }, [activeScenes, currentPage, pages]);
+  }, [activeScenes, currentPageId, pages]);
 
   // Polling de conflitos a cada 100ms — SEMPRE ativo
   useEffect(() => {
@@ -294,7 +350,7 @@ export default function Main({ onOpenFixtures }) {
     Object.entries(liveValues).forEach(([ch, val]) => {
       channels[Number(ch)] = Number(val);
     });
-    updateScene(currentPage, saveModal.sceneKey, {
+    updateScene(currentPageId, saveModal.sceneKey, {
       name: modalName,
       color: modalColor,
       channels,
@@ -304,7 +360,7 @@ export default function Main({ onOpenFixtures }) {
 
   function handleClearScene() {
     if (!contextMenu) return;
-    updateScene(currentPage, contextMenu.sceneKey, { name: '', color: '', channels: {} });
+    updateScene(currentPageId, contextMenu.sceneKey, { name: '', color: '', channels: {} });
     setContextMenu(null);
   }
 
@@ -349,9 +405,7 @@ export default function Main({ onOpenFixtures }) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [moveModal, saveModal, createModal, contextMenu, scriptMenu]);
 
-  const pageIds = Object.keys(pages).sort();
-  const currentIdx = pageIds.indexOf(currentPage);
-  const scenes = (pages[currentPage] || {}).scenes || {};
+  const scenes = (pages[currentPageId] || {}).scenes || {};
 
   const handleKey = useCallback((e) => {
     if (e.target.tagName === 'INPUT') return;
@@ -366,8 +420,13 @@ export default function Main({ onOpenFixtures }) {
     return () => window.removeEventListener('keydown', handleKey);
   }, [handleKey]);
 
-  function pgUp() { if (currentIdx > 0) setCurrentPage(pageIds[currentIdx - 1]); }
-  function pgDw() { if (currentIdx < pageIds.length - 1) setCurrentPage(pageIds[currentIdx + 1]); }
+  function pgUp() {
+    setCurrentPage(String(Math.max(1, currentPageNumber - 1)));
+  }
+
+  function pgDw() {
+    setCurrentPage(String(currentPageNumber + 1));
+  }
 
   async function handleFader(dmxChannel, value) {
     const val = Number(value);
@@ -376,7 +435,7 @@ export default function Main({ onOpenFixtures }) {
   }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:C.bg, color:C.text, fontFamily:'Segoe UI, system-ui, sans-serif' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#1d2b30', color:'#ffffff', fontFamily:'Arial, Helvetica, sans-serif' }}>
       <style>{`
         @keyframes blink-border {
           0%, 100% { box-shadow: 0 0 0 1px #ff4444; }
@@ -385,8 +444,8 @@ export default function Main({ onOpenFixtures }) {
       `}</style>
 
       {/* TOPO */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 12px', background:C.surface, borderBottom:`1px solid ${C.border}`, minHeight:40 }}>
-        <span style={{ fontWeight:700, fontSize:15, color:C.white, letterSpacing:2, marginRight:8 }}>VP·LIGHT</span>
+      <div style={{ display:'flex', alignItems:'center', gap:4, padding:'0 8px', background:'#24343a', color:'#ffffff', borderBottom:'1px solid #8db8b8', boxShadow:'none', minHeight:48 }}>
+        <span style={{ fontWeight:700, fontSize:16, color:'#ffffff', letterSpacing:'1.5px', marginRight:8 }}>VP·LIGHT</span>
         <TopBtn onClick={handleSave}>Salvar</TopBtn>
         <TopBtn onClick={loadShow}>Abrir</TopBtn>
         <TopBtn onClick={onOpenFixtures}>Aparelhos</TopBtn>
@@ -403,11 +462,11 @@ export default function Main({ onOpenFixtures }) {
       </div>
 
       {/* CORPO */}
-      <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+      <div style={{ flex:1, display:'flex', overflow:'hidden', background:'#000000' }}>
 
         {/* MESA DE APARELHOS */}
-        <div style={{ flex:1, display:'flex', flexDirection:'column', borderRight:`1px solid ${C.border}` }}>
-          <div style={{ padding:'5px 10px', fontSize:11, color:C.textMuted, borderBottom:`1px solid ${C.border}` }}>Aparelhos</div>
+        <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', background:'#000000', color:'#ffffff', borderRight:'1px solid #8db8b8' }}>
+          <div style={{ padding:'3px 6px', fontSize:11, color:'#c8dddd', background:'#24343a', borderBottom:'1px solid #5f8588' }}>Aparelhos</div>
           <div
             onClick={() => setSelectedFixtureId(null)}
             onMouseDown={(e) => {
@@ -450,10 +509,10 @@ export default function Main({ onOpenFixtures }) {
               setDragging(null);
             }}
             onMouseLeave={() => { setDragging(null); setSelection(null); }}
-            style={{ flex:1, position:'relative', overflowY:'auto' }}
+            style={{ flex:1, position:'relative', overflowY:'auto', background:'#000000', color:'#ffffff', borderTop:'1px solid #5f8588', borderBottom:'1px solid #5f8588' }}
           >
             {show.fixtures.length === 0 && (
-              <div style={{ color:C.textMuted, fontSize:12, padding:16, position:'absolute' }}>Nenhum aparelho. Clique em "Aparelhos" para adicionar.</div>
+              <div style={{ color:'#9bb4b7', fontSize:12, padding:16, position:'absolute' }}>Nenhum aparelho. Clique em "Aparelhos" para adicionar.</div>
             )}
             {show.fixtures.map(f => {
               const isSelected = f.id === selectedFixtureId || multiSelected.includes(f.id);
@@ -471,16 +530,17 @@ export default function Main({ onOpenFixtures }) {
                   left: f.posX ?? 10,
                   top: f.posY ?? 10,
                   width:80, height:60,
-                  background: isSelected ? C.fixtureSelected : C.fixtureBg,
-                  border:`1px solid ${isSelected ? C.white : C.border}`,
-                  borderRadius:4, cursor: dragging?.id === f.id ? 'grabbing' : 'grab',
+                  background:'#233237',
+                  color:'#ffffff',
+                  border: isSelected ? '2px solid #b7dede' : '1px solid #5f8588',
+                  borderRadius:0, boxShadow:'none', cursor: dragging?.id === f.id ? 'grabbing' : 'grab',
                   display:'flex', flexDirection:'column',
                   alignItems:'center', justifyContent:'center', gap:2,
                   userSelect:'none',
                 }}
               >
-                <div style={{ fontSize:10, color:C.textMuted }}>ch {f.startChannel}</div>
-                <div style={{ fontSize:11, color:C.text, textAlign:'center', lineHeight:1.2, padding:'0 4px', overflow:'hidden', maxWidth:76 }}>{f.name}</div>
+                <div style={{ fontSize:10, color:'#9bb4b7' }}>ch {f.startChannel}</div>
+                <div style={{ fontSize:12, fontWeight:700, color:'#ffffff', textAlign:'center', lineHeight:1.2, padding:'0 4px', overflow:'hidden', maxWidth:76 }}>{f.name}</div>
               </div>
               );
             })}
@@ -498,71 +558,203 @@ export default function Main({ onOpenFixtures }) {
           </div>
         </div>
 
-        {/* PAINEL DIREITO: FADERS */}
-        <div style={{ width:260, display:'flex', flexDirection:'column', borderRight:`1px solid ${C.border}` }}>
-          <div style={{ padding:'5px 10px', fontSize:11, color:C.textMuted, borderBottom:`1px solid ${C.border}` }}>
-            {selectedFixture ? selectedFixture.name : 'Selecione um aparelho'}
+        {/* PAINEL DIREITO: CHAT / DESCRIÃ‡ÃƒO */}
+        <div style={{ width:rightPanelWidth, minWidth:RIGHT_PANEL_MIN_WIDTH, maxWidth:RIGHT_PANEL_MAX_WIDTH, position:'relative', display:'flex', flexDirection:'column', background:'#35484f', color:'#ffffff', borderLeft:'1px solid #8db8b8', boxShadow:'none', overflow:'hidden', fontFamily:'Arial, Helvetica, sans-serif' }}>
+          <div
+            onPointerDown={handleRightPanelResizeStart}
+            style={{
+              position:'absolute',
+              top:0,
+              bottom:0,
+              left:0,
+              width:7,
+              zIndex:5,
+              cursor:'col-resize',
+              background:rightPanelResize ? 'rgba(183,222,222,.18)' : 'transparent',
+              borderLeft:rightPanelResize ? '1px solid #b7dede' : '1px solid transparent',
+            }}
+          />
+          <div style={{ display:'flex', height:28, minHeight:28, background:'#24343a', borderBottom:'1px solid #8db8b8' }}>
+            <button
+              onClick={() => setRightPanelTab('chat')}
+              style={{
+                flex:1,
+                textAlign:'center',
+                height:28,
+                minHeight:28,
+                display:'flex',
+                alignItems:'center',
+                justifyContent:'center',
+                padding:'0 8px',
+                background: rightPanelTab === 'chat' ? '#35484f' : '#24343a',
+                color: rightPanelTab === 'chat' ? '#ffffff' : '#c8dddd',
+                borderLeft: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
+                borderRight: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
+                borderTop: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
+                borderBottom: rightPanelTab === 'chat' ? 'none' : '1px solid #8db8b8',
+                borderRadius:0,
+                outline:'none',
+                boxShadow:'none',
+                fontFamily:'Arial, Helvetica, sans-serif',
+                fontSize:12,
+                fontWeight:700,
+                whiteSpace:'nowrap',
+                overflow:'hidden',
+                textOverflow:'clip',
+                cursor:'pointer',
+              }}
+            >
+              Chat
+            </button>
+            <button
+              onClick={() => setRightPanelTab('description')}
+              style={{
+                flex:1,
+                textAlign:'center',
+                height:28,
+                minHeight:28,
+                display:'flex',
+                alignItems:'center',
+                justifyContent:'center',
+                padding:'0 8px',
+                background: rightPanelTab === 'description' ? '#35484f' : '#24343a',
+                color: rightPanelTab === 'description' ? '#ffffff' : '#c8dddd',
+                borderLeft: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
+                borderRight: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
+                borderTop: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
+                borderBottom: rightPanelTab === 'description' ? 'none' : '1px solid #8db8b8',
+                borderRadius:0,
+                outline:'none',
+                boxShadow:'none',
+                fontFamily:'Arial, Helvetica, sans-serif',
+                fontSize:12,
+                fontWeight:700,
+                whiteSpace:'nowrap',
+                overflow:'hidden',
+                textOverflow:'clip',
+                cursor:'pointer',
+              }}
+            >
+              Descrição
+            </button>
           </div>
-          <div style={{ flex:1, overflowY:'auto', padding:'8px 10px' }}>
-            {!selectedFixture && (
-              <div style={{ color:C.textMuted, fontSize:11, padding:'12px 0' }}>Clique em um aparelho para ver os faders.</div>
-            )}
-            {selectedFixture && (selectedFixture.channels || []).map((chanName, i) => {
-              const dmxCh = selectedFixture.startChannel + i;
-              const val = liveValues[dmxCh] ?? 0;
-              return (
-                <div key={i} style={{ marginBottom:10 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
-                    <span style={{ fontSize:11, color:C.textMuted }}>{dmxCh} · {chanName || `Canal ${i+1}`}</span>
-                    <span style={{ fontSize:11, color:C.text, minWidth:28, textAlign:'right' }}>{val}</span>
-                  </div>
-                  <input
-                    type="range" min={0} max={255} value={val}
-                    onChange={e => handleFader(dmxCh, e.target.value)}
-                    style={{ width:'100%', accentColor:C.white, cursor:'pointer', height:4 }}
-                  />
+          <div style={{ flex:1, display:'flex', background:'#35484f', overflow:'hidden' }}>
+            <div style={{ width:40, minWidth:40, maxWidth:40, background:'#24343a', borderRight:'1px solid #8db8b8', display:'flex', flexDirection:'column', alignItems:'stretch', justifyContent:'flex-start', padding:2, gap:2 }}>
+              {[
+                ['Z+', 44],
+                ['Z-', 44],
+                ['ZFit', 70],
+                ['BO', 92],
+                ['freeZe', 78],
+                ['WPT', 26],
+                ['WPTE', 26],
+                ['WSeq', 26],
+              ].map(([label, height]) => (
+                <button
+                  key={label}
+                  type="button"
+                  style={{
+                    width:'100%',
+                    height,
+                    background:'#24343a',
+                    color:'#ffffff',
+                    border:'1px solid #8db8b8',
+                    borderRadius:0,
+                    fontFamily:'Arial, Helvetica, sans-serif',
+                    fontSize:10,
+                    fontWeight:700,
+                    lineHeight:1,
+                    textAlign:'center',
+                    outline:'none',
+                    boxShadow:'none',
+                    cursor:'default',
+                    padding:0,
+                    margin:0,
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'center',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ flex:1, background:'#35484f', color:'#ffffff', overflow:'auto', position:'relative' }}>
+              {rightPanelTab === 'chat' && (
+                <div style={{ background:'#35484f', color:'#c8dddd', padding:8, fontSize:12, fontFamily:'Arial, Helvetica, sans-serif' }}>
+                  em desenvolvimento
                 </div>
-              );
-            })}
+              )}
+              {rightPanelTab === 'description' && selectedFixture && (selectedFixture.channels || []).map((chanName, i) => {
+                const dmxCh = selectedFixture.startChannel + i;
+                const val = liveValues[dmxCh] ?? 0;
+                return (
+                  <div key={i} style={{ marginBottom:10, padding:'0 8px' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                      <span style={{ display:'flex', gap:4, minWidth:0 }}>
+                        <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:11, color:'#9bb4b7', flexShrink:0 }}>{dmxCh}</span>
+                        <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, color:'#c8dddd', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{chanName || `Canal ${i+1}`}</span>
+                      </span>
+                      <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.sliderThumb.fontSize, fontWeight:theme.typography.sliderThumb.fontWeight, color:theme.colors.primary, minWidth:28, textAlign:'right' }}>{val}</span>
+                    </div>
+                    <input
+                      type="range" min={0} max={255} value={val}
+                      onChange={e => handleFader(dmxCh, e.target.value)}
+                      style={{ width:'100%', accentColor:theme.colors.primary, cursor:'pointer', height:4 }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
       </div>
 
       {/* CENAS — barra inferior */}
-      <div style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 8px', background:C.surface, borderTop:`1px solid ${C.border}` }}>
-        <PageBtn onClick={pgUp}>PgUp</PageBtn>
-        <span style={{ fontSize:13, color:C.text, minWidth:20, textAlign:'center' }}>{currentPage}</span>
-        <PageBtn onClick={pgDw}>PgDw</PageBtn>
-        <div style={{ width:1, height:24, background:C.border, margin:'0 6px' }} />
+      <div style={{ display:'flex', alignItems:'stretch', gap:2, padding:2, background:'#000000', color:'#ffffff', borderTop:'1px solid #8db8b8', minHeight:58 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:4, minWidth:128, padding:'0 4px', background:'#24343a', color:'#ffffff', borderRight:'1px solid #5f8588', fontSize:12, fontFamily:'Arial, Helvetica, sans-serif' }}>
+          <PageBtn onClick={pgUp}>PgUp</PageBtn>
+          <span style={{ fontSize:16, fontWeight:700, color:'#ffffff', minWidth:24, textAlign:'center' }}>{currentPageNumber}</span>
+          <PageBtn onClick={pgDw}>PgDw</PageBtn>
+        </div>
+        <div style={{ width:1, alignSelf:'stretch', background:'#5f8588', margin:'0 4px' }} />
         {SCENE_KEYS.map(key => {
           const scene = scenes[key];
-          const isActive = activeScenes.includes(key);
+          const isActive = !!scene && activeScenes.includes(key);
           return (
             <button
               key={key}
               onClick={() => scene && handleActivateScene(key)}
               onContextMenu={(e) => handleSceneRightClick(e, key)}
               style={{
-                flex:1, padding:'8px 4px', borderRadius:3, cursor:'pointer',
-                background: isActive
-                  ? `color-mix(in srgb, ${scene?.color || C.sceneActive} 70%, white 30%)`
-                  : scene?.color || C.surface,
-                border:`1px solid ${isActive ? C.white : scene ? C.white : C.border}`,
-                color: scene ? C.white : C.textMuted,
-                fontSize:13, fontWeight: isActive ? 700 : 400,
-                display:'flex', flexDirection:'column', alignItems:'center', gap:1, minWidth:0,
+                flex:1,
+                fontFamily:'Arial, Helvetica, sans-serif',
+                fontSize:12,
+                fontWeight:700,
+                lineHeight:1.1,
+                height:54,
+                minHeight:54,
+                padding:'4px 6px',
+                borderRadius:0,
+                cursor:'pointer',
+                background:'#000000',
+                border: isActive ? '3px solid #b7dede' : `1px solid ${scene ? '#ffffff' : '#8db8b8'}`,
+                color: scene ? '#ffffff' : '#9bb4b7',
+                boxShadow:'none',
+                outline:'none',
+                display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:0, minWidth:0,
               }}
             >
-              <span>{key}</span>
-              {scene && <span style={{ fontSize:8, color:C.white, overflow:'hidden', maxWidth:'100%' }}>{scene.name}</span>}
+              <span style={{ color:'inherit', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700 }}>{key}</span>
+              {scene && <span style={{ color:'inherit', fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, lineHeight:1.1, marginTop:3, overflow:'hidden', maxWidth:'100%', whiteSpace:'normal', textAlign:'center' }}>{scene.name}</span>}
             </button>
           );
         })}
       </div>
 
       {/* F-KEYS */}
-      <div style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', background:'#1a1a1a', borderTop:`1px solid ${C.border}` }}>
+      <div style={{ display:'flex', alignItems:'center', gap:4, padding:4, background:'#000000', color:'#ffffff', borderTop:'1px solid #5f8588', minHeight:42 }}>
         {FKEYS.map(fkey => {
           const script = scripts[fkey];
           const isRunning = script?.running;
@@ -572,15 +764,25 @@ export default function Main({ onOpenFixtures }) {
               onClick={(e) => { e.stopPropagation(); handleToggleScript(fkey); }}
               onContextMenu={(e) => handleScriptRightClick(e, fkey)}
               style={{
-                flex:1, padding:'6px 4px', borderRadius:3, cursor:'pointer',
-                background: isRunning ? '#2a3a2a' : script ? '#2a2a2a' : '#1a1a1a',
-                border:`1px solid ${isRunning ? '#4a7a4a' : script ? '#444' : '#2a2a2a'}`,
-                color: isRunning ? '#4afa4a' : script ? C.text : C.textMuted,
-                fontSize:11, display:'flex', flexDirection:'column', alignItems:'center', gap:1, minWidth:0,
+                flex:1,
+                fontFamily:'Arial, Helvetica, sans-serif',
+                fontSize:12,
+                fontWeight:700,
+                lineHeight:1.1,
+                minHeight:36,
+                padding:'4px 8px',
+                borderRadius:0,
+                cursor:'pointer',
+                background:'#000000',
+                border: isRunning ? '3px solid #b7dede' : `1px solid ${script ? '#8db8b8' : '#ffffff'}`,
+                color:'#ffffff',
+                boxShadow:'none',
+                outline:'none',
+                display:'flex', flexDirection:'column', alignItems:'center', gap:1, minWidth:0,
               }}
             >
-              <span style={{ fontSize:10, color: isRunning ? '#4afa4a' : C.textMuted }}>{fkey}</span>
-              {script && <span style={{ fontSize:8, overflow:'hidden', maxWidth:'100%', color: isRunning ? '#4afa4a' : C.text }}>{script.name}</span>}
+              <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, color:'inherit' }}>{fkey}</span>
+              {script && <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, overflow:'hidden', maxWidth:'100%', color: isRunning ? '#ffffff' : '#c8dddd' }}>{script.name}</span>}
             </button>
           );
         })}
@@ -639,7 +841,7 @@ export default function Main({ onOpenFixtures }) {
               <span style={{ fontSize:13, fontWeight:600 }}>
                 {scripts[createModal.fkey] ? 'Editar Script' : 'Script'} — {createModal.fkey}
               </span>
-              <button onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); }} style={{ background:'none', border:'none', color:'#888', fontSize:18, cursor:'pointer' }}>✕</button>
+              <button onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
 
             {/* Abas */}
@@ -667,7 +869,7 @@ export default function Main({ onOpenFixtures }) {
                   onChange={e => setScriptName(e.target.value)}
                   disabled={!!scripts[createModal.fkey]}
                   placeholder="Nome do script..."
-                  style={{ width:'100%', padding:'6px 8px', borderRadius:3, background:'#1a1a1a', border:'1px solid #444', color:'#e0e0e0', fontSize:12, boxSizing:'border-box' }}
+                  style={{ width:'100%', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, color: scripts[createModal.fkey] ? theme.colors.textDisabled : theme.colors.text, background:theme.colors.surface, padding:theme.spacing.inputPadding, marginTop:theme.spacing.inputMarginTop, border:'none', borderBottom:`1px solid ${theme.colors.textSecondary}`, outline:'none', boxSizing:'border-box' }}
                 />
               </div>
             )}
@@ -697,7 +899,7 @@ export default function Main({ onOpenFixtures }) {
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
               <button
                 onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); }}
-                style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#2e2e2e', color:'#e0e0e0', border:'1px solid #444' }}
+                style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}
               >Cancelar</button>
 
               {createModalTab === 'novo' && (
@@ -711,7 +913,7 @@ export default function Main({ onOpenFixtures }) {
                     }
                   }}
                   disabled={!scripts[createModal.fkey] && !scriptName.trim()}
-                  style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#383838', color: (!scripts[createModal.fkey] && !scriptName.trim()) ? '#555' : '#fff', border:'1px solid #555' }}
+                  style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'default' : 'pointer', background: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'rgba(0,0,0,.12)' : theme.colors.primary, color: (!scripts[createModal.fkey] && !scriptName.trim()) ? theme.colors.textDisabled : '#ffffff', border:'none', boxShadow: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'none' : theme.elevation.z2 }}
                 >
                   {scripts[createModal.fkey] ? 'Abrir no VS Code' : 'Criar e Abrir'}
                 </button>
@@ -735,7 +937,7 @@ export default function Main({ onOpenFixtures }) {
                       }
                     }}
                     disabled={!selectedExisting}
-                    style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor: selectedExisting ? 'pointer' : 'not-allowed', background:'#2e2e2e', color: selectedExisting ? '#e0e0e0' : '#555', border:'1px solid #444' }}
+                    style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? 'transparent' : 'rgba(0,0,0,.12)', color: selectedExisting ? theme.colors.primary : theme.colors.textDisabled, border:'none', boxShadow:'none' }}
                   >Abrir no VS Code</button>
 
                   <button
@@ -752,7 +954,7 @@ export default function Main({ onOpenFixtures }) {
                       setSelectedExisting(null);
                     }}
                     disabled={!selectedExisting}
-                    style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor: selectedExisting ? 'pointer' : 'not-allowed', background:'#383838', color: selectedExisting ? '#fff' : '#555', border:'1px solid #555' }}
+                    style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? theme.colors.primary : 'rgba(0,0,0,.12)', color: selectedExisting ? '#ffffff' : theme.colors.textDisabled, border:'none', boxShadow: selectedExisting ? theme.elevation.z2 : 'none' }}
                   >Usar este script</button>
                 </>
               )}
@@ -781,7 +983,7 @@ export default function Main({ onOpenFixtures }) {
             style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838', cursor:'move', userSelect:'none' }}
           >
             <span style={{ fontSize:13, fontWeight:600 }}>{selectedFixture.name}</span>
-            <button onClick={() => setTestPanelOpen(false)} style={{ background:'none', border:'none', color:'#888', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
+            <button onClick={() => setTestPanelOpen(false)} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
           </div>
           <div style={{ padding:'10px 14px', display:'flex', flexDirection:'column', gap:8, overflowY:'auto' }}>
             {Array.from({ length: selectedFixture.channelCount || 0 }, (_, i) => {
@@ -838,36 +1040,37 @@ export default function Main({ onOpenFixtures }) {
       )}
 
       {saveModal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
-          <div style={{ background:'#242424', border:'1px solid #444', borderRadius:6, width:320, fontFamily:'Segoe UI, system-ui, sans-serif', color:'#e0e0e0' }}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
+          <div style={{ background:'#26363c', border:'1px solid #8db8b8', borderRadius:0, width:360, fontFamily:'Arial, Helvetica, sans-serif', color:'#ffffff', boxShadow:'0 4px 12px rgba(0,0,0,.65)' }}>
 
             {/* Header */}
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838' }}>
-              <span style={{ fontSize:13, fontWeight:600 }}>Salvar Cena</span>
-              <button onClick={() => setSaveModal(null)} style={{ background:'none', border:'none', color:'#888', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'6px 8px', background:'#24343a', color:'#ffffff', borderBottom:'1px solid #8db8b8', fontFamily:'Arial, Helvetica, sans-serif' }}>
+              <span style={{ fontSize:13, fontWeight:700 }}>Salvar Cena</span>
+              <button onClick={() => setSaveModal(null)} style={{ background:'transparent', border:'none', outline:'none', boxShadow:'none', borderRadius:0, color:'#ffffff', fontFamily:'Arial, Helvetica, sans-serif', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
             </div>
 
             {/* Body */}
-            <div style={{ padding:16, display:'flex', flexDirection:'column', gap:14 }}>
+            <div style={{ padding:10, display:'flex', flexDirection:'column', gap:8, background:'#26363c', color:'#ffffff', fontFamily:'Arial, Helvetica, sans-serif' }}>
               <div>
-                <div style={{ fontSize:11, color:'#888', marginBottom:6 }}>Nome da cena</div>
+                <div style={{ fontSize:11, fontWeight:400, color:'#c8dddd', marginBottom:4 }}>Nome da cena</div>
                 <input
                   value={modalName}
                   onChange={e => setModalName(e.target.value)}
                   placeholder="Nome da cena..."
-                  style={{ width:'100%', padding:'6px 8px', borderRadius:3, background:'#1a1a1a', border:'1px solid #444', color:'#e0e0e0', fontSize:12, boxSizing:'border-box' }}
+                  style={{ width:'100%', height:28, fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:400, color:'#ffffff', background:'#000000', padding:'4px 6px', border:'1px solid #5f8588', borderRadius:0, outline:'none', boxShadow:'none', boxSizing:'border-box' }}
                 />
               </div>
               <div>
-                <div style={{ fontSize:11, color:'#888', marginBottom:8 }}>Cor</div>
+                <div style={{ fontSize:11, fontWeight:400, color:'#c8dddd', marginBottom:4 }}>Cor</div>
                 <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                   {COLORS.map(color => (
                     <div
                       key={color}
                       onClick={() => setModalColor(color)}
                       style={{
-                        width:32, height:32, borderRadius:4, background:color, cursor:'pointer',
-                        border: modalColor === color ? '2px solid #ffffff' : '2px solid transparent',
+                        width:32, height:32, borderRadius:0, background:color, cursor:'pointer',
+                        border: modalColor === color ? '2px solid #ffffff' : '1px solid #5f8588',
+                        boxShadow:'none',
                       }}
                     />
                   ))}
@@ -876,11 +1079,11 @@ export default function Main({ onOpenFixtures }) {
             </div>
 
             {/* Footer */}
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
-              <button onClick={() => setSaveModal(null)} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#2e2e2e', color:'#e0e0e0', border:'1px solid #444' }}>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:8, background:'#24343a', borderTop:'1px solid #8db8b8' }}>
+              <button onClick={() => setSaveModal(null)} style={{ height:28, padding:'4px 10px', borderRadius:0, cursor:'pointer', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, background:'#000000', color:'#ffffff', border:'1px solid #8db8b8', outline:'none', boxShadow:'none' }}>
                 Cancelar
               </button>
-              <button onClick={handleConfirmSave} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#383838', color:'#ffffff', border:'1px solid #555' }}>
+              <button onClick={handleConfirmSave} style={{ height:28, padding:'4px 10px', borderRadius:0, cursor:'pointer', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, background:'#000000', color:'#ffffff', border:'1px solid #b7dede', outline:'none', boxShadow:'none' }}>
                 Confirmar
               </button>
             </div>
@@ -894,7 +1097,7 @@ export default function Main({ onOpenFixtures }) {
           <div style={{ background:'#242424', border:'1px solid #444', borderRadius:6, width:380, fontFamily:'Segoe UI, system-ui, sans-serif', color:'#e0e0e0' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838' }}>
               <span style={{ fontSize:13, fontWeight:600 }}>Mover {moveModal.sourceFkey} para...</span>
-              <button onClick={() => setMoveModal(null)} style={{ background:'none', border:'none', color:'#888', fontSize:18, cursor:'pointer' }}>✕</button>
+              <button onClick={() => setMoveModal(null)} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
             <div style={{ padding:12, display:'flex', flexWrap:'wrap', gap:8 }}>
               {FKEYS.map(fkey => {
@@ -919,12 +1122,15 @@ export default function Main({ onOpenFixtures }) {
                       setMoveModal(null);
                     }}
                     style={{
-                      width:60, padding:'8px 4px', borderRadius:3,
-                      background: isSelf ? '#2a3a2a' : disabled ? '#1a1a1a' : '#2e2e2e',
-                      border: `1px solid ${isSelf ? '#4a7a4a' : disabled ? '#2a2a2a' : '#555'}`,
-                      color: isSelf ? '#4afa4a' : disabled ? '#333' : '#e0e0e0',
-                      cursor: disabled ? 'not-allowed' : 'pointer',
-                      fontSize:12, display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+                      width:60, minHeight:36, padding:'8px 4px', borderRadius:4,
+                      fontFamily:theme.typography.fontFamily,
+                      fontSize:theme.typography.button.fontSize,
+                      fontWeight:theme.typography.button.fontWeight,
+                      background: disabled ? 'rgba(0,0,0,.12)' : 'transparent',
+                      border:'none', boxShadow:'none',
+                      color: disabled ? theme.colors.textDisabled : theme.colors.primary,
+                      cursor: disabled ? 'default' : 'pointer',
+                      display:'flex', flexDirection:'column', alignItems:'center', gap:2,
                     }}
                   >
                     <span>{fkey}</span>
@@ -934,7 +1140,7 @@ export default function Main({ onOpenFixtures }) {
               })}
             </div>
             <div style={{ padding:'8px 14px', borderTop:'1px solid #383838', display:'flex', justifyContent:'flex-end' }}>
-              <button onClick={() => setMoveModal(null)} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#2e2e2e', color:'#e0e0e0', border:'1px solid #444' }}>Cancelar</button>
+              <button onClick={() => setMoveModal(null)} style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}>Cancelar</button>
             </div>
           </div>
         </div>
@@ -948,7 +1154,7 @@ export default function Main({ onOpenFixtures }) {
             {/* Header */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838', background:'#2a1a1a' }}>
               <span style={{ fontSize:13, fontWeight:600, color:'#ff6666' }}>⚠ {conflicts.length} Conflito{conflicts.length !== 1 ? 's' : ''}</span>
-              <button onClick={() => setConflictModalOpen(false)} style={{ background:'none', border:'none', color:'#888', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
+              <button onClick={() => setConflictModalOpen(false)} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
             </div>
 
             {/* Body */}
@@ -972,7 +1178,7 @@ export default function Main({ onOpenFixtures }) {
 
             {/* Footer */}
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
-              <button onClick={() => setConflictModalOpen(false)} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#2e2e2e', color:'#e0e0e0', border:'1px solid #444' }}>
+              <button onClick={() => setConflictModalOpen(false)} style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}>
                 Ok
               </button>
             </div>
@@ -1000,12 +1206,15 @@ export default function Main({ onOpenFixtures }) {
 function TopBtn({ onClick, children, danger, disabled, active }) {
   return (
     <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding:'4px 12px', borderRadius:3, fontSize:12,
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      background: disabled ? '#222' : active ? '#cc2222' : danger ? '#3a2020' : C.btnBg,
-      color: disabled ? '#555' : active ? '#ffffff' : danger ? '#cc4444' : C.text,
-      border: `1px solid ${disabled ? '#333' : active ? '#ff4444' : danger ? '#552222' : C.btnBorder}`,
-      fontWeight: active ? 700 : 400,
+      minHeight:36, padding:'0 16px', borderRadius:4,
+      fontFamily:theme.typography.fontFamily,
+      fontSize:theme.typography.button.fontSize,
+      fontWeight:theme.typography.button.fontWeight,
+      cursor: disabled ? 'default' : 'pointer',
+      background: disabled ? 'rgba(0,0,0,.12)' : danger ? theme.colors.warn : 'transparent',
+      color: disabled ? theme.colors.textDisabled : danger ? '#ffffff' : theme.colors.primary,
+      border:'none',
+      boxShadow: disabled ? 'none' : danger ? theme.elevation.z2 : 'none',
       animation: active ? 'blink-border 1s step-start infinite' : 'none',
     }}>{children}</button>
   );
@@ -1014,8 +1223,11 @@ function TopBtn({ onClick, children, danger, disabled, active }) {
 function PageBtn({ onClick, children }) {
   return (
     <button onClick={onClick} style={{
-      padding:'2px 6px', borderRadius:3, cursor:'pointer', fontSize:11,
-      background:C.btnBg, color:C.text, border:`1px solid ${C.btnBorder}`,
+      minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer',
+      fontFamily:theme.typography.fontFamily,
+      fontSize:theme.typography.button.fontSize,
+      fontWeight:theme.typography.button.fontWeight,
+      background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none',
     }}>{children}</button>
   );
 }

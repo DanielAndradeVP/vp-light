@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useShow } from '../store/showStore.js';
+import theme from '../theme.js';
 
 const styles = {
   root: {
@@ -27,10 +28,14 @@ const styles = {
     border: '1px solid #2a2a4a', color: '#e0e0e0', fontSize: 14, width: 220,
   },
   btnSmall: (color) => ({
-    padding: '5px 14px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-    background: color === 'purple' ? '#2a2060' : color === 'green' ? '#1a3a1a' : '#222',
-    color: color === 'purple' ? '#b0a0ff' : color === 'green' ? '#4afa4a' : '#ccc',
-    border: `1px solid ${color === 'purple' ? '#4a3a9a' : color === 'green' ? '#2a6a2a' : '#333'}`,
+    minHeight: 36, padding: '0 16px', borderRadius: 4, cursor: 'pointer',
+    fontFamily: theme.typography.fontFamily,
+    fontSize: theme.typography.button.fontSize,
+    fontWeight: theme.typography.button.fontWeight,
+    background: color === 'purple' ? theme.colors.warn : color === 'green' ? theme.colors.primary : 'transparent',
+    color: color === 'purple' ? '#ffffff' : color === 'green' ? '#ffffff' : theme.colors.primary,
+    border: 'none',
+    boxShadow: color === 'purple' || color === 'green' ? theme.elevation.z2 : 'none',
   }),
   body: { flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 20 },
   fixtureCard: {
@@ -40,18 +45,20 @@ const styles = {
   channelRow: {
     display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
   },
-  chanLabel: { width: 110, fontSize: 11, color: '#888', flexShrink: 0 },
-  chanNum: { width: 32, fontSize: 10, color: '#555', flexShrink: 0 },
-  fader: { flex: 1, cursor: 'pointer', accentColor: '#7c6aff', height: 6 },
-  chanValue: { width: 32, textAlign: 'right', fontSize: 12, color: '#ccc', flexShrink: 0 },
+  chanLabel: { width: 110, fontFamily: theme.typography.fontFamily, fontSize: '14px', color: theme.colors.textSecondary, flexShrink: 0 },
+  chanNum: { width: 32, fontFamily: theme.typography.fontFamily, fontSize: 10, color: theme.colors.textDisabled, flexShrink: 0 },
+  fader: { flex: 1, cursor: 'pointer', accentColor: theme.colors.primary, height: 6 },
+  chanValue: { width: 32, textAlign: 'right', fontFamily: theme.typography.fontFamily, fontSize: theme.typography.sliderThumb.fontSize, fontWeight: theme.typography.sliderThumb.fontWeight, color: theme.colors.primary, flexShrink: 0 },
   zeroBtn: {
-    width: 22, height: 22, borderRadius: 4, background: '#1a1a2e',
-    border: '1px solid #2a2a4a', color: '#555', fontSize: 10, cursor: 'pointer',
+    width: 22, height: 22, borderRadius: 4, background: 'transparent',
+    border: `1px solid ${theme.colors.textDisabled}`, color: theme.colors.primary, fontSize: 10, cursor: 'pointer',
+    fontFamily: theme.typography.fontFamily,
     flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   fullBtn: {
-    width: 22, height: 22, borderRadius: 4, background: '#2a2a2a',
-    border: '1px solid #3a3a3a', color: '#888', fontSize: 10, cursor: 'pointer',
+    width: 22, height: 22, borderRadius: 4, background: 'transparent',
+    border: `1px solid ${theme.colors.textDisabled}`, color: theme.colors.primary, fontSize: 10, cursor: 'pointer',
+    fontFamily: theme.typography.fontFamily,
     flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   footer: {
@@ -59,10 +66,14 @@ const styles = {
     display: 'flex', gap: 10, alignItems: 'center',
   },
   saveBtn: {
-    flex: 1, padding: '12px 24px', borderRadius: 10, cursor: 'pointer',
-    background: 'linear-gradient(135deg, #1a3a1a, #2a6a2a)',
-    color: '#4afa4a', fontSize: 16, fontWeight: 700, letterSpacing: 2,
-    border: '2px solid #2a6a2a',
+    flex: 1, minHeight: 36, padding: '0 16px', borderRadius: 4, cursor: 'pointer',
+    background: theme.colors.primary,
+    color: '#ffffff',
+    fontFamily: theme.typography.fontFamily,
+    fontSize: theme.typography.button.fontSize,
+    fontWeight: theme.typography.button.fontWeight,
+    border: 'none',
+    boxShadow: theme.elevation.z2,
   },
 };
 

@@ -73,7 +73,7 @@ contextBridge.exposeInMainWorld('vp', {
   // ─── SCRIPTS ──────────────────────────────────────────────────────────────
   listScripts:   ()           => ipcRenderer.invoke('script:list'),
   createScript:  (fkey, name, options) => ipcRenderer.invoke('script:create', fkey, name, options),
-  editScript:    (fkey)       => ipcRenderer.invoke('script:edit', fkey),
+  editScript:    (fkey, filePath) => ipcRenderer.invoke('script:edit', fkey, filePath),
   clearScript:   (fkey)       => ipcRenderer.invoke('script:clear', fkey),
   toggleScript:  (fkey)       => ipcRenderer.invoke('script:toggle', fkey),
   getAllScripts:  ()           => ipcRenderer.invoke('script:getAll'),
