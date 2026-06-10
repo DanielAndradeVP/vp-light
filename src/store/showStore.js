@@ -69,10 +69,15 @@ export function ShowProvider({ children }) {
     setShow(prev => {
       const original = prev.fixtures.find(f => f.id === id);
       if (!original) return prev;
+      const nextStart = prev.fixtures.reduce((max, f) => {
+        const end = (f.startChannel || 1) + (f.channelCount || 1);
+        return end > max ? end : max;
+      }, 1);
       const copy = {
         ...original,
-        id: `fixture_${Date.now()}`,
+        id: `fixture_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         name: original.name + ' (cópia)',
+        startChannel: nextStart,
       };
       return { ...prev, fixtures: [...prev.fixtures, copy] };
     });

@@ -11,6 +11,7 @@ const RIGHT_PANEL_MIN_WIDTH = 260;
 const RIGHT_PANEL_MAX_WIDTH = 640;
 const DESK_MIN_WIDTH = 360;
 const MAX_PAGE = 10;
+const GRID = 40;          // tamanho do quadradinho da grade — o aparelho ocupa exatamente 1 quadrado
 
 const C = {
   bg: theme.colors.bgDarker, surface: theme.colors.panel, border: theme.colors.borderSoft,
@@ -34,9 +35,10 @@ export default function Main({ onOpenFixtures }) {
 
   async function handleSave() {
     const result = await saveShow();
-    if (result?.message) {
-      setToast(result.message);
-      setTimeout(() => setToast(null), 2000);
+    const msg = result?.message || (result?.ok === false ? `Erro: ${result.error}` : null);
+    if (msg) {
+      setToast(msg);
+      setTimeout(() => setToast(null), 3000);
     }
   }
 
@@ -197,9 +199,31 @@ export default function Main({ onOpenFixtures }) {
   useEffect(() => {
     if (!selectedFixture) setTestPanelOpen(false);
   }, [selectedFixture]);
-  const [dragging, setDragging] = useState(null); // { id, offsetX, offsetY }
-  const [selection, setSelection] = useState(null); // { startX, startY, endX, endY }
+  const [dragging, setDragging] = useState(null); // { id, offX, offY } — offset em coords de mundo
+  const [selection, setSelection] = useState(null); // { startX, startY, endX, endY } — coords de mundo
   const [multiSelected, setMultiSelected] = useState([]);
+  const mesaRef = useRef(null);
+  const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 }); // zoom/pan da mesa
+
+  // Zoom com a roda do mouse, seguindo o ponteiro (mantém o ponto sob o cursor fixo).
+  useEffect(() => {
+    const el = mesaRef.current;
+    if (!el) return;
+    function onWheel(e) {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      setView(prev => {
+        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        const zoom = Math.min(4, Math.max(0.3, prev.zoom * factor));
+        const k = zoom / prev.zoom; // razão real após o clamp
+        return { zoom, panX: sx - (sx - prev.panX) * k, panY: sy - (sy - prev.panY) * k };
+      });
+    }
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
   const [scripts, setScripts] = useState({});
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts; // sempre fresco: atualizado na render, antes de qualquer await
@@ -210,6 +234,11 @@ export default function Main({ onOpenFixtures }) {
   const [existingScripts, setExistingScripts] = useState([]);
   const [selectedExisting, setSelectedExisting] = useState(null);
   const [moveModal, setMoveModal] = useState(null); // { sourceFkey }
+  const [pageScripts, setPageScripts] = useState({}); // { [sceneKey]: { name, file, running } }
+  const pageScriptsRef = useRef(pageScripts);
+  pageScriptsRef.current = pageScripts;
+  const [sceneScriptModal, setSceneScriptModal] = useState(null); // { sceneKey }
+  const [sceneScriptName, setSceneScriptName] = useState('');
 
   const FKEYS = ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
   const currentPageNumber = Math.max(1, Number.parseInt(currentPage, 10) || 1);
@@ -223,6 +252,10 @@ export default function Main({ onOpenFixtures }) {
     };
     load();
   }, []);
+
+  useEffect(() => {
+    window.vp.getAllPageScripts(currentPageId).then(result => setPageScripts(result || {}));
+  }, [currentPageId]);
 
   // Sincroniza canais bloqueados por cenas com o main process sempre que activeScenes muda
   useEffect(() => {
@@ -321,8 +354,42 @@ export default function Main({ onOpenFixtures }) {
     setScripts(prev => { const next = { ...prev }; delete next[fkey]; return next; });
     setScriptMenu(null);
   }
+
+  async function handleTogglePageScript(sceneKey) {
+    const result = await window.vp.togglePageScript(currentPageId, sceneKey);
+    if (result?.ok) {
+      setPageScripts(prev => ({ ...prev, [sceneKey]: { ...prev[sceneKey], running: result.running } }));
+      if (!result.running) {
+        resolveUniverseState(activeScenes, scripts);
+      }
+    }
+  }
+
+  async function handleCreatePageScript() {
+    if (!sceneScriptName.trim() || !sceneScriptModal) return;
+    // Se a tecla tinha cena ativa, desativa e limpa antes de criar o script
+    const key = sceneScriptModal.sceneKey;
+    if (scenes[key]) {
+      setActiveScenes(prev => prev.filter(k => k !== key));
+      updateScene(currentPageId, key, { name: '', color: '', channels: {} });
+    }
+    const result = await window.vp.createPageScript(currentPageId, key, sceneScriptName.trim());
+    if (result.ok) {
+      setPageScripts(prev => ({ ...prev, [key]: { name: result.name, file: result.file, running: false } }));
+    }
+    setSceneScriptModal(null);
+    setSceneScriptName('');
+  }
+
+  async function handleClearPageScript(sceneKey) {
+    await window.vp.clearPageScript(currentPageId, sceneKey);
+    setPageScripts(prev => { const next = { ...prev }; delete next[sceneKey]; return next; });
+    setContextMenu(null);
+  }
+
   const [contextMenu, setContextMenu] = useState(null); // { x, y, sceneKey }
   const [saveModal, setSaveModal] = useState(null); // { sceneKey }
+  const [sceneMoveModal, setSceneMoveModal] = useState(null); // { sourceKey }
   const [modalName, setModalName] = useState('');
   const [modalColor, setModalColor] = useState('#000000');
 
@@ -424,22 +491,28 @@ export default function Main({ onOpenFixtures }) {
   useEffect(() => {
     function handleEsc(e) {
       if (e.key !== 'Escape') return;
-      if (moveModal)   { setMoveModal(null); return; }
-      if (saveModal)   { setSaveModal(null); return; }
-      if (createModal) { setCreateModal(null); setScriptName(''); return; }
-      if (contextMenu) { setContextMenu(null); return; }
-      if (scriptMenu)  { setScriptMenu(null); return; }
+      if (moveModal)         { setMoveModal(null); return; }
+      if (sceneMoveModal)    { setSceneMoveModal(null); return; }
+      if (sceneScriptModal)  { setSceneScriptModal(null); setSceneScriptName(''); return; }
+      if (saveModal)         { setSaveModal(null); return; }
+      if (createModal)       { setCreateModal(null); setScriptName(''); return; }
+      if (contextMenu)       { setContextMenu(null); return; }
+      if (scriptMenu)        { setScriptMenu(null); return; }
     }
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [moveModal, saveModal, createModal, contextMenu, scriptMenu]);
+  }, [moveModal, sceneMoveModal, sceneScriptModal, saveModal, createModal, contextMenu, scriptMenu]);
 
   const scenes = (pages[currentPageId] || {}).scenes || {};
 
   const handleKey = useCallback((e) => {
     if (e.target.tagName === 'INPUT') return;
     const key = e.key.toUpperCase();
-    if (SCENE_KEYS.includes(key)) { handleActivateScene(key); return; }
+    if (SCENE_KEYS.includes(key)) {
+      if (pageScriptsRef.current[key]) { handleTogglePageScript(key); }
+      else { handleActivateScene(key); }
+      return;
+    }
     if (e.code === 'Space') { e.preventDefault(); handleBlackout(); return; }
     if (FKEYS.includes(key)) { e.preventDefault(); handleToggleScript(key); return; }
   }, [handleActivateScene, handleBlackout, handleToggleScript]);
@@ -497,31 +570,42 @@ export default function Main({ onOpenFixtures }) {
         <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', background:'#000000', color:'#ffffff', borderRight:'1px solid #8db8b8' }}>
           <div style={{ padding:'3px 6px', fontSize:11, color:'#c8dddd', background:'#24343a', borderBottom:'1px solid #5f8588' }}>Aparelhos</div>
           <div
+            ref={mesaRef}
             onClick={() => setSelectedFixtureId(null)}
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) {
                 const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                setSelection({ startX: x, startY: y, endX: x, endY: y });
+                const wx = (e.clientX - rect.left - view.panX) / view.zoom;
+                const wy = (e.clientY - rect.top - view.panY) / view.zoom;
+                setSelection({ startX: wx, startY: wy, endX: wx, endY: wy });
                 setMultiSelected([]);
               }
             }}
             onMouseMove={(e) => {
-              const container = e.currentTarget.getBoundingClientRect();
+              const rect = e.currentTarget.getBoundingClientRect();
+              const wx = (e.clientX - rect.left - view.panX) / view.zoom;
+              const wy = (e.clientY - rect.top - view.panY) / view.zoom;
               if (dragging) {
-                const x = e.clientX - container.left - dragging.offsetX;
-                const y = e.clientY - container.top - dragging.offsetY;
-                updateFixture(dragging.id, { posX: Math.max(0, x), posY: Math.max(0, y) });
+                const rawX = wx - dragging.offX;
+                const rawY = wy - dragging.offY;
+                // snap: encaixa o aparelho de quadradinho em quadradinho
+                const snapX = Math.max(0, Math.round(rawX / GRID) * GRID);
+                const snapY = Math.max(0, Math.round(rawY / GRID) * GRID);
+                // colisão: 1 aparelho por quadrado — não deixa entrar onde já existe outro
+                const overlaps = show.fixtures.some(o => {
+                  if (o.id === dragging.id) return false;
+                  const ox = o.posX ?? 10, oy = o.posY ?? 10;
+                  return snapX < ox + GRID && snapX + GRID > ox
+                      && snapY < oy + GRID && snapY + GRID > oy;
+                });
+                if (!overlaps) updateFixture(dragging.id, { posX: snapX, posY: snapY });
                 return;
               }
               if (selection) {
-                const x = e.clientX - container.left;
-                const y = e.clientY - container.top;
-                setSelection(prev => ({ ...prev, endX: x, endY: y }));
+                setSelection(prev => ({ ...prev, endX: wx, endY: wy }));
               }
             }}
-            onMouseUp={(e) => {
+            onMouseUp={() => {
               if (selection) {
                 const minX = Math.min(selection.startX, selection.endX);
                 const maxX = Math.max(selection.startX, selection.endX);
@@ -530,7 +614,7 @@ export default function Main({ onOpenFixtures }) {
                 const selected = show.fixtures.filter(f => {
                   const x = f.posX ?? 10;
                   const y = f.posY ?? 10;
-                  return x + 80 > minX && x < maxX && y + 60 > minY && y < maxY;
+                  return x + GRID > minX && x < maxX && y + GRID > minY && y < maxY;
                 }).map(f => f.id);
                 setMultiSelected(selected);
                 setSelection(null);
@@ -538,52 +622,68 @@ export default function Main({ onOpenFixtures }) {
               setDragging(null);
             }}
             onMouseLeave={() => { setDragging(null); setSelection(null); }}
-            style={{ flex:1, position:'relative', overflowY:'auto', background:'#000000', color:'#ffffff', borderTop:'1px solid #5f8588', borderBottom:'1px solid #5f8588' }}
+            style={{
+              flex:1, position:'relative', overflow:'hidden', background:'#000000', color:'#ffffff',
+              borderTop:'1px solid #5f8588', borderBottom:'1px solid #5f8588',
+              // grade: aparece só ao arrastar; escala e desloca junto com o zoom/pan
+              backgroundImage: dragging
+                ? `linear-gradient(to right, ${theme.colors.gridMesh} 1px, transparent 1px), linear-gradient(to bottom, ${theme.colors.gridMesh} 1px, transparent 1px)`
+                : 'none',
+              backgroundSize: `${GRID * view.zoom}px ${GRID * view.zoom}px`,
+              backgroundPosition: `${view.panX}px ${view.panY}px`,
+            }}
           >
             {show.fixtures.length === 0 && (
               <div style={{ color:'#9bb4b7', fontSize:12, padding:16, position:'absolute' }}>Nenhum aparelho. Clique em "Aparelhos" para adicionar.</div>
             )}
-            {show.fixtures.map(f => {
-              const isSelected = f.id === selectedFixtureId || multiSelected.includes(f.id);
-              return (
-              <div
-                key={f.id}
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setDragging({ id: f.id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top });
-                }}
-                onClick={(e) => { e.stopPropagation(); setSelectedFixtureId(f.id === selectedFixtureId ? null : f.id); }}
-                style={{
-                  position:'absolute',
-                  left: f.posX ?? 10,
-                  top: f.posY ?? 10,
-                  width:80, height:60,
-                  background:'#233237',
-                  color:'#ffffff',
-                  border: isSelected ? '2px solid #b7dede' : '1px solid #5f8588',
-                  borderRadius:0, boxShadow:'none', cursor: dragging?.id === f.id ? 'grabbing' : 'grab',
-                  display:'flex', flexDirection:'column',
-                  alignItems:'center', justifyContent:'center', gap:2,
-                  userSelect:'none',
-                }}
-              >
-                <div style={{ fontSize:10, color:'#9bb4b7' }}>ch {f.startChannel}</div>
-                <div style={{ fontSize:12, fontWeight:700, color:'#ffffff', textAlign:'center', lineHeight:1.2, padding:'0 4px', overflow:'hidden', maxWidth:76 }}>{f.name}</div>
-              </div>
-              );
-            })}
-            {selection && (
-              <div style={{
-                position:'absolute', pointerEvents:'none',
-                left: Math.min(selection.startX, selection.endX),
-                top: Math.min(selection.startY, selection.endY),
-                width: Math.abs(selection.endX - selection.startX),
-                height: Math.abs(selection.endY - selection.startY),
-                border:'1px solid #888',
-                background:'rgba(255,255,255,0.05)',
-              }} />
-            )}
+
+            {/* MUNDO — recebe o zoom/pan; aparelhos e seleção escalam juntos */}
+            <div style={{ position:'absolute', top:0, left:0, width:0, height:0, transformOrigin:'0 0', transform:`translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})` }}>
+              {show.fixtures.map(f => {
+                const isSelected = f.id === selectedFixtureId || multiSelected.includes(f.id);
+                return (
+                <div
+                  key={f.id}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    const rect = mesaRef.current.getBoundingClientRect();
+                    const wx = (e.clientX - rect.left - view.panX) / view.zoom;
+                    const wy = (e.clientY - rect.top - view.panY) / view.zoom;
+                    setDragging({ id: f.id, offX: wx - (f.posX ?? 10), offY: wy - (f.posY ?? 10) });
+                  }}
+                  onClick={(e) => { e.stopPropagation(); setSelectedFixtureId(f.id === selectedFixtureId ? null : f.id); }}
+                  style={{
+                    position:'absolute',
+                    left: f.posX ?? 10,
+                    top: f.posY ?? 10,
+                    width:GRID, height:GRID,
+                    boxSizing:'border-box',
+                    background:'#233237',
+                    color:'#ffffff',
+                    border: isSelected ? '2px solid #b7dede' : '1px solid #5f8588',
+                    borderRadius:0, boxShadow:'none', cursor: dragging?.id === f.id ? 'grabbing' : 'grab',
+                    display:'flex', flexDirection:'column',
+                    alignItems:'center', justifyContent:'center', gap:1,
+                    userSelect:'none', overflow:'hidden',
+                  }}
+                >
+                  <div style={{ fontSize:7, color:'#9bb4b7', lineHeight:1 }}>ch {f.startChannel}</div>
+                  <div style={{ fontSize:8, fontWeight:700, color:'#ffffff', textAlign:'center', lineHeight:1.1, padding:'0 2px', overflow:'hidden', maxWidth:GRID - 4 }}>{f.name}</div>
+                </div>
+                );
+              })}
+              {selection && (
+                <div style={{
+                  position:'absolute', pointerEvents:'none',
+                  left: Math.min(selection.startX, selection.endX),
+                  top: Math.min(selection.startY, selection.endY),
+                  width: Math.abs(selection.endX - selection.startX),
+                  height: Math.abs(selection.endY - selection.startY),
+                  border:'1px solid #888',
+                  background:'rgba(255,255,255,0.05)',
+                }} />
+              )}
+            </div>
           </div>
         </div>
 
@@ -750,11 +850,23 @@ export default function Main({ onOpenFixtures }) {
         <div style={{ width:1, alignSelf:'stretch', background:'#5f8588', margin:'0 4px' }} />
         {SCENE_KEYS.map(key => {
           const scene = scenes[key];
+          const ps = pageScripts[key];
           const isActive = !!scene && activeScenes.includes(key);
+          const psRunning = ps?.running;
+          // Tecla com script segue a MESMA lógica visual da tecla de cena:
+          // rodando = borda forte teal (como cena ativa); presente = borda branca.
+          const bg = ps ? theme.colors.bgDarker : (scene?.color || '#000000');
+          const borderStyle = ps
+            ? (psRunning ? `3px solid ${theme.colors.borderStrong}` : `1px solid ${theme.colors.text}`)
+            : (isActive ? '3px solid #b7dede' : `1px solid ${scene ? '#ffffff' : '#8db8b8'}`);
+          const textColor = ps ? theme.colors.text : (scene ? '#ffffff' : '#9bb4b7');
           return (
             <button
               key={key}
-              onClick={() => scene && handleActivateScene(key)}
+              onClick={() => {
+                if (ps) { handleTogglePageScript(key); }
+                else if (scene) { handleActivateScene(key); }
+              }}
               onContextMenu={(e) => handleSceneRightClick(e, key)}
               style={{
                 flex:1,
@@ -767,16 +879,17 @@ export default function Main({ onOpenFixtures }) {
                 padding:'4px 6px',
                 borderRadius:0,
                 cursor:'pointer',
-                background:'#000000',
-                border: isActive ? '3px solid #b7dede' : `1px solid ${scene ? '#ffffff' : '#8db8b8'}`,
-                color: scene ? '#ffffff' : '#9bb4b7',
+                background: bg,
+                border: borderStyle,
+                color: textColor,
                 boxShadow:'none',
                 outline:'none',
                 display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:0, minWidth:0,
               }}
             >
               <span style={{ color:'inherit', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700 }}>{key}</span>
-              {scene && <span style={{ color:'inherit', fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, lineHeight:1.1, marginTop:3, overflow:'hidden', maxWidth:'100%', whiteSpace:'normal', textAlign:'center' }}>{scene.name}</span>}
+              {ps && <span style={{ color:'inherit', fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, lineHeight:1.1, marginTop:3, overflow:'hidden', maxWidth:'100%', whiteSpace:'normal', textAlign:'center' }}>{ps.name}</span>}
+              {!ps && scene && <span style={{ color:'inherit', fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, lineHeight:1.1, marginTop:3, overflow:'hidden', maxWidth:'100%', whiteSpace:'normal', textAlign:'center' }}>{scene.name}</span>}
             </button>
           );
         })}
@@ -1029,37 +1142,102 @@ export default function Main({ onOpenFixtures }) {
         </div>
       )}
 
-      {contextMenu && (
-        <div
-          onClick={e => e.stopPropagation()}
-          style={{
-            position:'fixed', top: contextMenu.y, left: contextMenu.x,
-            background:'#2e2e2e', border:'1px solid #444', borderRadius:4,
-            zIndex:1000, minWidth:140, boxShadow:'0 4px 12px rgba(0,0,0,0.5)',
-          }}
-        >
+      {contextMenu && (() => {
+        const ck = contextMenu.sceneKey;
+        const hasScene = !!scenes[ck] && Object.keys(scenes[ck].channels || {}).length > 0;
+        const hasScript = !!pageScripts[ck];
+        return (
           <div
-            onClick={openSaveModal}
-            style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
-            onMouseEnter={e => e.currentTarget.style.background='#383838'}
-            onMouseLeave={e => e.currentTarget.style.background='transparent'}
-          >
-            Salvar Cena...
-          </div>
-          <div
-            onClick={scenes[contextMenu.sceneKey] ? handleClearScene : undefined}
+            onClick={e => e.stopPropagation()}
             style={{
-              padding:'8px 14px', fontSize:12,
-              cursor: scenes[contextMenu.sceneKey] ? 'pointer' : 'not-allowed',
-              color: scenes[contextMenu.sceneKey] ? '#e0e0e0' : '#555',
+              position:'fixed',
+              top: contextMenu.y + 120 > window.innerHeight ? contextMenu.y - 120 : contextMenu.y,
+              left: Math.min(contextMenu.x, window.innerWidth - 160),
+              background:'#2e2e2e', border:'1px solid #444', borderRadius:4,
+              zIndex:1000, minWidth:150, boxShadow:'0 4px 12px rgba(0,0,0,0.5)',
             }}
-            onMouseEnter={e => { if (scenes[contextMenu.sceneKey]) e.currentTarget.style.background='#383838'; }}
-            onMouseLeave={e => e.currentTarget.style.background='transparent'}
           >
-            Limpar Cena
+            {/* Estado: tem SCRIPT — mostra opções de script, sem cena */}
+            {hasScript && (
+              <>
+                <div
+                  onClick={async () => { await window.vp.editPageScript(currentPageId, ck); setContextMenu(null); }}
+                  style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#383838'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                >
+                  Editar Script
+                </div>
+                <div
+                  onClick={() => handleClearPageScript(ck)}
+                  style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#ff8888' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#383838'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                >
+                  Remover Script
+                </div>
+              </>
+            )}
+
+            {/* Estado: tem CENA — mostra opções de cena, sem script */}
+            {!hasScript && hasScene && (
+              <>
+                <div
+                  onClick={openSaveModal}
+                  style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#383838'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                >
+                  Salvar Cena...
+                </div>
+                <div
+                  onClick={() => { setSceneMoveModal({ sourceKey: ck }); setContextMenu(null); }}
+                  style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#383838'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                >
+                  Mover para...
+                </div>
+                <div
+                  onClick={handleClearScene}
+                  style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#383838'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                >
+                  Limpar Cena
+                </div>
+              </>
+            )}
+
+            {/* Estado: VAZIA — salvar cena e criar script */}
+            {!hasScript && !hasScene && (
+              <>
+                <div
+                  onClick={openSaveModal}
+                  style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#383838'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                >
+                  Salvar Cena...
+                </div>
+                <div
+                  onClick={() => { setSceneScriptModal({ sceneKey: ck }); setSceneScriptName(''); setContextMenu(null); }}
+                  style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+                  onMouseEnter={e => e.currentTarget.style.background='#383838'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                >
+                  Criar Script
+                </div>
+                <div
+                  style={{ padding:'8px 14px', fontSize:12, cursor:'not-allowed', color:'#555' }}
+                >
+                  Mover para...
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {saveModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
@@ -1108,6 +1286,57 @@ export default function Main({ onOpenFixtures }) {
               <button onClick={handleConfirmSave} style={{ height:28, padding:'4px 10px', borderRadius:0, cursor:'pointer', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, background:'#000000', color:'#ffffff', border:'1px solid #b7dede', outline:'none', boxShadow:'none' }}>
                 Confirmar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL MOVER CENA */}
+      {sceneMoveModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
+          <div style={{ background:'#26363c', border:'1px solid #8db8b8', borderRadius:0, width:380, fontFamily:'Arial, Helvetica, sans-serif', color:'#ffffff', boxShadow:'0 4px 12px rgba(0,0,0,.65)' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'6px 8px', background:'#24343a', borderBottom:'1px solid #8db8b8' }}>
+              <span style={{ fontSize:13, fontWeight:700 }}>Mover cena {sceneMoveModal.sourceKey} para...</span>
+              <button onClick={() => setSceneMoveModal(null)} style={{ background:'transparent', border:'none', outline:'none', color:'#ffffff', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
+            </div>
+            <div style={{ padding:12, display:'flex', flexWrap:'wrap', gap:8 }}>
+              {SCENE_KEYS.map(destKey => {
+                const isSelf = destKey === sceneMoveModal.sourceKey;
+                const destScene = scenes[destKey];
+                return (
+                  <button
+                    key={destKey}
+                    disabled={isSelf}
+                    onClick={() => {
+                      if (isSelf) return;
+                      const sourceScene = scenes[sceneMoveModal.sourceKey];
+                      updateScene(currentPageId, destKey, { ...sourceScene });
+                      updateScene(currentPageId, sceneMoveModal.sourceKey, { name:'', color:'', channels:{} });
+                      setActiveScenes(prev => {
+                        const next = prev.filter(k => k !== sceneMoveModal.sourceKey);
+                        if (prev.includes(sceneMoveModal.sourceKey) && !next.includes(destKey)) next.push(destKey);
+                        return next;
+                      });
+                      setSceneMoveModal(null);
+                    }}
+                    style={{
+                      width:60, minHeight:48, padding:'6px 4px', borderRadius:0,
+                      fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700,
+                      background: isSelf ? '#1a2a2f' : destScene ? '#1a2a2f' : '#000000',
+                      border: isSelf ? '1px solid #5f8588' : destScene ? '1px solid #b7dede' : '1px solid #5f8588',
+                      color: isSelf ? '#5f8588' : '#ffffff',
+                      cursor: isSelf ? 'default' : 'pointer',
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
+                    }}
+                  >
+                    <span>{destKey}</span>
+                    {destScene && <span style={{ fontSize:8, color:'#c8dddd', overflow:'hidden', maxWidth:54, textAlign:'center', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{destScene.name}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ padding:'8px 14px', borderTop:'1px solid #8db8b8', background:'#24343a', display:'flex', justifyContent:'flex-end' }}>
+              <button onClick={() => setSceneMoveModal(null)} style={{ height:28, padding:'4px 10px', borderRadius:0, cursor:'pointer', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, background:'#000000', color:'#ffffff', border:'1px solid #8db8b8', outline:'none', boxShadow:'none' }}>Cancelar</button>
             </div>
           </div>
         </div>
@@ -1163,6 +1392,48 @@ export default function Main({ onOpenFixtures }) {
             </div>
             <div style={{ padding:'8px 14px', borderTop:'1px solid #383838', display:'flex', justifyContent:'flex-end' }}>
               <button onClick={() => setMoveModal(null)} style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CRIAR SCRIPT DE CENA */}
+      {sceneScriptModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
+          <div style={{ background:'#26363c', border:'1px solid #8db8b8', borderRadius:0, width:340, fontFamily:'Arial, Helvetica, sans-serif', color:'#ffffff', boxShadow:'0 4px 12px rgba(0,0,0,.65)' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'6px 8px', background:'#24343a', borderBottom:'1px solid #8db8b8' }}>
+              <span style={{ fontSize:13, fontWeight:700 }}>Criar Script — Tecla {sceneScriptModal.sceneKey}</span>
+              <button onClick={() => { setSceneScriptModal(null); setSceneScriptName(''); }} style={{ background:'transparent', border:'none', outline:'none', color:'#ffffff', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
+            </div>
+            <div style={{ padding:12, display:'flex', flexDirection:'column', gap:8, background:'#26363c' }}>
+              {scenes[sceneScriptModal.sceneKey] && Object.keys(scenes[sceneScriptModal.sceneKey].channels||{}).length > 0 && (
+                <div style={{ fontSize:11, color:'#ffaa44', padding:'6px 8px', background:'rgba(255,170,68,.1)', border:'1px solid #ffaa44', borderRadius:0 }}>
+                  ⚠ A cena existente nesta tecla será removida ao criar o script.
+                </div>
+              )}
+              <div>
+                <div style={{ fontSize:11, color:'#c8dddd', marginBottom:4 }}>Nome do script</div>
+                <input
+                  autoFocus
+                  value={sceneScriptName}
+                  onChange={e => setSceneScriptName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreatePageScript(); }}
+                  placeholder="Nome do script..."
+                  style={{ width:'100%', height:28, fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, color:'#ffffff', background:'#000000', padding:'4px 6px', border:'1px solid #5f8588', borderRadius:0, outline:'none', boxSizing:'border-box' }}
+                />
+              </div>
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:8, background:'#24343a', borderTop:'1px solid #8db8b8' }}>
+              <button onClick={() => { setSceneScriptModal(null); setSceneScriptName(''); }} style={{ height:28, padding:'4px 10px', borderRadius:0, cursor:'pointer', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, background:'#000000', color:'#ffffff', border:'1px solid #8db8b8', outline:'none', boxShadow:'none' }}>
+                Cancelar
+              </button>
+              <button
+                onClick={handleCreatePageScript}
+                disabled={!sceneScriptName.trim()}
+                style={{ height:28, padding:'4px 10px', borderRadius:0, cursor: sceneScriptName.trim() ? 'pointer' : 'default', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, background: sceneScriptName.trim() ? '#000000' : '#1a2a2f', color: sceneScriptName.trim() ? '#ffffff' : '#5f8588', border:'1px solid #b7dede', outline:'none', boxShadow:'none' }}
+              >
+                Criar e Abrir
+              </button>
             </div>
           </div>
         </div>

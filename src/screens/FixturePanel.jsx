@@ -64,11 +64,15 @@ export default function FixturePanel({ onClose }) {
   }, [editorFixtureId, onClose]);
 
   function handleNew() {
-    const id = `fixture_${Date.now()}`;
+    const id = `fixture_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const nextStart = fixtures.reduce((max, f) => {
+      const end = (f.startChannel || 1) + (f.channelCount || 1);
+      return end > max ? end : max;
+    }, 1);
     addFixture({
       id,
       name: 'Novo Aparelho',
-      startChannel: 1,
+      startChannel: nextStart,
       channelCount: 1,
       channels: ['Canal 1'],
     });
@@ -197,7 +201,8 @@ export default function FixturePanel({ onClose }) {
 
         <div style={{ width:170, minWidth:170, maxWidth:170, background:'#24343a', color:'#ffffff', borderLeft:'1px solid #8db8b8', display:'flex', flexDirection:'column', padding:6, gap:4, overflow:'hidden', fontFamily:'Arial, Helvetica, sans-serif', boxSizing:'border-box' }}>
           <SideButton disabled>Novo aparelho/localizar canais</SideButton>
-          <SideButton onClick={handleNew}>Novo aparelho...</SideButton>
+          <SideButton onClick={handleNew}>Criar novo aparelho (Manual)</SideButton>
+          <SideButton onClick={() => window.vp.openFixtureTemplate()}>Criar novo aparelho (AI)</SideButton>
           <SideButton onClick={selectedId ? () => setEditorFixtureId(selectedId) : undefined} disabled={!selectedId}>Editar aparelho...</SideButton>
           <SideButton onClick={handleRemove} disabled={!selectedId}>Remover aparelho</SideButton>
           <SideButton onClick={handleDuplicate} disabled={!selectedId}>Duplicar aparelho</SideButton>

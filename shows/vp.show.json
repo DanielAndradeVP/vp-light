@@ -37,9 +37,40 @@
             "5": 255,
             "7": 255
           }
+        },
+        "S": {
+          "name": "verde",
+          "color": "#00aa00",
+          "channels": {
+            "1": 255,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6": 255,
+            "7": 0,
+            "8": 0
+          }
+        },
+        "D": {
+          "name": "azul",
+          "color": "#0000cc",
+          "channels": {
+            "1": 255,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6": 0,
+            "7": 255,
+            "8": 0
+          }
         }
       }
     }
+  },
+  "page_scripts": {
+    "1": {}
   },
   "scripts": {
     "F1": {
@@ -59,12 +90,8 @@
       "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js"
     },
     "F5": {
-      "name": "vermelho-vivo",
-      "file": "C:\\vp-light\\scripts\\vermelho-vivo.js"
-    },
-    "F6": {
-      "name": "louvorzao-branco-fogo",
-      "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js"
+      "name": "rgb-loop",
+      "file": "C:\\vp-light\\scripts\\rgb-loop.js"
     }
   }
 }

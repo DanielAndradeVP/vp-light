@@ -11,6 +11,56 @@ let currentShow = null;
 let currentShowPath = null;
 
 /**
+ * Valida o conjunto de fixtures antes de aceitá-lo no sistema.
+ * Roda em qualquer caminho que adicione/atualize fixture (save completo ou,
+ * futuramente, IPC de fixture individual). Lança Error descritivo no 1º problema.
+ *
+ * Regras:
+ *  - channelCount deve bater com o tamanho do array channels;
+ *  - startChannel deve ser inteiro >= 1 e startChannel + channelCount - 1 <= 512;
+ *  - a faixa de canais não pode sobrepor outro fixture já registrado.
+ *
+ * @param {Array} fixtures
+ * @returns {true}
+ */
+function validateFixtures(fixtures) {
+  if (!Array.isArray(fixtures)) {
+    throw new Error('Fixtures inválido: "fixtures" deve ser um array.');
+  }
+  const ranges = []; // { name, start, end }
+  for (const fx of fixtures) {
+    const label = (fx && (fx.name || fx.id)) || '(sem id)';
+
+    if (!fx || !Array.isArray(fx.channels)) {
+      throw new Error(`Fixture "${label}": campo "channels" deve ser um array.`);
+    }
+    const count = Number(fx.channelCount);
+    if (!Number.isInteger(count) || count !== fx.channels.length) {
+      throw new Error(
+        `Fixture "${label}": channelCount (${fx.channelCount}) não bate com o número de canais (${fx.channels.length}).`
+      );
+    }
+    const start = Number(fx.startChannel);
+    if (!Number.isInteger(start) || start < 1) {
+      throw new Error(`Fixture "${label}": startChannel (${fx.startChannel}) deve ser um inteiro >= 1.`);
+    }
+    const end = start + count - 1;
+    if (end > 512) {
+      throw new Error(`Fixture "${label}": ocupa os canais ${start}–${end}, ultrapassando o limite de 512.`);
+    }
+    for (const r of ranges) {
+      if (start <= r.end && end >= r.start) {
+        throw new Error(
+          `Fixture "${label}" (canais ${start}–${end}) sobrepõe "${r.name}" (canais ${r.start}–${r.end}).`
+        );
+      }
+    }
+    ranges.push({ name: label, start, end });
+  }
+  return true;
+}
+
+/**
  * Carrega um arquivo .show.json do disco.
  * @param {string} filePath  Caminho absoluto para o .show.json
  * @returns {Object} O show carregado
@@ -38,6 +88,8 @@ function loadShow(filePath) {
  * @returns {boolean} true se salvou com sucesso
  */
 function saveShow(showData) {
+  // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
+  validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) {
     // Fallback defensivo: se showData não trouxer scripts, preserva os do currentShow.
     // Caso normal: main.js já injeta scriptMeta antes de chamar saveShow.
@@ -61,6 +113,8 @@ function saveShow(showData) {
  * Salva o show em um novo caminho (Salvar Como).
  */
 function saveShowAs(filePath, showData) {
+  // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
+  validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) currentShow = showData;
   if (!currentShow) throw new Error('Nenhum show carregado para salvar');
   const json = JSON.stringify(currentShow, null, 2);
@@ -93,4 +147,4 @@ function updateScene(pageId, sceneKey, sceneData) {
   currentShow.pages[pageId].scenes[sceneKey] = sceneData;
 }
 
-module.exports = { loadShow, saveShow, saveShowAs, getShow, updateScene };
+module.exports = { loadShow, saveShow, saveShowAs, getShow, updateScene, validateFixtures };

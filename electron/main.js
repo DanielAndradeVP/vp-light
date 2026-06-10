@@ -232,7 +232,7 @@ ipcMain.handle('show:load', async (_, filePath) => {
     }
 
     const data = show.loadShow(targetPath);
-    loadScriptMeta();
+    loadScriptMeta(); loadPageScriptMeta();
     return { ok: true, show: data, path: targetPath };
   } catch (err) {
     console.error('[main] show:load error:', err.message);
@@ -244,32 +244,78 @@ ipcMain.handle('show:save', (_, showData) => {
   try {
     const currentShow = show.getShow();
 
-    console.log('[show:save] showData recebido:', JSON.stringify({ fixtures: showData.fixtures?.length, pages: Object.keys(showData.pages || {}), scripts: showData.scripts }, null, 2));
-    console.log('[show:save] scriptMeta atual:', JSON.stringify(scriptMeta, null, 2));
+    // ── LOG 1: o que chegou do renderer ──────────────────────────────────────
+    console.log('[show:save] ── INÍCIO SAVE ──');
+    console.log('[show:save] renderer enviou:',
+      'fixtures:', showData.fixtures?.length,
+      '| páginas:', Object.keys(showData.pages || {}),
+      '| cenas por página:', Object.fromEntries(
+        Object.entries(showData.pages || {}).map(([k, v]) => [k, Object.keys(v.scenes || {})])
+      ),
+      '| scripts:', Object.keys(showData.scripts || {})
+    );
+    console.log('[show:save] scriptMeta no main:', Object.keys(scriptMeta));
+    console.log('[show:save] currentShow no disco:',
+      'fixtures:', currentShow?.fixtures?.length,
+      '| páginas:', Object.keys(currentShow?.pages || {}),
+      '| scripts:', Object.keys(currentShow?.scripts || {})
+    );
 
     // Scripts: main process é fonte da verdade — scriptMeta sobrescreve tudo.
-    // Base começa com o que está no disco, depois aplica o que o renderer trouxe,
-    // depois sobrescreve com scriptMeta (o que o main process realmente conhece).
-    const mergedScripts = {
-      ...(currentShow?.scripts || {}),
-      ...(showData.scripts   || {}),
-    };
+    const mergedScripts = {};
+    // 1. base do disco
+    for (const [k, v] of Object.entries(currentShow?.scripts || {})) mergedScripts[k] = v;
+    // 2. o que o renderer mandou (pode ter sido modificado via sync-scripts)
+    for (const [k, v] of Object.entries(showData.scripts || {})) mergedScripts[k] = v;
+    // 3. scriptMeta do main vence — é a fonte de verdade em runtime
     for (const [fkey, meta] of Object.entries(scriptMeta)) {
       mergedScripts[fkey] = { name: meta.name, file: meta.file };
     }
 
-    // Páginas: renderer é fonte da verdade para cenas; preserva páginas do
-    // currentShow que o renderer não conhece (ex: criadas fora desta sessão).
+    // Páginas: renderer é fonte da verdade.
     const mergedPages = { ...(currentShow?.pages || {}), ...showData.pages };
 
-    const merged = { ...showData, scripts: mergedScripts, pages: mergedPages };
-    console.log('[show:save] objeto final para disco:', JSON.stringify({ fixtures: merged.fixtures?.length, pages: Object.keys(merged.pages || {}), scripts: merged.scripts }, null, 2));
+    // page_scripts: pageScriptMeta do main vence (fonte de verdade em runtime).
+    const mergedPageScripts = {};
+    for (const [pgId, pgData] of Object.entries(currentShow?.page_scripts || {})) {
+      mergedPageScripts[pgId] = { ...pgData };
+    }
+    for (const [pgId, pgData] of Object.entries(showData.page_scripts || {})) {
+      if (!mergedPageScripts[pgId]) mergedPageScripts[pgId] = {};
+      Object.assign(mergedPageScripts[pgId], pgData);
+    }
+    for (const [pgId, pgData] of Object.entries(pageScriptMeta)) {
+      if (!mergedPageScripts[pgId]) mergedPageScripts[pgId] = {};
+      for (const [sceneKey, meta] of Object.entries(pgData)) {
+        mergedPageScripts[pgId][sceneKey] = { name: meta.name, file: meta.file };
+      }
+    }
+
+    const merged = {
+      ...showData,
+      scripts:      mergedScripts,
+      pages:        mergedPages,
+      page_scripts: mergedPageScripts,
+    };
+
+    // ── LOG 2: o que vai para o disco ────────────────────────────────────────
+    console.log('[show:save] gravando no disco:',
+      'fixtures:', merged.fixtures?.length,
+      '| páginas:', Object.keys(merged.pages),
+      '| cenas por página:', Object.fromEntries(
+        Object.entries(merged.pages).map(([k, v]) => [k, Object.keys(v.scenes || {})])
+      ),
+      '| scripts:', Object.keys(merged.scripts)
+    );
 
     show.saveShow(merged);
+
+    // ── LOG 3: confirmação ────────────────────────────────────────────────────
+    console.log('[show:save] ✓ salvo com sucesso');
     return { ok: true, message: 'Salvo com sucesso' };
   } catch (err) {
-    console.error('[main] show:save error:', err.message);
-    return { ok: false, error: err.message };
+    console.error('[show:save] ✗ ERRO:', err.message);
+    return { ok: false, error: err.message, message: `Erro ao salvar: ${err.message}` };
   }
 });
 
@@ -304,6 +350,54 @@ ipcMain.handle('show:updateScene', (_, pageId, sceneKey, sceneData) => {
 const runningScripts = {}; // { [fkey]: { interval, context } }
 const scriptMeta = {};     // { [fkey]: { name, file } }
 
+// ─── PAGE SCRIPTS (teclas de cena) ──────────────────────────────────────────
+const pageScriptMeta    = {}; // { [pageId]: { [sceneKey]: { name, file } } }
+const runningPageScripts = {}; // flat key `${pageId}:${sceneKey}` → { interval, context }
+
+function psKey(pageId, sceneKey) { return `${pageId}:${sceneKey}`; }
+
+function stopRunningPageScript(pageId, sceneKey, reason) {
+  const k = psKey(pageId, sceneKey);
+  const running = runningPageScripts[k];
+  if (!running) return false;
+  const { interval, context } = running;
+  clearInterval(interval);
+  if (typeof context.OnTerminate === 'function') {
+    try { context.OnTerminate(); } catch (e) {
+      console.error(`[page_script] OnTerminate error (${reason}) (${k}):`, e.message);
+    }
+  }
+  delete runningPageScripts[k];
+  return true;
+}
+
+function loadPageScriptMeta() {
+  const current = show.getShow();
+  if (!current?.page_scripts) return;
+  for (const [pageId, pageData] of Object.entries(current.page_scripts)) {
+    if (!pageScriptMeta[pageId]) pageScriptMeta[pageId] = {};
+    for (const [sceneKey, meta] of Object.entries(pageData)) {
+      if (fs.existsSync(meta.file)) {
+        pageScriptMeta[pageId][sceneKey] = meta;
+      }
+    }
+  }
+}
+
+function savePageScriptMeta() {
+  const current = show.getShow();
+  if (!current) return;
+  const pageScripts = {};
+  for (const [pageId, pageData] of Object.entries(pageScriptMeta)) {
+    pageScripts[pageId] = {};
+    for (const [sceneKey, meta] of Object.entries(pageData)) {
+      pageScripts[pageId][sceneKey] = { name: meta.name, file: meta.file };
+    }
+  }
+  current.page_scripts = pageScripts;
+  show.saveShow(current);
+}
+
 function stopRunningScript(fkey, reason) {
   const running = runningScripts[fkey];
   if (!running) return false;
@@ -327,6 +421,10 @@ function stopAllRunningScripts(reason) {
   for (const fkey of Object.keys(runningScripts)) {
     stopRunningScript(fkey, reason);
   }
+  for (const k of Object.keys(runningPageScripts)) {
+    const colonIdx = k.indexOf(':');
+    stopRunningPageScript(k.slice(0, colonIdx), k.slice(colonIdx + 1), reason);
+  }
 }
 
 function saveScriptMeta() {
@@ -347,6 +445,26 @@ function loadScriptMeta() {
       scriptMeta[fkey] = meta;
     }
   }
+}
+
+// Normaliza um rótulo de canal para comparação: minúsculo, sem acento, sem
+// espaços nas pontas. Alinha com o padrão de aliases do sistema (ASCII).
+function normalizeAlias(label) {
+  return String(label ?? '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim().toLowerCase();
+}
+
+// Resolve o canal DMX real (1-based) de um alias dentro de um fixture do show
+// carregado em memória. Ex.: getFixtureChannel("fixture_123", "strobo") → 2.
+// Retorna null se o fixture não existir ou o alias não estiver mapeado.
+function getFixtureChannel(fixtureId, alias) {
+  const current = show.getShow();
+  const fixture = current?.fixtures?.find(f => f.id === fixtureId);
+  if (!fixture || !Array.isArray(fixture.channels)) return null;
+  const target = normalizeAlias(alias);
+  const index = fixture.channels.findIndex(ch => normalizeAlias(ch) === target);
+  return index === -1 ? null : fixture.startChannel + index;
 }
 
 ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
@@ -407,14 +525,16 @@ ipcMain.handle('script:toggle', (_, fkey) => {
     if (ch in activeSceneChannels) return; // canal bloqueado por cena ativa
     universe.setChannel(ch, val);
   };
+  // getChannel: resolve o canal real de um alias do fixture (ex.: getChannel(id, "strobo")).
+  const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
   try {
-    const fn = new Function('SetChannel', 'ctx', `
+    const fn = new Function('SetChannel', 'getChannel', 'ctx', `
       ${code}
       ctx.OnStart = typeof OnStart === 'function' ? OnStart : null;
       ctx.OnExecute = typeof OnExecute === 'function' ? OnExecute : null;
       ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
     `);
-    fn(SetChannel, ctx);
+    fn(SetChannel, getChannel, ctx);
   } catch (e) {
     return { ok: false, error: `Erro ao compilar: ${e.message}` };
   }
@@ -459,32 +579,173 @@ ipcMain.handle('script:getAll', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// IPC HANDLERS — PAGE SCRIPTS
+// ─────────────────────────────────────────────────────────────
+
+const SCRIPT_TEMPLATE_BODY = [
+  'function OnStart() {',
+  '  // inicialização',
+  '}',
+  '',
+  'function OnExecute() {',
+  '  // chamado a cada 40ms',
+  '  // SetChannel(canal, valor)',
+  '}',
+  '',
+  'function OnTerminate() {',
+  '  // limpeza ao desativar',
+  '}',
+].join('\n');
+
+ipcMain.handle('page_script:create', async (_, pageId, sceneKey, name) => {
+  const file = path.join(SCRIPTS_DIR, `${name}.js`);
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, SCRIPT_TEMPLATE_BODY, 'utf-8');
+  }
+  if (!pageScriptMeta[pageId]) pageScriptMeta[pageId] = {};
+  pageScriptMeta[pageId][sceneKey] = { name, file };
+  savePageScriptMeta();
+  await openScriptInVSCode(file);
+  return { ok: true, name, file };
+});
+
+ipcMain.handle('page_script:edit', async (_, pageId, sceneKey) => {
+  const meta = pageScriptMeta[pageId]?.[sceneKey];
+  if (!meta) return { ok: false, error: 'Nenhum script nesta tecla' };
+  return openScriptInVSCode(meta.file);
+});
+
+ipcMain.handle('page_script:clear', (_, pageId, sceneKey) => {
+  stopRunningPageScript(pageId, sceneKey, 'limpar');
+  if (pageScriptMeta[pageId]) delete pageScriptMeta[pageId][sceneKey];
+  savePageScriptMeta();
+  return { ok: true };
+});
+
+ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
+  const k = psKey(pageId, sceneKey);
+  if (runningPageScripts[k]) {
+    stopRunningPageScript(pageId, sceneKey, 'toggle');
+    return { ok: true, running: false };
+  }
+  const meta = pageScriptMeta[pageId]?.[sceneKey];
+  if (!meta) return { ok: false, error: 'Nenhum script nesta tecla' };
+  let code;
+  try { code = fs.readFileSync(meta.file, 'utf-8'); }
+  catch (e) { return { ok: false, error: 'Arquivo nao encontrado' }; }
+  const ctx = {};
+  const SetChannel = (ch, val) => {
+    if (ch in activeSceneChannels) return;
+    universe.setChannel(ch, val);
+  };
+  const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
+  try {
+    const fn = new Function('SetChannel', 'getChannel', 'ctx', `
+      ${code}
+      ctx.OnStart     = typeof OnStart     === 'function' ? OnStart     : null;
+      ctx.OnExecute   = typeof OnExecute   === 'function' ? OnExecute   : null;
+      ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
+    `);
+    fn(SetChannel, getChannel, ctx);
+  } catch (e) { return { ok: false, error: `Erro ao compilar: ${e.message}` }; }
+  if (typeof ctx.OnStart === 'function') { try { ctx.OnStart(); } catch (e) {} }
+  const interval = setInterval(() => {
+    if (typeof ctx.OnExecute === 'function') {
+      try { ctx.OnExecute(); } catch (e) {
+        clearInterval(interval);
+        if (typeof ctx.OnTerminate === 'function') { try { ctx.OnTerminate(); } catch (te) {} }
+        delete runningPageScripts[k];
+        console.error(`[page_script] script parado (${k}):`, e.message);
+      }
+    }
+  }, 40);
+  runningPageScripts[k] = { interval, context: ctx };
+  return { ok: true, running: true };
+});
+
+ipcMain.handle('page_script:getAll', (_, pageId) => {
+  const pageMeta = pageScriptMeta[pageId] || {};
+  const result = {};
+  for (const [sceneKey, meta] of Object.entries(pageMeta)) {
+    result[sceneKey] = { ...meta, running: !!runningPageScripts[psKey(pageId, sceneKey)] };
+  }
+  return result;
+});
+
+// ─────────────────────────────────────────────────────────────
+// IPC HANDLERS — FIXTURES
+// ─────────────────────────────────────────────────────────────
+
+const FIXTURE_TEMPLATE_PATH = path.join(__dirname, '..', 'shows', 'fixture_template.json');
+
+const FIXTURE_TEMPLATE_DEFAULT = JSON.stringify({
+  id: 'fixture_novo',
+  name: 'Novo Aparelho',
+  manufacturer: '',
+  model: '',
+  startChannel: 1,
+  channelCount: 8,
+  channels: ['Dimmer', 'Red', 'Green', 'Blue', 'White', 'Strobe', 'Mode', 'Speed'],
+  posX: 10,
+  posY: 10,
+}, null, 2);
+
+ipcMain.handle('fixture:openTemplate', async () => {
+  try {
+    if (!fs.existsSync(FIXTURE_TEMPLATE_PATH)) {
+      fs.writeFileSync(FIXTURE_TEMPLATE_PATH, FIXTURE_TEMPLATE_DEFAULT, 'utf-8');
+      console.log('[fixture] template criado em:', FIXTURE_TEMPLATE_PATH);
+    }
+    await openScriptInVSCode(FIXTURE_TEMPLATE_PATH);
+    return { ok: true, file: FIXTURE_TEMPLATE_PATH };
+  } catch (err) {
+    console.error('[fixture:openTemplate] erro:', err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
 // INICIALIZAÇÃO
 // ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
   createWindow();
 
-  // Carrega show padrão se existir
   if (fs.existsSync(DEFAULT_SHOW)) {
     try {
       show.loadShow(DEFAULT_SHOW);
-      console.log('[main] show padrão carregado');
-      loadScriptMeta();
+      console.log('[main] show padrao carregado');
+      loadScriptMeta(); loadPageScriptMeta();
+      console.log('[main] scripts carregados:', Object.keys(scriptMeta));
+    } catch (e) {
+      console.warn('[main] falha ao carregar show padrao:', e.message);
+    }
+  }
+
+  engine.start();
+  console.log('[main] engine DMX iniciado');
+});
+
+app.on('window-all-closed', () => {
+  engine.stop();
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (!mainWindow) createWindow();
+});
+eta();
       console.log('[main] scripts carregados:', Object.keys(scriptMeta));
     } catch (e) {
       console.warn('[main] falha ao carregar show padrão:', e.message);
     }
   }
 
-  // Inicia engine DMX imediatamente
   engine.start();
   console.log('[main] engine DMX iniciado');
 });
 
 app.on('window-all-closed', () => {
-  // Encerra todos os scripts antes de parar o engine
-  stopAllRunningScripts('shutdown');
   engine.stop();
   if (process.platform !== 'darwin') app.quit();
 });

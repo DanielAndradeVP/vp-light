@@ -26,6 +26,7 @@ export const theme = {
     focus: '#8db8b8',
     selection: '#4e6b73',
     gridLine: '#b7c7c9',
+    gridMesh: 'rgba(255,255,255,0.12)',
     primaryOverlay: 'rgba(141,184,184,.18)',
     accentOverlay: 'rgba(0,208,0,.16)',
     warnOverlay: 'rgba(255,51,51,.18)',

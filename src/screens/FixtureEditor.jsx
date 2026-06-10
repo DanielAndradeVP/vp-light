@@ -46,18 +46,12 @@ export default function FixtureEditor({ fixtureId, onClose }) {
   }, [onClose]);
 
   function handleConfirm() {
-    const updatedFixture = {
+    updateFixture(fixtureId, {
       name,
       startChannel: Number(startChannel),
       channelCount: Number(channelCount),
       channels,
-    };
-    updateFixture(fixtureId, updatedFixture);
-    const updatedShow = {
-      ...show,
-      fixtures: show.fixtures.map(f => f.id === fixtureId ? { ...f, ...updatedFixture } : f),
-    };
-    window.vp.saveShow(updatedShow);
+    });
     onClose();
   }
 

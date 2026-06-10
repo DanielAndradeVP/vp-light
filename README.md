@@ -144,24 +144,21 @@ function OnTerminate(){ } // chamado ao desativar ou blackout
 
 Para criar: clique direito no botão F-key → Criar Script → define o nome → abre no VS Code.
 Para ativar/desativar: clique esquerdo no botão F-key.
-Blackout também desativa qualquer script em execução e chama `OnTerminate` nos scripts ativos.
 
 ---
 
 ## Agentes de IA
 
-Skills ficam em `.agents/skills/` (pastas com `SKILL.md`) e servem tarefas específicas. Principais:
+Skills ficam em `skills/` (pastas com `SKILL.md`) e servem tarefas específicas. Principais:
 
 - `desenvolvedor-backend-vplight`: backend/engine, Art‑Net, IPC, scripts de efeito.
 - `desenvolvedor-frontend-vplight`: UI, telas, tokens do `src/theme.js` e consistência visual.
-- `engenheiro-de-normalizacao-vplight`: normalização de fixtures e dados de aparelho.
-- `gerador-de-prompts-vplight`: gera prompts formatados para o CoWork.
-- `create-skill`: cria e documenta novas skills/fluxos de agente.
+- `gerador-de-prompts-vplight`: gera prompts formatados para o CoWork (geração de mudanças).
 - `sync-skills-projetct-vplight`: audita e valida skills contra o `README_SKILL.md`.
 - `sync-system`: sincroniza `README_SKILL.md` e `README.md` a partir de mudanças no código.
 
 Uso rápido:
-1. Leia `.agents/skills/<nome>/SKILL.md` para entender o propósito da skill.
+1. Leia `skills/<nome>/SKILL.md` para entender o propósito da skill.
 2. Abra o chat do agente no VS Code e invoque a skill pelo nome.
 3. Para gerar scripts, cole `shows/vp.show.json` antes de pedir geração.
 4. Ao alterar equipamentos ou o show, atualize e cole `vp.show.json` antes de usar as skills.

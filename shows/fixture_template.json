@@ -1,0 +1,20 @@
+{
+  "id": "fixture_novo",
+  "name": "Novo Aparelho",
+  "manufacturer": "",
+  "model": "",
+  "startChannel": 1,
+  "channelCount": 8,
+  "channels": [
+    "Dimmer",
+    "Red",
+    "Green",
+    "Blue",
+    "White",
+    "Strobe",
+    "Mode",
+    "Speed"
+  ],
+  "posX": 10,
+  "posY": 10
+}

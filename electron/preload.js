@@ -77,4 +77,14 @@ contextBridge.exposeInMainWorld('vp', {
   clearScript:   (fkey)       => ipcRenderer.invoke('script:clear', fkey),
   toggleScript:  (fkey)       => ipcRenderer.invoke('script:toggle', fkey),
   getAllScripts:  ()           => ipcRenderer.invoke('script:getAll'),
+
+  // ─── PAGE SCRIPTS (teclas de cena com script) ─────────────────────────────
+  createPageScript:  (pageId, sceneKey, name) => ipcRenderer.invoke('page_script:create', pageId, sceneKey, name),
+  editPageScript:    (pageId, sceneKey)       => ipcRenderer.invoke('page_script:edit',   pageId, sceneKey),
+  clearPageScript:   (pageId, sceneKey)       => ipcRenderer.invoke('page_script:clear',  pageId, sceneKey),
+  togglePageScript:  (pageId, sceneKey)       => ipcRenderer.invoke('page_script:toggle', pageId, sceneKey),
+  getAllPageScripts:  (pageId)                 => ipcRenderer.invoke('page_script:getAll', pageId),
+
+  // ─── FIXTURES ─────────────────────────────────────────────────────────────
+  openFixtureTemplate: () => ipcRenderer.invoke('fixture:openTemplate'),
 });
