@@ -10,7 +10,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 
 const universe = require('./engine/universe');
@@ -86,11 +86,26 @@ function openScriptInVSCode(filePath) {
       const command = isCmd ? (process.env.ComSpec || 'cmd.exe') : candidate;
       const args = isCmd ? ['/d', '/s', '/c', `"${candidate}" "${targetFile}"`] : [targetFile];
 
-      execFile(command, args, { windowsHide: true }, err => {
-        if (err) {
-          tryNext(err);
-          return;
-        }
+      if (isCmd) {
+        execFile(command, args, { windowsHide: true }, err => {
+          if (err) {
+            tryNext(err);
+            return;
+          }
+          console.log('[script:edit] script aberto no VSCode:', targetFile);
+          resolve({ ok: true, file: targetFile });
+        });
+        return;
+      }
+
+      const child = spawn(command, args, {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.once('error', err => tryNext(err));
+      child.once('spawn', () => {
+        child.unref();
         console.log('[script:edit] script aberto no VSCode:', targetFile);
         resolve({ ok: true, file: targetFile });
       });
@@ -328,15 +343,15 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
   }
   scriptMeta[fkey] = { name, file };
   saveScriptMeta();
-  if (!options.skipOpenEditor) { execFile('code', [file]); }
+  if (!options.skipOpenEditor) { await openScriptInVSCode(file); }
   return { ok: true, name, file };
 });
 
-ipcMain.handle('script:edit', async (_, fkey) => {
+ipcMain.handle('script:edit', async (_, fkey, filePath) => {
   const meta = scriptMeta[fkey];
+  if (filePath) return openScriptInVSCode(filePath);
   if (!meta) return { ok: false, error: 'Nenhum script neste botão' };
-  execFile('code', [meta.file]);
-  return { ok: true };
+  return openScriptInVSCode(meta.file);
 });
 
 ipcMain.handle('script:clear', (_, fkey) => {

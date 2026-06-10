@@ -769,9 +769,11 @@ export default function Main({ onOpenFixtures }) {
                 fontSize:12,
                 fontWeight:700,
                 lineHeight:1.1,
+                height:36,
                 minHeight:36,
                 padding:'4px 8px',
                 borderRadius:0,
+                boxSizing:'border-box',
                 cursor:'pointer',
                 background:'#000000',
                 border: isRunning ? '3px solid #b7dede' : `1px solid ${script ? '#8db8b8' : '#ffffff'}`,
@@ -924,17 +926,8 @@ export default function Main({ onOpenFixtures }) {
                   <button
                     onClick={async () => {
                       if (!selectedExisting) return;
-                      await window.vp.editScript(createModal.fkey).catch(() =>
-                        window.open(`vscode://file/${selectedExisting.file}`)
-                      );
-                      // Registra o script no fkey sem criar arquivo novo
-                      const result = await window.vp.createScript(createModal.fkey, selectedExisting.name);
-                      if (result.ok) {
-                        setScripts(prev => ({
-                          ...prev,
-                          [createModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, running: false }
-                        }));
-                      }
+                      const result = await window.vp.editScript(createModal.fkey, selectedExisting.file);
+                      if (!result?.ok) console.warn('[vp] editScript falhou:', result?.error);
                     }}
                     disabled={!selectedExisting}
                     style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? 'transparent' : 'rgba(0,0,0,.12)', color: selectedExisting ? theme.colors.primary : theme.colors.textDisabled, border:'none', boxShadow:'none' }}
