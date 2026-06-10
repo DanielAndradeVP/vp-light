@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld('vp', {
    * Zera todos os 512 canais imediatamente.
    */
   blackout: () => ipcRenderer.invoke('dmx:blackout'),
+  restoreState: (channels) => ipcRenderer.invoke('dmx:restoreState', channels),
+  setActiveSceneChannels: (channels) => ipcRenderer.invoke('dmx:setActiveSceneChannels', channels),
+  setActiveScenes: (scenesMap) => ipcRenderer.invoke('dmx:setActiveScenes', scenesMap),
+  getConflicts: () => ipcRenderer.invoke('dmx:getConflicts'),
 
   /**
    * Retorna snapshot do universo atual (apenas canais > 0).
@@ -68,7 +72,7 @@ contextBridge.exposeInMainWorld('vp', {
 
   // ─── SCRIPTS ──────────────────────────────────────────────────────────────
   listScripts:   ()           => ipcRenderer.invoke('script:list'),
-  createScript:  (fkey, name) => ipcRenderer.invoke('script:create', fkey, name),
+  createScript:  (fkey, name, options) => ipcRenderer.invoke('script:create', fkey, name, options),
   editScript:    (fkey)       => ipcRenderer.invoke('script:edit', fkey),
   clearScript:   (fkey)       => ipcRenderer.invoke('script:clear', fkey),
   toggleScript:  (fkey)       => ipcRenderer.invoke('script:toggle', fkey),

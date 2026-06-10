@@ -24,7 +24,7 @@ C:\vp-light\
 │       └── FixtureEditor.jsx→ modal de edição: abas Básico e Descrição
 │
 ├── shows/
-│   └── vida-e-paz.show.json → arquivo de show padrão carregado na inicialização
+│   └── vp.show.json → arquivo de show padrão carregado na inicialização
 │
 ├── index.html       → entry point HTML
 ├── vite.config.js   → configuração do Vite (hot reload, JSX em .js)

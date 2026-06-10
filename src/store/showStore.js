@@ -36,7 +36,7 @@ export function ShowProvider({ children }) {
 
   const saveShow = useCallback(async (data) => {
     const target = data || show;
-    await window.vp.saveShow(target);
+    return await window.vp.saveShow(target);
   }, [show]);
 
   const loadShow = useCallback(async () => {

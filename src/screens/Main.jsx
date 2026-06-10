@@ -2,10 +2,10 @@
  * Main.jsx — Tela principal
  * Mesa de aparelhos + painel direito com faders ao vivo + cenas A-M + páginas
  */
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useShow } from '../store/showStore.js';
 
-const SCENE_KEYS = ['A','B','C','D','E','F','G','H','I','J','K','L','M'];
+const SCENE_KEYS = ['A','S','D','F','G','H','J','K','L','Z','X','C','V'];
 
 const C = {
   bg: '#1a1a1a', surface: '#242424', border: '#383838',
@@ -24,17 +24,48 @@ export default function Main({ onOpenFixtures }) {
   } = useShow();
 
   const [activeScenes, setActiveScenes] = useState([]);
+  const [blackoutActive, setBlackoutActive] = useState(false);
+  const [toast, setToast] = useState(null); // string | null
+
+  async function handleSave() {
+    const result = await saveShow();
+    if (result?.message) {
+      setToast(result.message);
+      setTimeout(() => setToast(null), 2000);
+    }
+  }
+
+  // Resolve o estado do universo DMX a partir das cenas e scripts ativos no momento.
+  // Chama restoreState(merged) se há canais de cena ou scripts rodando, blackout() se nada ativo.
+  // Também sincroniza o mapa de canais bloqueados com o main process.
+  function resolveUniverseState(nextActiveScenes, nextScripts) {
+    const merged = {};
+    nextActiveScenes.forEach(key => {
+      const s = scenes[key];
+      if (s?.channels) {
+        Object.entries(s.channels).forEach(([ch, val]) => {
+          merged[Number(ch)] = Number(val);
+        });
+      }
+    });
+    const anyScriptRunning = Object.values(nextScripts).some(s => s.running);
+    window.vp.setActiveSceneChannels(merged);
+    if (Object.keys(merged).length > 0 || anyScriptRunning) {
+      window.vp.restoreState(merged);
+    } else {
+      window.vp.blackout();
+    }
+    return merged;
+  }
 
   function handleActivateScene(key) {
     const scene = scenes[key];
     setActiveScenes(prev => {
       if (prev.includes(key)) {
-        // desmarcando — zera faders se nenhuma cena ativa sobrar
+        // desmarcando — usa resolveUniverseState para decidir restore vs blackout
         const next = prev.filter(k => k !== key);
-        if (next.length === 0) {
-          setLiveValues({});
-          window.vp.blackout();
-        }
+        const merged = resolveUniverseState(next, scripts);
+        setLiveValues(next.length > 0 ? merged : {});
         return next;
       }
       if (prev.length >= 3) return prev;
@@ -53,13 +84,32 @@ export default function Main({ onOpenFixtures }) {
   }
 
   function handleBlackout() {
-    setActiveScenes([]);
-    window.vp.blackout();
+    if (blackoutActive) {
+      setBlackoutActive(false);
+      if (activeScenes.length > 0) {
+        const merged = {};
+        activeScenes.forEach(key => {
+          const scene = scenes[key];
+          if (scene?.channels) {
+            Object.entries(scene.channels).forEach(([ch, val]) => {
+              merged[Number(ch)] = Number(val);
+            });
+          }
+        });
+        window.vp.restoreState(merged);
+      }
+    } else {
+      setBlackoutActive(true);
+      window.vp.blackout();
+    }
   }
 
   const [liveValues, setLiveValues] = useState({});
   const [testPanelOpen, setTestPanelOpen] = useState(false);
   const [testValues, setTestValues] = useState({});
+  const [conflicts, setConflicts] = useState([]);
+  const [conflictModalOpen, setConflictModalOpen] = useState(false);
+  const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
   const [testPanelPos, setTestPanelPos] = useState({ x: null, y: 56 });
   const [testPanelDrag, setTestPanelDrag] = useState(null); // { offsetX, offsetY }
 
@@ -99,12 +149,15 @@ export default function Main({ onOpenFixtures }) {
   const [selection, setSelection] = useState(null); // { startX, startY, endX, endY }
   const [multiSelected, setMultiSelected] = useState([]);
   const [scripts, setScripts] = useState({});
+  const scriptsRef = useRef(scripts);
+  scriptsRef.current = scripts; // sempre fresco: atualizado na render, antes de qualquer await
   const [scriptMenu, setScriptMenu] = useState(null); // { x, y, fkey }
   const [createModal, setCreateModal] = useState(null); // { fkey }
   const [scriptName, setScriptName] = useState('');
   const [createModalTab, setCreateModalTab] = useState('novo');
   const [existingScripts, setExistingScripts] = useState([]);
   const [selectedExisting, setSelectedExisting] = useState(null);
+  const [moveModal, setMoveModal] = useState(null); // { sourceFkey }
 
   const FKEYS = ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
 
@@ -117,6 +170,53 @@ export default function Main({ onOpenFixtures }) {
     load();
   }, []);
 
+  // Sincroniza canais bloqueados por cenas com o main process sempre que activeScenes muda
+  useEffect(() => {
+    const currentScenes = (pages[currentPage] || {}).scenes || {};
+    const merged = {};
+    activeScenes.forEach(key => {
+      const s = currentScenes[key];
+      if (s?.channels) {
+        Object.entries(s.channels).forEach(([ch, val]) => {
+          if (Number(val) > 0) merged[Number(ch)] = Number(val);
+        });
+      }
+    });
+    window.vp.setActiveSceneChannels(merged);
+
+    // Envia mapa de cenas ativas para detecção de conflito
+    const scenesMap = {};
+    activeScenes.forEach(key => {
+      const s = currentScenes[key];
+      if (s?.channels) {
+        scenesMap[key] = { name: s.name || key, channels: s.channels };
+      }
+    });
+    window.vp.setActiveScenes(scenesMap);
+
+    // Reset acknowledge quando novas cenas são ativadas
+    setConflictAcknowledged(false);
+  }, [activeScenes, currentPage, pages]);
+
+  // Polling de conflitos a cada 100ms — SEMPRE ativo
+  useEffect(() => {
+    let active = true;
+    const interval = setInterval(async () => {
+      if (active) {
+        const conflictsList = await window.vp.getConflicts();
+        if (active) setConflicts(conflictsList || []);
+      }
+    }, 100);
+    return () => { active = false; clearInterval(interval); };
+  }, []);
+
+  // Quando modal fecha, marca como reconhecido
+  useEffect(() => {
+    if (!conflictModalOpen) {
+      setConflictAcknowledged(true);
+    }
+  }, [conflictModalOpen]);
+
   useEffect(() => {
     if (createModalTab !== 'existentes' || !createModal) return;
     window.vp.listScripts().then(r => setExistingScripts(r.ok ? r.files : []));
@@ -128,13 +228,24 @@ export default function Main({ onOpenFixtures }) {
   }
 
   async function handleToggleScript(fkey) {
-    if (!scripts[fkey]) return;
-    const result = await window.vp.toggleScript(fkey);
-    if (result.ok) {
-      setScripts(prev => ({
-        ...prev,
-        [fkey]: { ...prev[fkey], running: result.running }
-      }));
+    let result;
+    try {
+      result = await window.vp.toggleScript(fkey);
+    } catch (e) {
+      console.error('[vp] toggleScript IPC error:', fkey, e);
+      return;
+    }
+    if (!result?.ok) {
+      console.warn('[vp] toggleScript falhou:', fkey, result?.error);
+      return;
+    }
+    setScripts(prev => ({
+      ...prev,
+      [fkey]: { ...(prev[fkey] || {}), running: result.running }
+    }));
+    if (!result.running) {
+      const nextScripts = { ...scriptsRef.current, [fkey]: { ...(scriptsRef.current[fkey] || {}), running: false } };
+      resolveUniverseState(activeScenes, nextScripts);
     }
   }
 
@@ -198,7 +309,7 @@ export default function Main({ onOpenFixtures }) {
   }
 
   useEffect(() => {
-    function handleClick() { setContextMenu(null); }
+    function handleClick() { setContextMenu(null); setScriptMenu(null); }
     window.addEventListener('click', handleClick);
     return () => window.removeEventListener('click', handleClick);
   }, []);
@@ -228,6 +339,7 @@ export default function Main({ onOpenFixtures }) {
   useEffect(() => {
     function handleEsc(e) {
       if (e.key !== 'Escape') return;
+      if (moveModal)   { setMoveModal(null); return; }
       if (saveModal)   { setSaveModal(null); return; }
       if (createModal) { setCreateModal(null); setScriptName(''); return; }
       if (contextMenu) { setContextMenu(null); return; }
@@ -235,7 +347,7 @@ export default function Main({ onOpenFixtures }) {
     }
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [saveModal, createModal, contextMenu, scriptMenu]);
+  }, [moveModal, saveModal, createModal, contextMenu, scriptMenu]);
 
   const pageIds = Object.keys(pages).sort();
   const currentIdx = pageIds.indexOf(currentPage);
@@ -246,7 +358,8 @@ export default function Main({ onOpenFixtures }) {
     const key = e.key.toUpperCase();
     if (SCENE_KEYS.includes(key)) { handleActivateScene(key); return; }
     if (e.code === 'Space') { e.preventDefault(); handleBlackout(); return; }
-  }, [handleActivateScene, handleBlackout]);
+    if (FKEYS.includes(key)) { e.preventDefault(); handleToggleScript(key); return; }
+  }, [handleActivateScene, handleBlackout, handleToggleScript]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKey);
@@ -264,16 +377,29 @@ export default function Main({ onOpenFixtures }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:C.bg, color:C.text, fontFamily:'Segoe UI, system-ui, sans-serif' }}>
+      <style>{`
+        @keyframes blink-border {
+          0%, 100% { box-shadow: 0 0 0 1px #ff4444; }
+          50%       { box-shadow: none; }
+        }
+      `}</style>
 
       {/* TOPO */}
       <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 12px', background:C.surface, borderBottom:`1px solid ${C.border}`, minHeight:40 }}>
         <span style={{ fontWeight:700, fontSize:15, color:C.white, letterSpacing:2, marginRight:8 }}>VP·LIGHT</span>
-        <TopBtn onClick={saveShow}>Salvar</TopBtn>
+        <TopBtn onClick={handleSave}>Salvar</TopBtn>
         <TopBtn onClick={loadShow}>Abrir</TopBtn>
         <TopBtn onClick={onOpenFixtures}>Aparelhos</TopBtn>
         <TopBtn onClick={() => setTestPanelOpen(true)} disabled={!selectedFixture}>Painel de Teste</TopBtn>
         <div style={{ flex:1 }} />
-        <TopBtn onClick={handleBlackout} danger>BLACKOUT</TopBtn>
+        {conflicts.length > 0 && !conflictAcknowledged && (
+          <TopBtn onClick={() => setConflictModalOpen(true)} danger active>
+            ⚠ {conflicts.length} conflito{conflicts.length !== 1 ? 's' : ''}
+          </TopBtn>
+        )}
+        <TopBtn onClick={handleBlackout} danger active={blackoutActive}>
+          {blackoutActive ? 'BLACKOUT ON' : 'BLACKOUT'}
+        </TopBtn>
       </div>
 
       {/* CORPO */}
@@ -443,7 +569,7 @@ export default function Main({ onOpenFixtures }) {
           return (
             <button
               key={fkey}
-              onClick={() => handleToggleScript(fkey)}
+              onClick={(e) => { e.stopPropagation(); handleToggleScript(fkey); }}
               onContextMenu={(e) => handleScriptRightClick(e, fkey)}
               style={{
                 flex:1, padding:'6px 4px', borderRadius:3, cursor:'pointer',
@@ -466,7 +592,7 @@ export default function Main({ onOpenFixtures }) {
           onClick={e => e.stopPropagation()}
           style={{
             position:'fixed',
-            top: Math.min(scriptMenu.y, window.innerHeight - 80),
+            top: scriptMenu.y + 110 > window.innerHeight ? scriptMenu.y - 110 : scriptMenu.y,
             left: Math.min(scriptMenu.x, window.innerWidth - 160),
             background:'#2e2e2e', border:'1px solid #444', borderRadius:4,
             zIndex:1000, minWidth:140, boxShadow:'0 4px 12px rgba(0,0,0,0.5)',
@@ -479,6 +605,14 @@ export default function Main({ onOpenFixtures }) {
             onMouseLeave={e => e.currentTarget.style.background='transparent'}
           >
             {scripts[scriptMenu.fkey] ? 'Editar Script' : 'Criar Script'}
+          </div>
+          <div
+            onClick={() => { setMoveModal({ sourceFkey: scriptMenu.fkey }); setScriptMenu(null); }}
+            style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+            onMouseEnter={e => e.currentTarget.style.background='#383838'}
+            onMouseLeave={e => e.currentTarget.style.background='transparent'}
+          >
+            Mover para...
           </div>
           <div
             onClick={() => scripts[scriptMenu.fkey] ? handleClearScript(scriptMenu.fkey) : setScriptMenu(null)}
@@ -754,18 +888,125 @@ export default function Main({ onOpenFixtures }) {
         </div>
       )}
 
+      {/* MODAL MOVER SCRIPT */}
+      {moveModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
+          <div style={{ background:'#242424', border:'1px solid #444', borderRadius:6, width:380, fontFamily:'Segoe UI, system-ui, sans-serif', color:'#e0e0e0' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838' }}>
+              <span style={{ fontSize:13, fontWeight:600 }}>Mover {moveModal.sourceFkey} para...</span>
+              <button onClick={() => setMoveModal(null)} style={{ background:'none', border:'none', color:'#888', fontSize:18, cursor:'pointer' }}>✕</button>
+            </div>
+            <div style={{ padding:12, display:'flex', flexWrap:'wrap', gap:8 }}>
+              {FKEYS.map(fkey => {
+                const isSelf = fkey === moveModal.sourceFkey;
+                const hasScript = !!scripts[fkey];
+                const disabled = isSelf || hasScript;
+                return (
+                  <button
+                    key={fkey}
+                    disabled={disabled}
+                    onClick={() => {
+                      if (disabled) return;
+                      setScripts(prev => {
+                        const next = { ...prev };
+                        next[fkey] = { ...prev[moveModal.sourceFkey] };
+                        delete next[moveModal.sourceFkey];
+                        return next;
+                      });
+                      window.vp.clearScript(moveModal.sourceFkey).then(() =>
+                        window.vp.createScript(fkey, scripts[moveModal.sourceFkey].name, { skipOpenEditor: true })
+                      );
+                      setMoveModal(null);
+                    }}
+                    style={{
+                      width:60, padding:'8px 4px', borderRadius:3,
+                      background: isSelf ? '#2a3a2a' : disabled ? '#1a1a1a' : '#2e2e2e',
+                      border: `1px solid ${isSelf ? '#4a7a4a' : disabled ? '#2a2a2a' : '#555'}`,
+                      color: isSelf ? '#4afa4a' : disabled ? '#333' : '#e0e0e0',
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                      fontSize:12, display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+                    }}
+                  >
+                    <span>{fkey}</span>
+                    {scripts[fkey] && <span style={{ fontSize:8, color:'#888', overflow:'hidden', maxWidth:56 }}>{scripts[fkey].name}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ padding:'8px 14px', borderTop:'1px solid #383838', display:'flex', justifyContent:'flex-end' }}>
+              <button onClick={() => setMoveModal(null)} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#2e2e2e', color:'#e0e0e0', border:'1px solid #444' }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFLITOS */}
+      {conflictModalOpen && conflicts.length > 0 && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
+          <div style={{ background:'#242424', border:'1px solid #ff4444', borderRadius:6, width:420, maxHeight:'60vh', fontFamily:'Segoe UI, system-ui, sans-serif', color:'#e0e0e0', overflow:'hidden', display:'flex', flexDirection:'column' }}>
+
+            {/* Header */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838', background:'#2a1a1a' }}>
+              <span style={{ fontSize:13, fontWeight:600, color:'#ff6666' }}>⚠ {conflicts.length} Conflito{conflicts.length !== 1 ? 's' : ''}</span>
+              <button onClick={() => setConflictModalOpen(false)} style={{ background:'none', border:'none', color:'#888', fontSize:18, cursor:'pointer', lineHeight:1 }}>✕</button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding:'10px 14px', overflowY:'auto', flex:1 }}>
+              {conflicts.map((conflict, idx) => (
+                <div key={idx} style={{ marginBottom:12, paddingBottom:12, borderBottom: idx < conflicts.length - 1 ? '1px solid #333' : 'none' }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:'#ffaa88', marginBottom:6 }}>
+                    Canal {conflict.channel}
+                  </div>
+                  <div style={{ fontSize:11, color:'#aaa', display:'flex', flexDirection:'column', gap:4 }}>
+                    {conflict.sources.map((src, srcIdx) => (
+                      <div key={srcIdx} style={{ paddingLeft:8, borderLeft:'2px solid #555' }}>
+                        <span style={{ color:'#e0e0e0', fontWeight:500 }}>{src.name}</span>
+                        <span style={{ color:'#666', marginLeft:6 }}>→ {src.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
+              <button onClick={() => setConflictModalOpen(false)} style={{ padding:'5px 16px', borderRadius:3, fontSize:12, cursor:'pointer', background:'#2e2e2e', color:'#e0e0e0', border:'1px solid #444' }}>
+                Ok
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST */}
+      {toast && (
+        <div style={{
+          position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)',
+          background:'#2e2e2e', border:'1px solid #555', borderRadius:4,
+          padding:'8px 20px', fontSize:13, color:'#e0e0e0',
+          boxShadow:'0 4px 12px rgba(0,0,0,0.5)', zIndex:9999,
+          pointerEvents:'none',
+        }}>
+          {toast}
+        </div>
+      )}
+
     </div>
   );
 }
 
-function TopBtn({ onClick, children, danger, disabled }) {
+function TopBtn({ onClick, children, danger, disabled, active }) {
   return (
     <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
       padding:'4px 12px', borderRadius:3, fontSize:12,
       cursor: disabled ? 'not-allowed' : 'pointer',
-      background: disabled ? '#222' : danger ? '#3a2020' : C.btnBg,
-      color: disabled ? '#555' : danger ? '#cc4444' : C.text,
-      border:`1px solid ${disabled ? '#333' : danger ? '#552222' : C.btnBorder}`,
+      background: disabled ? '#222' : active ? '#cc2222' : danger ? '#3a2020' : C.btnBg,
+      color: disabled ? '#555' : active ? '#ffffff' : danger ? '#cc4444' : C.text,
+      border: `1px solid ${disabled ? '#333' : active ? '#ff4444' : danger ? '#552222' : C.btnBorder}`,
+      fontWeight: active ? 700 : 400,
+      animation: active ? 'blink-border 1s step-start infinite' : 'none',
     }}>{children}</button>
   );
 }

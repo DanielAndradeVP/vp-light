@@ -53,6 +53,14 @@
     "F3": {
       "name": "altar-roxo-profundo",
       "file": "C:\\vp-light\\scripts\\altar-roxo-profundo.js"
+    },
+    "F4": {
+      "name": "louvorzao-branco-fogo",
+      "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js"
+    },
+    "F5": {
+      "name": "vermelho-vivo",
+      "file": "C:\\vp-light\\scripts\\vermelho-vivo.js"
     }
   }
 }

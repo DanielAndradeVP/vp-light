@@ -10,7 +10,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const fs = require('fs');
 
 const universe = require('./engine/universe');
@@ -18,7 +18,7 @@ const engine   = require('./engine/engine');
 const show     = require('./show');
 
 const isDev = !app.isPackaged;
-const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vida-e-paz.show.json');
+const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
 
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
 if (!fs.existsSync(SCRIPTS_DIR)) fs.mkdirSync(SCRIPTS_DIR);
@@ -94,8 +94,30 @@ ipcMain.handle('dmx:blackout', () => {
   return { ok: true };
 });
 
+ipcMain.handle('dmx:restoreState', (_, channels) => {
+  universe.applyScene(channels);
+  return { ok: true };
+});
+
 ipcMain.handle('dmx:getUniverse', () => {
   return universe.getUniverseSnapshot();
+});
+
+ipcMain.handle('dmx:setActiveScenes', (_, scenesMap) => {
+  universe.setActiveScenes(scenesMap);
+  return { ok: true };
+});
+
+ipcMain.handle('dmx:getConflicts', () => {
+  return universe.detectConflicts();
+});
+
+// Mapa de canais bloqueados por cenas ativas — atualizado pelo renderer
+let activeSceneChannels = {}; // { [canal]: valor } — scripts não sobrescrevem esses canais
+
+ipcMain.handle('dmx:setActiveSceneChannels', (_, channels) => {
+  activeSceneChannels = channels || {};
+  return { ok: true };
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -127,8 +149,31 @@ ipcMain.handle('show:load', async (_, filePath) => {
 
 ipcMain.handle('show:save', (_, showData) => {
   try {
-    show.saveShow(showData);
-    return { ok: true };
+    const currentShow = show.getShow();
+
+    console.log('[show:save] showData recebido:', JSON.stringify({ fixtures: showData.fixtures?.length, pages: Object.keys(showData.pages || {}), scripts: showData.scripts }, null, 2));
+    console.log('[show:save] scriptMeta atual:', JSON.stringify(scriptMeta, null, 2));
+
+    // Scripts: main process é fonte da verdade — scriptMeta sobrescreve tudo.
+    // Base começa com o que está no disco, depois aplica o que o renderer trouxe,
+    // depois sobrescreve com scriptMeta (o que o main process realmente conhece).
+    const mergedScripts = {
+      ...(currentShow?.scripts || {}),
+      ...(showData.scripts   || {}),
+    };
+    for (const [fkey, meta] of Object.entries(scriptMeta)) {
+      mergedScripts[fkey] = { name: meta.name, file: meta.file };
+    }
+
+    // Páginas: renderer é fonte da verdade para cenas; preserva páginas do
+    // currentShow que o renderer não conhece (ex: criadas fora desta sessão).
+    const mergedPages = { ...(currentShow?.pages || {}), ...showData.pages };
+
+    const merged = { ...showData, scripts: mergedScripts, pages: mergedPages };
+    console.log('[show:save] objeto final para disco:', JSON.stringify({ fixtures: merged.fixtures?.length, pages: Object.keys(merged.pages || {}), scripts: merged.scripts }, null, 2));
+
+    show.saveShow(merged);
+    return { ok: true, message: 'Salvo com sucesso' };
   } catch (err) {
     console.error('[main] show:save error:', err.message);
     return { ok: false, error: err.message };
@@ -186,7 +231,7 @@ function loadScriptMeta() {
   }
 }
 
-ipcMain.handle('script:create', async (_, fkey, name) => {
+ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
   const file = path.join(SCRIPTS_DIR, `${name}.js`);
   if (!fs.existsSync(file)) {
     fs.writeFileSync(file, [
@@ -206,24 +251,26 @@ ipcMain.handle('script:create', async (_, fkey, name) => {
   }
   scriptMeta[fkey] = { name, file };
   saveScriptMeta();
-  exec(`code "${file}"`);
+  if (!options.skipOpenEditor) { execFile('code', [file]); }
   return { ok: true, name, file };
 });
 
 ipcMain.handle('script:edit', async (_, fkey) => {
   const meta = scriptMeta[fkey];
   if (!meta) return { ok: false, error: 'Nenhum script neste botão' };
-  exec(`code "${meta.file}"`);
+  execFile('code', [meta.file]);
   return { ok: true };
 });
 
 ipcMain.handle('script:clear', (_, fkey) => {
   if (runningScripts[fkey]) {
-    try {
-      const { interval, context } = runningScripts[fkey];
-      clearInterval(interval);
-      if (typeof context.OnTerminate === 'function') context.OnTerminate();
-    } catch (e) {}
+    const { interval, context } = runningScripts[fkey];
+    clearInterval(interval);
+    if (typeof context.OnTerminate === 'function') {
+      try { context.OnTerminate(); } catch (e) {
+        console.error(`[script] OnTerminate error ao limpar (${fkey}):`, e.message);
+      }
+    }
     delete runningScripts[fkey];
   }
   delete scriptMeta[fkey];
@@ -252,11 +299,8 @@ ipcMain.handle('script:toggle', (_, fkey) => {
   }
   // Monta contexto de execução do script
   const ctx = {};
-  const sceneChannels = universe.getUniverseSnapshot();
   const SetChannel = (ch, val) => {
-    // Só aplica se o canal não estiver ocupado por uma cena ativa
-    const current = universe.getUniverse()[ch - 1];
-    // Aplica sempre — a prioridade de cena é resolvida no activate
+    if (ch in activeSceneChannels) return; // canal bloqueado por cena ativa
     universe.setChannel(ch, val);
   };
   try {
@@ -277,7 +321,13 @@ ipcMain.handle('script:toggle', (_, fkey) => {
     if (typeof ctx.OnExecute === 'function') {
       try { ctx.OnExecute(); } catch (e) {
         clearInterval(interval);
+        if (typeof ctx.OnTerminate === 'function') {
+          try { ctx.OnTerminate(); } catch (te) {
+            console.error(`[script] OnTerminate error (${fkey}):`, te.message);
+          }
+        }
         delete runningScripts[fkey];
+        console.error(`[script] OnExecute error (${fkey}), script parado:`, e.message);
       }
     }
   }, 40);
@@ -329,6 +379,15 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  // Encerra todos os scripts antes de parar o engine
+  for (const [fkey, { interval, context }] of Object.entries(runningScripts)) {
+    clearInterval(interval);
+    if (typeof context.OnTerminate === 'function') {
+      try { context.OnTerminate(); } catch (e) {
+        console.error(`[script] OnTerminate error no shutdown (${fkey}):`, e.message);
+      }
+    }
+  }
   engine.stop();
   if (process.platform !== 'darwin') app.quit();
 });

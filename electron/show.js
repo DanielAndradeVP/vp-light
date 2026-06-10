@@ -18,6 +18,12 @@ let currentShowPath = null;
 function loadShow(filePath) {
   const raw = fs.readFileSync(filePath, 'utf-8');
   const show = JSON.parse(raw);
+  if (!show || typeof show !== 'object' ||
+      !Array.isArray(show.fixtures) ||
+      typeof show.pages !== 'object' || show.pages === null ||
+      show.version === undefined) {
+    throw new Error(`Arquivo inválido: "${filePath}" não contém version, fixtures e pages obrigatórios`);
+  }
   currentShow = show;
   currentShowPath = filePath;
   console.log(`[show] carregado: ${filePath}`);
@@ -32,12 +38,21 @@ function loadShow(filePath) {
  * @returns {boolean} true se salvou com sucesso
  */
 function saveShow(showData) {
-  if (showData) currentShow = showData;
+  if (showData) {
+    // Fallback defensivo: se showData não trouxer scripts, preserva os do currentShow.
+    // Caso normal: main.js já injeta scriptMeta antes de chamar saveShow.
+    if (currentShow?.scripts && (!showData.scripts || Object.keys(showData.scripts).length === 0)) {
+      showData = { ...showData, scripts: currentShow.scripts };
+    }
+    currentShow = showData;
+  }
   if (!currentShow || !currentShowPath) {
     throw new Error('Nenhum show carregado para salvar');
   }
   const json = JSON.stringify(currentShow, null, 2);
-  fs.writeFileSync(currentShowPath, json, 'utf-8');
+  const tmpPath = currentShowPath + '.tmp';
+  fs.writeFileSync(tmpPath, json, 'utf-8');
+  fs.renameSync(tmpPath, currentShowPath);
   console.log(`[show] salvo: ${currentShowPath}`);
   return true;
 }
@@ -47,8 +62,14 @@ function saveShow(showData) {
  */
 function saveShowAs(filePath, showData) {
   if (showData) currentShow = showData;
-  currentShowPath = filePath;
-  return saveShow();
+  if (!currentShow) throw new Error('Nenhum show carregado para salvar');
+  const json = JSON.stringify(currentShow, null, 2);
+  const tmpPath = filePath + '.tmp';
+  fs.writeFileSync(tmpPath, json, 'utf-8');
+  fs.renameSync(tmpPath, filePath);
+  currentShowPath = filePath; // só atualiza após confirmação do write
+  console.log(`[show] salvo como: ${filePath}`);
+  return true;
 }
 
 /**

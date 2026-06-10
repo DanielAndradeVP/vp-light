@@ -52,7 +52,7 @@ vp-light/
 ├── scripts/
 │   └── *.js           ← scripts de efeito DMX (F1–F12)
 ├── shows/
-│   └── vida-e-paz.show.json ← show padrão carregado na inicialização
+│   └── vp.show.json ← show padrão carregado na inicialização
 ├── .agents/           ← skills dos agentes VS Code
 ├── index.html
 ├── vite.config.js
@@ -159,7 +159,7 @@ Gera scripts de efeito `.js` prontos para os botões F1–F12.
 
 Como usar:
 1. Abra um novo chat com o agente
-2. Cole o conteúdo do `shows/vida-e-paz.show.json`
+2. Cole o conteúdo do `shows/vp.show.json`
 3. Peça o script no formato:
 
 ```
@@ -185,13 +185,13 @@ Existem duas formas de gerar scripts para os botões F1–F12:
 
 Abra o projeto `C:\vp-light` no CoWork e entre no chat **"Gerar Scripts"**. Mencione a skill `gerador-de-scripts-vplight` e descreva o efeito desejado informando o id do fixture e as características (cores, strobo, dimmer, etc.).
 
-O agente lê automaticamente o `vida-e-paz.show.json` para mapear os fixtures e suas funções por canal (via label da descrição), e gera o arquivo `.js` direto na pasta `scripts/` do projeto.
+O agente lê automaticamente o `vp.show.json` para mapear os fixtures e suas funções por canal (via label da descrição), e gera o arquivo `.js` direto na pasta `scripts/` do projeto.
 
 Reinicie o `npm run dev` para o script aparecer no sistema.
 
 ### 2. Via Copilot no VS Code
 
-No chat do VS Code, mencione a skill `gerador-de-scripts-vplight` e anexe o arquivo `vida-e-paz.show.json`. Descreva o efeito desejado da mesma forma.
+No chat do VS Code, mencione a skill `gerador-de-scripts-vplight` e anexe o arquivo `vp.show.json`. Descreva o efeito desejado da mesma forma.
 
 O agente mapeia os fixtures pelo mesmo critério (label da descrição do canal) e gera o arquivo `.js` na pasta `scripts/` do projeto.
 
@@ -199,7 +199,7 @@ Reinicie o `npm run dev` para o script aparecer no sistema.
 
 ---
 
-> **Nota:** O `vida-e-paz.show.json` é a fonte da verdade dos equipamentos. Sempre que adicionar ou editar um fixture no sistema e salvar, o arquivo é atualizado automaticamente — o agente vai refletir essas mudanças na próxima vez que for usado.
+> **Nota:** O `vp.show.json` é a fonte da verdade dos equipamentos. Sempre que adicionar ou editar um fixture no sistema e salvar, o arquivo é atualizado automaticamente — o agente vai refletir essas mudanças na próxima vez que for usado.
 
 ---
 
@@ -219,7 +219,7 @@ Reinicie o `npm run dev` para o script aparecer no sistema.
 3. Confirme que o firewall liberou a porta 6454
 
 **Scripts não aparecem ao reiniciar:**
-- Confirme que o campo `scripts` existe no `vida-e-paz.show.json`
+- Confirme que o campo `scripts` existe no `vp.show.json`
 - Confirme que os caminhos dos arquivos `.js` estão corretos
 
 **Engine não inicia:**
