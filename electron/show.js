@@ -9,6 +9,25 @@ const path = require('path');
 // Show carregado em memória
 let currentShow = null;
 let currentShowPath = null;
+const FIXTURE_GRID_SIZE = 40;
+
+function snapFixtureGridValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.round(number / FIXTURE_GRID_SIZE) * FIXTURE_GRID_SIZE;
+}
+
+function normalizeFixturePositions(showData) {
+  if (!showData || !Array.isArray(showData.fixtures)) return showData;
+  return {
+    ...showData,
+    fixtures: showData.fixtures.map(fixture => ({
+      ...fixture,
+      posX: snapFixtureGridValue(fixture?.posX),
+      posY: snapFixtureGridValue(fixture?.posY),
+    })),
+  };
+}
 
 /**
  * Valida o conjunto de fixtures antes de aceitá-lo no sistema.
@@ -48,6 +67,7 @@ function validateFixtures(fixtures) {
     if (end > 512) {
       throw new Error(`Fixture "${label}": ocupa os canais ${start}–${end}, ultrapassando o limite de 512.`);
     }
+    if (fx.enabled === false) continue;
     for (const r of ranges) {
       if (start <= r.end && end >= r.start) {
         throw new Error(
@@ -67,13 +87,14 @@ function validateFixtures(fixtures) {
  */
 function loadShow(filePath) {
   const raw = fs.readFileSync(filePath, 'utf-8');
-  const show = JSON.parse(raw);
+  let show = JSON.parse(raw);
   if (!show || typeof show !== 'object' ||
       !Array.isArray(show.fixtures) ||
       typeof show.pages !== 'object' || show.pages === null ||
       show.version === undefined) {
     throw new Error(`Arquivo inválido: "${filePath}" não contém version, fixtures e pages obrigatórios`);
   }
+  show = normalizeFixturePositions(show);
   currentShow = show;
   currentShowPath = filePath;
   console.log(`[show] carregado: ${filePath}`);
@@ -88,6 +109,8 @@ function loadShow(filePath) {
  * @returns {boolean} true se salvou com sucesso
  */
 function saveShow(showData) {
+  showData = normalizeFixturePositions(showData);
+  currentShow = normalizeFixturePositions(currentShow);
   // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
   validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) {
@@ -113,6 +136,8 @@ function saveShow(showData) {
  * Salva o show em um novo caminho (Salvar Como).
  */
 function saveShowAs(filePath, showData) {
+  showData = normalizeFixturePositions(showData);
+  currentShow = normalizeFixturePositions(currentShow);
   // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
   validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) currentShow = showData;

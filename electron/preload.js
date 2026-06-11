@@ -8,6 +8,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('vp', {
+  closeApp: () => ipcRenderer.invoke('window:closeApp'),
+  onWindowCloseRequested: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('window:close-requested', listener);
+    return () => ipcRenderer.removeListener('window:close-requested', listener);
+  },
+
   // ─── ENGINE ───────────────────────────────────────────────
   startEngine: () => ipcRenderer.invoke('engine:start'),
   stopEngine:  () => ipcRenderer.invoke('engine:stop'),
@@ -78,6 +85,13 @@ contextBridge.exposeInMainWorld('vp', {
   clearScript:   (fkey)       => ipcRenderer.invoke('script:clear', fkey),
   toggleScript:  (fkey)       => ipcRenderer.invoke('script:toggle', fkey),
   getAllScripts:  ()           => ipcRenderer.invoke('script:getAll'),
+  // Watch em tempo real: o main avisa quando um .js muda no disco.
+  // Retorna uma função para remover o listener.
+  onScriptsChanged: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('scripts:changed', listener);
+    return () => ipcRenderer.removeListener('scripts:changed', listener);
+  },
 
   // ─── PAGE SCRIPTS (teclas de cena com script) ─────────────────────────────
   createPageScript:  (pageId, sceneKey, name) => ipcRenderer.invoke('page_script:create', pageId, sceneKey, name),

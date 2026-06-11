@@ -1,9 +1,76 @@
 /**
  * showStore.js — Estado global do show no renderer
  */
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 
 const ShowContext = createContext(null);
+const FIXTURE_GRID_SIZE = 40;
+
+function snapFixtureGridValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.round(number / FIXTURE_GRID_SIZE) * FIXTURE_GRID_SIZE;
+}
+
+function normalizeFixturePositionData(data) {
+  if (!data || typeof data !== 'object') return {};
+  const next = { ...data };
+  if ('posX' in next) next.posX = snapFixtureGridValue(next.posX);
+  if ('posY' in next) next.posY = snapFixtureGridValue(next.posY);
+  return next;
+}
+
+function normalizeShowFixturePositions(showData) {
+  if (!showData || !Array.isArray(showData.fixtures)) return showData;
+  return {
+    ...showData,
+    fixtures: showData.fixtures.map(fixture => ({
+      ...fixture,
+      posX: snapFixtureGridValue(fixture?.posX),
+      posY: snapFixtureGridValue(fixture?.posY),
+    })),
+  };
+}
+
+function isFixtureEnabled(fixture) {
+  return fixture?.enabled !== false;
+}
+
+function getFixtureDmxChannels(fixture) {
+  if (!fixture) return [];
+  const startChannel = Number(fixture.startChannel) || 1;
+  const channelCount = Number(fixture.channelCount ?? (fixture.channels || []).length) || 0;
+  return Array.from({ length: channelCount }, (_, i) => startChannel + i);
+}
+
+function getDisabledFixtureChannelSet(fixtures) {
+  // Um canal só é bloqueado se nenhum fixture HABILITADO o cobre.
+  // Se dois fixtures dividem o mesmo canal e um está desabilitado mas o outro não,
+  // o canal permanece funcional.
+  const enabledChannels = new Set();
+  (fixtures || []).forEach(fixture => {
+    if (isFixtureEnabled(fixture)) {
+      getFixtureDmxChannels(fixture).forEach(ch => enabledChannels.add(ch));
+    }
+  });
+  const disabledChannels = new Set();
+  (fixtures || []).forEach(fixture => {
+    if (!isFixtureEnabled(fixture)) {
+      getFixtureDmxChannels(fixture).forEach(ch => {
+        if (!enabledChannels.has(ch)) disabledChannels.add(ch);
+      });
+    }
+  });
+  return disabledChannels;
+}
+
+function filterDisabledFixtureChannels(channelMap, disabledChannels) {
+  const filtered = {};
+  Object.entries(channelMap || {}).forEach(([channel, value]) => {
+    if (!disabledChannels.has(Number(channel))) filtered[channel] = value;
+  });
+  return filtered;
+}
 
 const DEFAULT_SHOW = {
   version: '1.0',
@@ -24,7 +91,7 @@ export function ShowProvider({ children }) {
     async function init() {
       try {
         const result = await window.vp.getShow();
-        if (result?.show) setShow(result.show);
+        if (result?.show) setShow(normalizeShowFixturePositions(result.show));
       } catch (e) {
         console.error('[showStore] init:', e);
       } finally {
@@ -35,14 +102,14 @@ export function ShowProvider({ children }) {
   }, []);
 
   const saveShow = useCallback(async (data) => {
-    const target = data || show;
+    const target = normalizeShowFixturePositions(data || show);
     return await window.vp.saveShow(target);
   }, [show]);
 
   const loadShow = useCallback(async () => {
     const result = await window.vp.loadShow();
     if (result.ok) {
-      setShow(result.show);
+      setShow(normalizeShowFixturePositions(result.show));
       setCurrentPage('1');
       setActiveScenes([]);
     }
@@ -54,9 +121,10 @@ export function ShowProvider({ children }) {
   }, []);
 
   const updateFixture = useCallback((id, data) => {
+    const normalizedData = normalizeFixturePositionData(data);
     setShow(prev => ({
       ...prev,
-      fixtures: prev.fixtures.map(f => f.id === id ? { ...f, ...data } : f)
+      fixtures: prev.fixtures.map(f => f.id === id ? { ...f, ...normalizedData } : f)
     }));
   }, []);
 
@@ -87,7 +155,8 @@ export function ShowProvider({ children }) {
     const page = show?.pages?.[currentPage];
     const scene = page?.scenes?.[sceneKey];
     if (!scene) return;
-    await window.vp.activateScene(scene.channels || {});
+    const disabledChannels = getDisabledFixtureChannelSet(show.fixtures);
+    await window.vp.activateScene(filterDisabledFixtureChannels(scene.channels || {}, disabledChannels));
     setActiveScenes(prev => prev.includes(sceneKey) ? prev : [...prev, sceneKey]);
   }, [show, currentPage]);
 
@@ -110,7 +179,8 @@ export function ShowProvider({ children }) {
     window.vp.updateScene(pageId, sceneKey, sceneData);
   }, []);
 
-  const selectedFixture = show.fixtures.find(f => f.id === selectedFixtureId) || null;
+  const disabledFixtureChannels = useMemo(() => getDisabledFixtureChannelSet(show.fixtures), [show.fixtures]);
+  const selectedFixture = show.fixtures.find(f => f.id === selectedFixtureId && isFixtureEnabled(f)) || null;
   const pages = show.pages || {};
   const currentPageData = pages[currentPage] || { name: '', scenes: {} };
 
@@ -121,6 +191,7 @@ export function ShowProvider({ children }) {
       activeScenes, setActiveScenes,
       selectedFixtureId, setSelectedFixtureId,
       selectedFixture,
+      disabledFixtureChannels,
       pages, currentPageData,
       saveShow, loadShow,
       addFixture, updateFixture, removeFixture, duplicateFixture,

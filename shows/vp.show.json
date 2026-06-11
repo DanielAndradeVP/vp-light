@@ -3,12 +3,45 @@
   "meta": {
     "name": "Vida e Paz — Show Principal",
     "createdAt": "2025-01-01",
-    "notes": "Show base para o Fire. Salvar antes de sair!"
+    "notes": "Show base para o Fire. Salvar antes de sair!",
+    "viewport": {
+      "grid": {
+        "zoom": 1.9487171000000019,
+        "panX": 122.87325611899905,
+        "panY": 292.152667096
+      }
+    }
   },
   "fixtures": [
     {
+      "id": "fixture_1780805067518_parled_deluxe_1",
+      "name": "ParLed_Deluxe_1",
+      "enabled": false,
+      "startChannel": 1,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "pending_label_4",
+        "dimmer",
+        "red",
+        "green",
+        "blue"
+      ],
+      "posX": 40,
+      "posY": -40,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 1-8. Canais 1-4 ainda nao identificados e marcados como pending_label_1..4. Canal 5=dimmer, 6=red, 7=green, 8=blue."
+    },
+    {
       "id": "fixture_1780805067518",
       "name": "parLed1",
+      "enabled": true,
       "startChannel": 1,
       "channelCount": 8,
       "channels": [
@@ -21,8 +54,206 @@
         "blue",
         "white"
       ],
-      "posX": 338,
-      "posY": 357
+      "posX": 40,
+      "posY": 40,
+      "manufacturer": "Teste",
+      "model": "Fixture de teste restaurado",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "Teste",
+      "note": "Fixture de teste restaurado do historico git. DMX 1-8."
+    },
+    {
+      "id": "fixture_1780805067518_parled_deluxe_2",
+      "name": "ParLed_Deluxe_2",
+      "startChannel": 9,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "dimmer",
+        "red",
+        "green",
+        "blue",
+        "pending_label_8"
+      ],
+      "posX": 120,
+      "posY": -80,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 9-16. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
+    },
+    {
+      "id": "fixture_1780805067518_parled_deluxe_3",
+      "name": "ParLed_Deluxe_3",
+      "startChannel": 17,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "dimmer",
+        "red",
+        "green",
+        "blue",
+        "pending_label_8"
+      ],
+      "posX": 200,
+      "posY": -80,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 17-24. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
+    },
+    {
+      "id": "fixture_1780805067518_parled_deluxe_4",
+      "name": "ParLed_Deluxe_4",
+      "startChannel": 25,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "dimmer",
+        "red",
+        "green",
+        "blue",
+        "pending_label_8"
+      ],
+      "posX": 280,
+      "posY": -120,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 25-32. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
+    },
+    {
+      "id": "fixture_1780805067518_parled_deluxe_5",
+      "name": "ParLed_Deluxe_5",
+      "startChannel": 33,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "dimmer",
+        "red",
+        "green",
+        "blue",
+        "pending_label_8"
+      ],
+      "posX": 360,
+      "posY": -120,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 33-40. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
+    },
+    {
+      "id": "fixture_1780805067518_parled_deluxe_6",
+      "name": "ParLed_Deluxe_6",
+      "startChannel": 49,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "dimmer",
+        "red",
+        "green",
+        "blue",
+        "pending_label_8"
+      ],
+      "posX": 440,
+      "posY": -120,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 49-56. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
+    },
+    {
+      "id": "fixture_1780805067518_parled_deluxe_7",
+      "name": "ParLed_Deluxe_7",
+      "startChannel": 57,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "dimmer",
+        "red",
+        "green",
+        "blue",
+        "pending_label_8"
+      ],
+      "posX": 520,
+      "posY": -80,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 57-64. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
+    },
+    {
+      "id": "fixture_1780805067518_parled_deluxe_8",
+      "name": "ParLed_Deluxe_8",
+      "startChannel": 65,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "dimmer",
+        "red",
+        "green",
+        "blue",
+        "pending_label_8"
+      ],
+      "posX": 600,
+      "posY": -80,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 65-72. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
+    },
+    {
+      "id": "fixture_1780805067518_parled_deluxe_9",
+      "name": "ParLed_Deluxe_9",
+      "startChannel": 74,
+      "channelCount": 8,
+      "channels": [
+        "pending_label_1",
+        "pending_label_2",
+        "pending_label_3",
+        "dimmer",
+        "red",
+        "green",
+        "blue",
+        "pending_label_8"
+      ],
+      "posX": 680,
+      "posY": -40,
+      "manufacturer": "Generico",
+      "model": "ParLed Deluxe",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "ParLed Deluxe",
+      "note": "DMX 74-81. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
     },
     {
       "id": "fixture_1780805067518_moving_head_beam_1",
@@ -47,8 +278,8 @@
         "reset",
         "control"
       ],
-      "posX": 440,
-      "posY": 180,
+      "posX": 280,
+      "posY": 0,
       "manufacturer": "Light Party",
       "model": "MovingHead_Beam 230W_16channels",
       "fixtureType": "moving_head_beam",
@@ -79,8 +310,8 @@
         "reset",
         "control"
       ],
-      "posX": 600,
-      "posY": 180,
+      "posX": 440,
+      "posY": 0,
       "manufacturer": "Light Party",
       "model": "MovingHead_Beam 230W_16channels",
       "fixtureType": "moving_head_beam",
@@ -108,8 +339,8 @@
         "strobo",
         "function"
       ],
-      "posX": 120,
-      "posY": 120,
+      "posX": 400,
+      "posY": 80,
       "manufacturer": "Light Party",
       "model": "Ribalta",
       "fixtureType": "ribalta",
@@ -137,8 +368,8 @@
         "strobo",
         "function"
       ],
-      "posX": 280,
-      "posY": 120,
+      "posX": 320,
+      "posY": 80,
       "manufacturer": "Light Party",
       "model": "Ribalta",
       "fixtureType": "ribalta",
@@ -154,8 +385,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": 16,
-      "posY": 7,
+      "posX": 360,
+      "posY": 160,
       "manufacturer": "FitaLedDimmer",
       "model": "Fita de Led",
       "fixtureType": "fita_led"
@@ -168,8 +399,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": 80,
-      "posY": 7,
+      "posX": 240,
+      "posY": 200,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -185,8 +416,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": 120,
-      "posY": 7,
+      "posX": 320,
+      "posY": 200,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -202,8 +433,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": 160,
-      "posY": 7,
+      "posX": 400,
+      "posY": 200,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -219,14 +450,46 @@
       "channels": [
         "dimmer"
       ],
-      "posX": 200,
-      "posY": 7,
+      "posX": 480,
+      "posY": 200,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
       "universe": 0,
       "group": "Mini Bruts",
       "note": "DMX 410. Canal 1 dimmer: 0=off, 255=max. Aparelho halogeno nao-DMX adaptado via hack dimmer. Controle limitado a ligar/desligar e variar intensidade no unico canal."
+    },
+    {
+      "id": "fixture_1780805067518_moving_wosh_01",
+      "name": "Moving_Wosh",
+      "startChannel": 171,
+      "channelCount": 16,
+      "channels": [
+        "pan",
+        "tilt",
+        "pan_tilt_speed",
+        "strobo",
+        "color_wheel",
+        "cyan",
+        "magenta",
+        "gobo2",
+        "yellow",
+        "cmy_system",
+        "cmy_speed",
+        "effects_disc",
+        "zoom",
+        "pan_fine",
+        "tilt_fine",
+        ""
+      ],
+      "posX": 360,
+      "posY": 0,
+      "manufacturer": "Acme",
+      "model": "575W",
+      "fixtureType": "moving_head",
+      "universe": 0,
+      "group": "Moving Heads",
+      "note": "DMX 171-186. Canal 186 nao foi informado no perfil recebido e ficou sem funcao definida. Perfil Moving_Wosh 16 canais: Pan, Tilt, Speed Pan/Tilt, Strobo, Color Adjustment, Ciano, Magenta, Gobo 2, Amarelo, System CMY, Speed CMY, Effects Disc, Zoom, Pan Fine, Tilt Fine."
     }
   ],
   "pages": {
@@ -278,8 +541,8 @@
   },
   "scripts": {
     "F1": {
-      "name": "louvorzao-branco-fogo",
-      "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js"
+      "name": "aurora-boreal-f1",
+      "file": "C:\\vp-light\\scripts\\aurora-boreal-f1.js"
     },
     "F2": {
       "name": "f1-color-pingpong",
@@ -296,6 +559,18 @@
     "F5": {
       "name": "rgb-loop",
       "file": "C:\\vp-light\\scripts\\rgb-loop.js"
+    },
+    "F6": {
+      "name": "fogo-crescente",
+      "file": "C:\\vp-light\\scripts\\fogo-crescente.js"
+    },
+    "F7": {
+      "name": "flash-gloria",
+      "file": "C:\\vp-light\\scripts\\flash-gloria.js"
+    },
+    "F8": {
+      "name": "tempestade-roxa",
+      "file": "C:\\vp-light\\scripts\\tempestade-roxa.js"
     }
   }
 }

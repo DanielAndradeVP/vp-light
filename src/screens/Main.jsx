@@ -14,6 +14,95 @@ const DESK_MIN_WIDTH = 360;
 const MAX_PAGE = 10;
 const GRID = 40;          // tamanho do quadradinho da grade — o aparelho ocupa exatamente 1 quadrado
 
+function snapGridCoord(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.round(number / GRID) * GRID;
+}
+
+function getFixtureGridPosition(fixture) {
+  return {
+    x: snapGridCoord(fixture?.posX),
+    y: snapGridCoord(fixture?.posY),
+  };
+}
+
+function normalizeGridView(value) {
+  const zoom = Number(value?.zoom);
+  const panX = Number(value?.panX);
+  const panY = Number(value?.panY);
+  return {
+    zoom: Number.isFinite(zoom) ? Math.min(4, Math.max(0.3, zoom)) : 1,
+    panX: Number.isFinite(panX) ? panX : 0,
+    panY: Number.isFinite(panY) ? panY : 0,
+  };
+}
+
+function getStoredGridView(showData) {
+  const gridView = showData?.meta?.viewport?.grid;
+  if (!gridView || typeof gridView !== 'object') return null;
+  return normalizeGridView(gridView);
+}
+
+function getShowWithGridView(showData, gridView) {
+  return {
+    ...showData,
+    meta: {
+      ...(showData?.meta || {}),
+      viewport: {
+        ...(showData?.meta?.viewport || {}),
+        grid: normalizeGridView(gridView),
+      },
+    },
+  };
+}
+
+function getFixtureDisplayName(name) {
+  return String(name || '').replace(/_/g, ' ');
+}
+
+function isFixtureEnabled(fixture) {
+  return fixture?.enabled !== false;
+}
+
+function getFixtureDmxChannelList(fixture) {
+  if (!fixture) return [];
+  const startChannel = Number(fixture.startChannel) || 1;
+  const channelCount = Number(fixture.channelCount ?? (fixture.channels || []).length) || 0;
+  return Array.from({ length: channelCount }, (_, i) => startChannel + i);
+}
+
+function getDisabledFixtureChannelSet(fixtures) {
+  // Um canal só é bloqueado se nenhum fixture HABILITADO o cobre.
+  const enabledChannels = new Set();
+  (fixtures || []).forEach(fixture => {
+    if (isFixtureEnabled(fixture)) {
+      getFixtureDmxChannelList(fixture).forEach(ch => enabledChannels.add(ch));
+    }
+  });
+  const disabledChannels = new Set();
+  (fixtures || []).forEach(fixture => {
+    if (!isFixtureEnabled(fixture)) {
+      getFixtureDmxChannelList(fixture).forEach(ch => {
+        if (!enabledChannels.has(ch)) disabledChannels.add(ch);
+      });
+    }
+  });
+  return disabledChannels;
+}
+
+function filterDisabledFixtureChannels(channelMap, disabledChannels) {
+  const filtered = {};
+  Object.entries(channelMap || {}).forEach(([channel, value]) => {
+    if (!disabledChannels.has(Number(channel))) filtered[Number(channel)] = Number(value);
+  });
+  return filtered;
+}
+
+function filterDisabledFixtureChannelList(channels, disabledChannels) {
+  return (channels || []).filter(channel => !disabledChannels.has(Number(channel)));
+}
+
 const CUSTOM_FUNCTIONS_BY_TYPE = {
   ribalta: [
     { id: 'ribalta_all_on', label: 'ALL ON' },
@@ -33,20 +122,49 @@ export default function Main({ onOpenFixtures }) {
     show, currentPage, setCurrentPage,
     activeScenes, setActiveScenes,
     selectedFixtureId, setSelectedFixtureId,
-    selectedFixture, pages, saveShow, loadShow,
-    updateScene, updateFixture,
+    selectedFixture, disabledFixtureChannels: storeDisabledFixtureChannels, pages, saveShow, loadShow,
+    updateScene, updateFixture, setShow,
   } = useShow();
 
   const [blackoutActive, setBlackoutActive] = useState(false);
   const [toast, setToast] = useState(null); // string | null
+  const [exitModalOpen, setExitModalOpen] = useState(false);
+  const [exitSaving, setExitSaving] = useState(false);
+  const disabledFixtureChannels = storeDisabledFixtureChannels || getDisabledFixtureChannelSet(show.fixtures);
 
-  async function handleSave() {
-    const result = await saveShow();
+  function showSaveFeedback(result) {
     const msg = result?.message || (result?.ok === false ? `Erro: ${result.error}` : null);
     if (msg) {
       setToast(msg);
       setTimeout(() => setToast(null), 3000);
     }
+  }
+
+  async function handleSave() {
+    const result = await saveShow(getShowWithGridView(show, viewRef.current));
+    showSaveFeedback(result);
+    return result;
+  }
+
+  async function handleExitWithSave() {
+    if (exitSaving) return;
+    setExitSaving(true);
+    try {
+      const result = await saveShow(getShowWithGridView(show, viewRef.current));
+      showSaveFeedback(result);
+      if (result?.ok) {
+        await window.vp.closeApp();
+      }
+    } catch (err) {
+      setToast(`Erro: ${err.message}`);
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setExitSaving(false);
+    }
+  }
+
+  async function handleExitWithoutSave() {
+    await window.vp.closeApp();
   }
 
   // Resolve o estado do universo DMX a partir das cenas ativas no momento.
@@ -57,7 +175,7 @@ export default function Main({ onOpenFixtures }) {
     nextActiveScenes.forEach(key => {
       const s = scenes[key];
       if (s?.channels) {
-        Object.entries(s.channels).forEach(([ch, val]) => {
+        Object.entries(filterDisabledFixtureChannels(s.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
           merged[Number(ch)] = Number(val);
         });
       }
@@ -87,7 +205,7 @@ export default function Main({ onOpenFixtures }) {
       }
       if (prev.length >= 3) return prev;
       if (scene?.channels) {
-        window.vp.activateScene(scene.channels);
+        window.vp.activateScene(filterDisabledFixtureChannels(scene.channels, disabledFixtureChannels));
         // o display da barra lateral é resolvido pelo orquestrador (resolveSidebarValues)
       }
       return [...prev, key];
@@ -102,7 +220,7 @@ export default function Main({ onOpenFixtures }) {
         activeScenes.forEach(key => {
           const scene = scenes[key];
           if (scene?.channels) {
-            Object.entries(scene.channels).forEach(([ch, val]) => {
+            Object.entries(filterDisabledFixtureChannels(scene.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
               merged[Number(ch)] = Number(val);
             });
           }
@@ -210,9 +328,39 @@ export default function Main({ onOpenFixtures }) {
   }, [selectedFixture]);
   const [dragging, setDragging] = useState(null); // { id, offX, offY } — offset em coords de mundo
   const [selection, setSelection] = useState(null); // { startX, startY, endX, endY } — coords de mundo
+  useEffect(() => {
+    if (!window.vp?.onWindowCloseRequested) return undefined;
+    return window.vp.onWindowCloseRequested(() => setExitModalOpen(true));
+  }, []);
+
   const [multiSelected, setMultiSelected] = useState([]);
   const mesaRef = useRef(null);
   const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 }); // zoom/pan da mesa
+  const viewRef = useRef(view);
+  const restoredGridViewRef = useRef(null);
+
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  function applyGridView(nextView) {
+    const normalizedView = normalizeGridView(nextView);
+    const key = `${normalizedView.zoom}|${normalizedView.panX}|${normalizedView.panY}`;
+    viewRef.current = normalizedView;
+    restoredGridViewRef.current = key;
+    setView(normalizedView);
+    setShow(prev => getShowWithGridView(prev, normalizedView));
+  }
+
+  useEffect(() => {
+    const storedView = getStoredGridView(show);
+    if (!storedView) return;
+    const key = `${storedView.zoom}|${storedView.panX}|${storedView.panY}`;
+    if (restoredGridViewRef.current === key) return;
+    restoredGridViewRef.current = key;
+    viewRef.current = storedView;
+    setView(storedView);
+  }, [show]);
 
   // Zoom com a roda do mouse, seguindo o ponteiro (mantém o ponto sob o cursor fixo).
   useEffect(() => {
@@ -262,6 +410,14 @@ export default function Main({ onOpenFixtures }) {
     load();
   }, []);
 
+  // Watch em tempo real: o main avisa quando um .js de scripts é criado,
+  // modificado ou removido — sincroniza o estado local sem reload.
+  useEffect(() => {
+    if (!window.vp?.onScriptsChanged) return;
+    const off = window.vp.onScriptsChanged((updated) => setScripts(updated || {}));
+    return off;
+  }, []);
+
   useEffect(() => {
     window.vp.getAllPageScripts(currentPageId).then(result => setPageScripts(result || {}));
   }, [currentPageId]);
@@ -273,7 +429,7 @@ export default function Main({ onOpenFixtures }) {
     activeScenes.forEach(key => {
       const s = currentScenes[key];
       if (s?.channels) {
-        Object.entries(s.channels).forEach(([ch, val]) => {
+        Object.entries(filterDisabledFixtureChannels(s.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
           if (Number(val) > 0) merged[Number(ch)] = Number(val);
         });
       }
@@ -285,14 +441,14 @@ export default function Main({ onOpenFixtures }) {
     activeScenes.forEach(key => {
       const s = currentScenes[key];
       if (s?.channels) {
-        scenesMap[key] = { name: s.name || key, channels: s.channels };
+        scenesMap[key] = { name: s.name || key, channels: filterDisabledFixtureChannels(s.channels, disabledFixtureChannels) };
       }
     });
     window.vp.setActiveScenes(scenesMap);
 
     // Reset acknowledge quando novas cenas são ativadas
     setConflictAcknowledged(false);
-  }, [activeScenes, pages]);
+  }, [activeScenes, pages, currentPageId, disabledFixtureChannels]);
 
   // Polling de conflitos a cada 100ms — SEMPRE ativo
   useEffect(() => {
@@ -422,6 +578,7 @@ export default function Main({ onOpenFixtures }) {
     if (!saveModal) return;
     const channels = {};
     Object.entries(liveValues).forEach(([ch, val]) => {
+      if (disabledFixtureChannels.has(Number(ch))) return;
       channels[Number(ch)] = Number(val);
     });
     updateScene(currentPageId, saveModal.sceneKey, {
@@ -450,7 +607,7 @@ export default function Main({ onOpenFixtures }) {
   // ativo (snapshot ao vivo do universo) → 0. Os labels vêm da descrição do
   // fixture; os valores exibidos vêm deste estado resolvido.
   const resolveSidebarValues = useCallback(async () => {
-    if (!selectedFixture) { setLiveValues({}); return; }
+    if (!selectedFixture || !isFixtureEnabled(selectedFixture)) { setLiveValues({}); return; }
 
     const start = selectedFixture.startChannel;
     const count = selectedFixture.channelCount ?? (selectedFixture.channels || []).length;
@@ -461,7 +618,7 @@ export default function Main({ onOpenFixtures }) {
     activeScenes.forEach(key => {
       const s = currentScenes[key];
       if (s?.channels) {
-        Object.entries(s.channels).forEach(([ch, val]) => {
+        Object.entries(filterDisabledFixtureChannels(s.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
           sceneMerged[Number(ch)] = Number(val);
         });
       }
@@ -483,7 +640,7 @@ export default function Main({ onOpenFixtures }) {
       else                                         resolved[ch] = 0;
     }
     setLiveValues(resolved);
-  }, [selectedFixture, activeScenes, pages, currentPageId, scripts]);
+  }, [selectedFixture, activeScenes, pages, currentPageId, scripts, disabledFixtureChannels]);
 
   // Dispara resolução imediata: muda fixture selecionado, cenas ativas ou scripts
   useEffect(() => { resolveSidebarValues(); }, [resolveSidebarValues]);
@@ -500,6 +657,7 @@ export default function Main({ onOpenFixtures }) {
   useEffect(() => {
     function handleEsc(e) {
       if (e.key !== 'Escape') return;
+      if (exitModalOpen)     { setExitModalOpen(false); return; }
       if (moveModal)         { setMoveModal(null); return; }
       if (sceneMoveModal)    { setSceneMoveModal(null); return; }
       if (sceneScriptModal)  { setSceneScriptModal(null); setSceneScriptName(''); return; }
@@ -510,7 +668,7 @@ export default function Main({ onOpenFixtures }) {
     }
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [moveModal, sceneMoveModal, sceneScriptModal, saveModal, createModal, contextMenu, scriptMenu]);
+  }, [exitModalOpen, moveModal, sceneMoveModal, sceneScriptModal, saveModal, createModal, contextMenu, scriptMenu]);
 
   const scenes = (pages[currentPageId] || {}).scenes || {};
 
@@ -540,6 +698,7 @@ export default function Main({ onOpenFixtures }) {
   }
 
   async function handleFader(dmxChannel, value) {
+    if (disabledFixtureChannels.has(Number(dmxChannel))) return;
     const val = Number(value);
     setLiveValues(prev => ({ ...prev, [dmxChannel]: val }));
     await window.vp.setChannel(dmxChannel, val);
@@ -593,7 +752,8 @@ export default function Main({ onOpenFixtures }) {
   async function handleRibaltaAllOnFader(fixture, value) {
     if (!isRibaltaAllOnActive(fixture)) return;
     const val = Number(value);
-    const channels = getRibaltaLedChannels(fixture);
+    const channels = filterDisabledFixtureChannelList(getRibaltaLedChannels(fixture), disabledFixtureChannels);
+    if (channels.length === 0) return;
     setLiveValues(prev => {
       const next = { ...prev };
       channels.forEach(channel => { next[channel] = val; });
@@ -606,14 +766,15 @@ export default function Main({ onOpenFixtures }) {
     const rect = mesaRef.current?.getBoundingClientRect();
     const fixtures = show.fixtures || [];
     if (!rect || fixtures.length === 0) {
-      setView({ zoom: 1, panX: 0, panY: 0 });
+      applyGridView({ zoom: 1, panX: 0, panY: 0 });
       return;
     }
 
-    const minX = Math.min(...fixtures.map(f => f.posX ?? 10));
-    const minY = Math.min(...fixtures.map(f => f.posY ?? 10));
-    const maxX = Math.max(...fixtures.map(f => (f.posX ?? 10) + GRID));
-    const maxY = Math.max(...fixtures.map(f => (f.posY ?? 10) + GRID));
+    const fixturePositions = fixtures.map(getFixtureGridPosition);
+    const minX = Math.min(...fixturePositions.map(pos => pos.x));
+    const minY = Math.min(...fixturePositions.map(pos => pos.y));
+    const maxX = Math.max(...fixturePositions.map(pos => pos.x + GRID));
+    const maxY = Math.max(...fixturePositions.map(pos => pos.y + GRID));
     const contentWidth = Math.max(GRID, maxX - minX);
     const contentHeight = Math.max(GRID, maxY - minY);
     const padding = GRID * 2;
@@ -629,7 +790,7 @@ export default function Main({ onOpenFixtures }) {
       )
     );
 
-    setView({
+    applyGridView({
       zoom: fitZoom,
       panX: (rect.width - contentWidth * fitZoom) / 2 - minX * fitZoom,
       panY: (rect.height - contentHeight * fitZoom) / 2 - minY * fitZoom,
@@ -702,7 +863,8 @@ export default function Main({ onOpenFixtures }) {
                 // colisão: 1 aparelho por quadrado — não deixa entrar onde já existe outro
                 const overlaps = nextPositions.some(pos => show.fixtures.some(o => {
                   if (movingIds.has(o.id)) return false;
-                  const ox = o.posX ?? 10, oy = o.posY ?? 10;
+                  if (!isFixtureEnabled(o)) return false;
+                  const { x: ox, y: oy } = getFixtureGridPosition(o);
                   return pos.posX < ox + GRID && pos.posX + GRID > ox
                       && pos.posY < oy + GRID && pos.posY + GRID > oy;
                 }));
@@ -722,8 +884,8 @@ export default function Main({ onOpenFixtures }) {
                 const minY = Math.min(selection.startY, selection.endY);
                 const maxY = Math.max(selection.startY, selection.endY);
                 const selected = show.fixtures.filter(f => {
-                  const x = f.posX ?? 10;
-                  const y = f.posY ?? 10;
+                  if (!isFixtureEnabled(f)) return false;
+                  const { x, y } = getFixtureGridPosition(f);
                   return x + GRID > minX && x < maxX && y + GRID > minY && y < maxY;
                 }).map(f => f.id);
                 setMultiSelected(selected);
@@ -750,20 +912,22 @@ export default function Main({ onOpenFixtures }) {
             {/* MUNDO — recebe o zoom/pan; aparelhos e seleção escalam juntos */}
             <div style={{ position:'absolute', top:0, left:0, width:0, height:0, transformOrigin:'0 0', transform:`translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})` }}>
               {show.fixtures.map(f => {
-                const isSelected = f.id === selectedFixtureId || multiSelected.includes(f.id);
+                const fixtureEnabled = isFixtureEnabled(f);
+                const isSelected = fixtureEnabled && (f.id === selectedFixtureId || multiSelected.includes(f.id));
                 return (
                 <div
                   key={f.id}
                   onMouseDown={(e) => {
                     e.stopPropagation();
+                    if (!fixtureEnabled) return;
                     const rect = mesaRef.current.getBoundingClientRect();
                     const wx = (e.clientX - rect.left - view.panX) / view.zoom;
                     const wy = (e.clientY - rect.top - view.panY) / view.zoom;
                     const draggingIds = multiSelected.includes(f.id) ? multiSelected : [f.id];
                     const draggingFixtures = show.fixtures
-                      .filter(item => draggingIds.includes(item.id))
-                      .map(item => ({ id: item.id, x: item.posX ?? 10, y: item.posY ?? 10 }));
-                    const origin = { x: f.posX ?? 10, y: f.posY ?? 10 };
+                      .filter(item => draggingIds.includes(item.id) && isFixtureEnabled(item))
+                      .map(item => ({ id: item.id, ...getFixtureGridPosition(item) }));
+                    const origin = getFixtureGridPosition(f);
                     setDragging({
                       id: f.id,
                       ids: draggingIds,
@@ -773,24 +937,47 @@ export default function Main({ onOpenFixtures }) {
                       offY: wy - origin.y,
                     });
                   }}
-                  onClick={(e) => { e.stopPropagation(); setSelectedFixtureId(f.id === selectedFixtureId ? null : f.id); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!fixtureEnabled) return;
+                    setSelectedFixtureId(f.id === selectedFixtureId ? null : f.id);
+                  }}
                   style={{
                     position:'absolute',
-                    left: f.posX ?? 10,
-                    top: f.posY ?? 10,
+                    left: getFixtureGridPosition(f).x,
+                    top: getFixtureGridPosition(f).y,
                     width:GRID, height:GRID,
                     boxSizing:'border-box',
-                    background:'#233237',
+                    background: fixtureEnabled ? '#233237' : '#1d2b30',
                     color:'#ffffff',
-                    border: isSelected ? '2px solid #b7dede' : '1px solid #5f8588',
-                    borderRadius:0, boxShadow:'none', cursor: dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab',
+                    border: fixtureEnabled ? (isSelected ? '2px solid #b7dede' : '1px solid #5f8588') : '1px dashed #6f8588',
+                    opacity: fixtureEnabled ? 1 : 0.42,
+                    borderRadius:0, boxShadow:'none', cursor: fixtureEnabled ? (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab') : 'default',
                     display:'flex', flexDirection:'column',
                     alignItems:'center', justifyContent:'center', gap:1,
                     userSelect:'none', overflow:'hidden',
                   }}
                 >
-                  <div style={{ fontSize:7, color:'#9bb4b7', lineHeight:1 }}>ch {f.startChannel}</div>
-                  <div style={{ fontSize:8, fontWeight:700, color:'#ffffff', textAlign:'center', lineHeight:1.1, padding:'0 2px', overflow:'hidden', maxWidth:GRID - 4 }}>{f.name}</div>
+                  <div style={{ fontSize:7, color:'#9bb4b7', lineHeight:1 }}>{fixtureEnabled ? `ch ${f.startChannel}` : `OFF ch ${f.startChannel}`}</div>
+                  <div
+                    title={f.name}
+                    style={{
+                      fontSize:7,
+                      fontWeight:700,
+                      color:'#ffffff',
+                      textAlign:'center',
+                      lineHeight:1.05,
+                      padding:'0 2px',
+                      overflow:'hidden',
+                      maxWidth:GRID - 4,
+                      maxHeight:30,
+                      whiteSpace:'normal',
+                      overflowWrap:'anywhere',
+                      wordBreak:'normal',
+                    }}
+                  >
+                    {getFixtureDisplayName(f.name)}
+                  </div>
                 </div>
                 );
               })}
@@ -1461,6 +1648,35 @@ export default function Main({ onOpenFixtures }) {
           </div>
         );
       })()}
+
+      {exitModalOpen && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2200 }}>
+          <div style={{ background:theme.components.modal.background, border:theme.components.modal.border, borderRadius:theme.radius.none, width:340, fontFamily:theme.typography.fontFamily, color:theme.components.modal.color, boxShadow:theme.elevation.modal }}>
+            <div style={{ padding:'10px 12px', background:theme.colors.panelDark, borderBottom:theme.borders.thin, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight }}>
+              Sair do vp-light
+            </div>
+            <div style={{ padding:14, fontSize:theme.typography.body.fontSize, color:theme.colors.text }}>
+              Deseja salvar antes de sair?
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:10, background:theme.colors.panelDark, borderTop:theme.borders.thin }}>
+              <button
+                onClick={handleExitWithSave}
+                disabled={exitSaving}
+                style={{ height:28, minWidth:72, padding:'4px 12px', borderRadius:theme.radius.none, cursor:exitSaving ? 'default' : 'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:theme.colors.buttonBg, color:exitSaving ? theme.colors.textDisabled : theme.colors.text, border:theme.borders.button, outline:'none', boxShadow:'none' }}
+              >
+                Sim
+              </button>
+              <button
+                onClick={handleExitWithoutSave}
+                disabled={exitSaving}
+                style={{ height:28, minWidth:72, padding:'4px 12px', borderRadius:theme.radius.none, cursor:exitSaving ? 'default' : 'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:theme.colors.buttonBg, color:exitSaving ? theme.colors.textDisabled : theme.colors.text, border:theme.borders.button, outline:'none', boxShadow:'none' }}
+              >
+                N&atilde;o
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {saveModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>

@@ -120,14 +120,15 @@ function openScriptInVSCode(filePath) {
 // ─────────────────────────────────────────────────────────────
 
 let mainWindow = null;
+let allowWindowClose = false;
 
 function createWindow() {
+  allowWindowClose = false;
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 600,
-    fullscreen: true,        // abre em tela cheia
     title: 'vp-light',
     backgroundColor: '#0a0a0a',
     webPreferences: {
@@ -136,6 +137,7 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  mainWindow.maximize();
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
@@ -143,6 +145,12 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+
+  mainWindow.on('close', (event) => {
+    if (allowWindowClose) return;
+    event.preventDefault();
+    mainWindow.webContents.send('window:close-requested');
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -152,6 +160,13 @@ function createWindow() {
 // ─────────────────────────────────────────────────────────────
 // IPC HANDLERS — ENGINE
 // ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('window:closeApp', () => {
+  if (!mainWindow) return { ok: false };
+  allowWindowClose = true;
+  mainWindow.close();
+  return { ok: true };
+});
 
 ipcMain.handle('engine:start', () => {
   engine.start();
@@ -173,11 +188,12 @@ ipcMain.handle('engine:status', () => ({
 // ─────────────────────────────────────────────────────────────
 
 ipcMain.handle('dmx:activateScene', (_, channels) => {
-  universe.applyScene(channels);
+  universe.applyScene(filterDisabledFixtureChannels(channels));
   return { ok: true };
 });
 
 ipcMain.handle('dmx:setChannel', (_, channel, value) => {
+  if (!isDmxChannelEnabled(channel)) return { ok: true, ignored: true };
   universe.setChannel(channel, value);
   return { ok: true };
 });
@@ -186,8 +202,9 @@ ipcMain.handle('dmx:setChannelRange', (_, channels, value) => {
   if (!Array.isArray(channels)) {
     return { ok: false, error: 'channels must be an array' };
   }
-  channels.forEach((channel) => universe.setChannel(Number(channel), value));
-  return { ok: true, count: channels.length };
+  const enabledChannels = channels.filter(channel => isDmxChannelEnabled(channel));
+  enabledChannels.forEach((channel) => universe.setChannel(Number(channel), value));
+  return { ok: true, count: enabledChannels.length };
 });
 
 ipcMain.handle('dmx:blackout', () => {
@@ -197,7 +214,7 @@ ipcMain.handle('dmx:blackout', () => {
 });
 
 ipcMain.handle('dmx:restoreState', (_, channels) => {
-  universe.restoreState(channels);
+  universe.restoreState(filterDisabledFixtureChannels(channels));
   return { ok: true };
 });
 
@@ -206,7 +223,7 @@ ipcMain.handle('dmx:getUniverse', () => {
 });
 
 ipcMain.handle('dmx:setActiveScenes', (_, scenesMap) => {
-  universe.setActiveScenes(scenesMap);
+  universe.setActiveScenes(filterDisabledFixtureScenes(scenesMap));
   return { ok: true };
 });
 
@@ -218,7 +235,7 @@ ipcMain.handle('dmx:getConflicts', () => {
 let activeSceneChannels = {}; // { [canal]: valor } — scripts não sobrescrevem esses canais
 
 ipcMain.handle('dmx:setActiveSceneChannels', (_, channels) => {
-  activeSceneChannels = channels || {};
+  activeSceneChannels = filterDisabledFixtureChannels(channels);
   return { ok: true };
 });
 
@@ -464,13 +481,69 @@ function normalizeAlias(label) {
     .trim().toLowerCase();
 }
 
+function isFixtureEnabled(fixture) {
+  return fixture?.enabled !== false;
+}
+
+function getFixtureDmxChannels(fixture) {
+  if (!fixture) return [];
+  const startChannel = Number(fixture.startChannel) || 1;
+  const channelCount = Number(fixture.channelCount ?? (fixture.channels || []).length) || 0;
+  return Array.from({ length: channelCount }, (_, i) => startChannel + i);
+}
+
+function getDisabledFixtureChannelSet() {
+  // Um canal só é bloqueado se nenhum fixture HABILITADO o cobre.
+  const current = show.getShow();
+  const fixtures = current?.fixtures || [];
+  const enabledChannels = new Set();
+  fixtures.forEach(fixture => {
+    if (isFixtureEnabled(fixture)) {
+      getFixtureDmxChannels(fixture).forEach(ch => enabledChannels.add(ch));
+    }
+  });
+  const disabledChannels = new Set();
+  fixtures.forEach(fixture => {
+    if (!isFixtureEnabled(fixture)) {
+      getFixtureDmxChannels(fixture).forEach(ch => {
+        if (!enabledChannels.has(ch)) disabledChannels.add(ch);
+      });
+    }
+  });
+  return disabledChannels;
+}
+
+function isDmxChannelEnabled(channel) {
+  return !getDisabledFixtureChannelSet().has(Number(channel));
+}
+
+function filterDisabledFixtureChannels(channelMap) {
+  const disabledChannels = getDisabledFixtureChannelSet();
+  const filtered = {};
+  Object.entries(channelMap || {}).forEach(([channel, value]) => {
+    if (!disabledChannels.has(Number(channel))) filtered[channel] = value;
+  });
+  return filtered;
+}
+
+function filterDisabledFixtureScenes(scenesMap) {
+  const filteredScenes = {};
+  Object.entries(scenesMap || {}).forEach(([id, scene]) => {
+    filteredScenes[id] = {
+      ...scene,
+      channels: filterDisabledFixtureChannels(scene?.channels || {}),
+    };
+  });
+  return filteredScenes;
+}
+
 // Resolve o canal DMX real (1-based) de um alias dentro de um fixture do show
 // carregado em memória. Ex.: getFixtureChannel("fixture_123", "strobo") → 2.
 // Retorna null se o fixture não existir ou o alias não estiver mapeado.
 function getFixtureChannel(fixtureId, alias) {
   const current = show.getShow();
   const fixture = current?.fixtures?.find(f => f.id === fixtureId);
-  if (!fixture || !Array.isArray(fixture.channels)) return null;
+  if (!fixture || !isFixtureEnabled(fixture) || !Array.isArray(fixture.channels)) return null;
   const target = normalizeAlias(alias);
   const index = fixture.channels.findIndex(ch => normalizeAlias(ch) === target);
   return index === -1 ? null : fixture.startChannel + index;
@@ -514,12 +587,9 @@ ipcMain.handle('script:clear', (_, fkey) => {
   return { ok: true };
 });
 
-ipcMain.handle('script:toggle', (_, fkey) => {
-  if (runningScripts[fkey]) {
-    // Parar
-    stopRunningScript(fkey, 'toggle');
-    return { ok: true, running: false };
-  }
+// Inicia (ou reinicia) o script de uma F-key: lê o arquivo do disco, compila e
+// agenda o loop de 40ms. Reutilizado pelo toggle e pelo watch (reload em tempo real).
+function startScript(fkey) {
   const meta = scriptMeta[fkey];
   if (!meta) return { ok: false, error: 'Nenhum script neste botão' };
   let code;
@@ -531,6 +601,7 @@ ipcMain.handle('script:toggle', (_, fkey) => {
   // Monta contexto de execução do script
   const ctx = {};
   const SetChannel = (ch, val) => {
+    if (!isDmxChannelEnabled(ch)) return;
     if (ch in activeSceneChannels) return; // canal bloqueado por cena ativa
     universe.setChannel(ch, val);
   };
@@ -566,6 +637,15 @@ ipcMain.handle('script:toggle', (_, fkey) => {
   }, 40);
   runningScripts[fkey] = { interval, context: ctx };
   return { ok: true, running: true };
+}
+
+ipcMain.handle('script:toggle', (_, fkey) => {
+  if (runningScripts[fkey]) {
+    // Parar
+    stopRunningScript(fkey, 'toggle');
+    return { ok: true, running: false };
+  }
+  return startScript(fkey);
 });
 
 ipcMain.handle('script:list', () => {
@@ -579,13 +659,82 @@ ipcMain.handle('script:list', () => {
   }
 });
 
-ipcMain.handle('script:getAll', () => {
+// Monta o mapa de scripts F-key com flag running — usado pelo IPC e pelo watch.
+function buildAllScripts() {
   const result = {};
   for (const [fkey, meta] of Object.entries(scriptMeta)) {
     result[fkey] = { ...meta, running: !!runningScripts[fkey] };
   }
   return result;
-});
+}
+
+// Notifica o renderer que o conjunto de scripts mudou (watch em tempo real).
+function emitScriptsChanged() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('scripts:changed', buildAllScripts());
+  }
+}
+
+ipcMain.handle('script:getAll', () => buildAllScripts());
+
+// ─── WATCH em tempo real do diretório de scripts ─────────────────────────────
+// Reage a criar/modificar/remover .js em SCRIPTS_DIR sem reiniciar o app.
+let scriptsWatcher = null;
+const scriptWatchTimers = {};
+
+function handleScriptFileEvent(filename) {
+  if (!filename || !filename.endsWith('.js')) return;
+  const file = path.join(SCRIPTS_DIR, filename);
+  const exists = fs.existsSync(file);
+
+  if (!exists) {
+    // REMOÇÃO: para o script se estiver rodando e limpa do scriptMeta.
+    let changed = false;
+    for (const [fkey, meta] of Object.entries(scriptMeta)) {
+      if (path.basename(meta.file) === filename) {
+        stopRunningScript(fkey, 'arquivo removido');
+        delete scriptMeta[fkey];
+        changed = true;
+      }
+    }
+    if (changed) saveScriptMeta();
+    emitScriptsChanged();
+    return;
+  }
+
+  // MODIFICAÇÃO: se algum F-key que aponta para o arquivo está rodando,
+  // para, recarrega do disco e reinicia automaticamente.
+  for (const [fkey, meta] of Object.entries(scriptMeta)) {
+    if (path.basename(meta.file) === filename && runningScripts[fkey]) {
+      stopRunningScript(fkey, 'arquivo modificado');
+      startScript(fkey);
+    }
+  }
+  // CRIAÇÃO: scriptMeta é indexado por F-key, então um arquivo novo não recebe
+  // associação automática (não há F-key) nem sobrescreve associação existente.
+  // Apenas notifica o renderer para a lista de scripts existentes refletir.
+  emitScriptsChanged();
+}
+
+function startScriptsWatch() {
+  if (scriptsWatcher) return;
+  try {
+    scriptsWatcher = fs.watch(SCRIPTS_DIR, (_eventType, filename) => {
+      if (!filename) return;
+      const key = String(filename);
+      // debounce: fs.watch dispara múltiplos eventos por alteração
+      clearTimeout(scriptWatchTimers[key]);
+      scriptWatchTimers[key] = setTimeout(() => {
+        delete scriptWatchTimers[key];
+        try { handleScriptFileEvent(key); }
+        catch (e) { console.error('[scripts:watch] erro ao processar', key, e.message); }
+      }, 150);
+    });
+    console.log('[scripts:watch] monitorando', SCRIPTS_DIR);
+  } catch (e) {
+    console.error('[scripts:watch] não foi possível iniciar:', e.message);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────
 // IPC HANDLERS — PAGE SCRIPTS
@@ -644,6 +793,7 @@ ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
   catch (e) { return { ok: false, error: 'Arquivo nao encontrado' }; }
   const ctx = {};
   const SetChannel = (ch, val) => {
+    if (!isDmxChannelEnabled(ch)) return;
     if (ch in activeSceneChannels) return;
     universe.setChannel(ch, val);
   };
@@ -695,8 +845,8 @@ const FIXTURE_TEMPLATE_DEFAULT = JSON.stringify({
   startChannel: 1,
   channelCount: 8,
   channels: ['Dimmer', 'Red', 'Green', 'Blue', 'White', 'Strobe', 'Mode', 'Speed'],
-  posX: 10,
-  posY: 10,
+  posX: 0,
+  posY: 0,
 }, null, 2);
 
 ipcMain.handle('fixture:openTemplate', async () => {
@@ -733,6 +883,8 @@ app.whenReady().then(() => {
 
   engine.start();
   console.log('[main] engine DMX iniciado');
+
+  startScriptsWatch();
 });
 
 app.on('window-all-closed', () => {

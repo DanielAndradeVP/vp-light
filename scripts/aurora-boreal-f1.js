@@ -1,6 +1,6 @@
 // AURORA BOREAL
 // Transicao lenta azul > verde > ciano, com fade-in/out de intensidade.
-// Sem strobo. Destino atual: arquivo associado no show a F2.
+// Sem strobo. Destino: F1.
 
 const PARLED1_ID = 'fixture_1780805067518';
 
