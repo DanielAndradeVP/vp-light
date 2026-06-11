@@ -403,8 +403,10 @@ function loadPageScriptMeta() {
   for (const [pageId, pageData] of Object.entries(current.page_scripts)) {
     if (!pageScriptMeta[pageId]) pageScriptMeta[pageId] = {};
     for (const [sceneKey, meta] of Object.entries(pageData)) {
-      if (fs.existsSync(meta.file)) {
-        pageScriptMeta[pageId][sceneKey] = meta;
+      // Resolve o arquivo pelo nome, relativo ao SCRIPTS_DIR desta máquina.
+      const file = path.join(SCRIPTS_DIR, `${meta.name}.js`);
+      if (fs.existsSync(file)) {
+        pageScriptMeta[pageId][sceneKey] = { name: meta.name, file };
       }
     }
   }
@@ -467,8 +469,11 @@ function loadScriptMeta() {
   const current = show.getShow();
   if (!current?.scripts) return;
   for (const [fkey, meta] of Object.entries(current.scripts)) {
-    if (fs.existsSync(meta.file)) {
-      scriptMeta[fkey] = meta;
+    // Resolve o arquivo pelo nome, relativo ao SCRIPTS_DIR desta máquina —
+    // ignora caminho absoluto salvo no show (portável entre PCs/clones).
+    const file = path.join(SCRIPTS_DIR, `${meta.name}.js`);
+    if (fs.existsSync(file)) {
+      scriptMeta[fkey] = { name: meta.name, file };
     }
   }
 }

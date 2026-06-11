@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Software DMX para Igreja Vida e Paz",
   "main": "electron/main.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "electron .",
     "dev": "concurrently \"vite --port 5173\" \"wait-on http://localhost:5173 && electron .\"",
@@ -25,7 +28,9 @@
     "productName": "vp-light",
     "files": [
       "electron/**/*",
-      "dist/**/*"
+      "dist/**/*",
+      "shows/**/*",
+      "scripts/**/*"
     ],
     "win": {
       "target": "nsis"
