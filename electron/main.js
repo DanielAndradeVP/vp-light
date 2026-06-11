@@ -127,6 +127,7 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 600,
+    fullscreen: true,        // abre em tela cheia
     title: 'vp-light',
     backgroundColor: '#0a0a0a',
     webPreferences: {
@@ -179,6 +180,14 @@ ipcMain.handle('dmx:activateScene', (_, channels) => {
 ipcMain.handle('dmx:setChannel', (_, channel, value) => {
   universe.setChannel(channel, value);
   return { ok: true };
+});
+
+ipcMain.handle('dmx:setChannelRange', (_, channels, value) => {
+  if (!Array.isArray(channels)) {
+    return { ok: false, error: 'channels must be an array' };
+  }
+  channels.forEach((channel) => universe.setChannel(Number(channel), value));
+  return { ok: true, count: channels.length };
 });
 
 ipcMain.handle('dmx:blackout', () => {
@@ -719,25 +728,6 @@ app.whenReady().then(() => {
       console.log('[main] scripts carregados:', Object.keys(scriptMeta));
     } catch (e) {
       console.warn('[main] falha ao carregar show padrao:', e.message);
-    }
-  }
-
-  engine.start();
-  console.log('[main] engine DMX iniciado');
-});
-
-app.on('window-all-closed', () => {
-  engine.stop();
-  if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('activate', () => {
-  if (!mainWindow) createWindow();
-});
-eta();
-      console.log('[main] scripts carregados:', Object.keys(scriptMeta));
-    } catch (e) {
-      console.warn('[main] falha ao carregar show padrão:', e.message);
     }
   }
 

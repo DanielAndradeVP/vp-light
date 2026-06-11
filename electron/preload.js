@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('vp', {
    * @param {number} value    0–255
    */
   setChannel: (channel, value) => ipcRenderer.invoke('dmx:setChannel', channel, value),
+  setChannelRange: (channels, value) => ipcRenderer.invoke('dmx:setChannelRange', channels, value),
 
   /**
    * Zera todos os 512 canais imediatamente.

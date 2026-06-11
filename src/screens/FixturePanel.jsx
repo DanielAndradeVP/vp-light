@@ -34,6 +34,7 @@ export default function FixturePanel({ onClose }) {
   const { show, addFixture, removeFixture, duplicateFixture, saveShow } = useShow();
   const [selectedId, setSelectedId] = useState(null);
   const [editorFixtureId, setEditorFixtureId] = useState(null); // null = fechado, 'new' = novo, id = editar
+  const [newFixtureDraft, setNewFixtureDraft] = useState(null);
   const [filterText, setFilterText] = useState('');
 
   const fixtures = show.fixtures || [];
@@ -69,14 +70,22 @@ export default function FixturePanel({ onClose }) {
       const end = (f.startChannel || 1) + (f.channelCount || 1);
       return end > max ? end : max;
     }, 1);
-    addFixture({
+    setNewFixtureDraft({
       id,
       name: 'Novo Aparelho',
       startChannel: nextStart,
       channelCount: 1,
       channels: ['Canal 1'],
+      manufacturer: '',
+      model: '',
+      note: '',
     });
-    setEditorFixtureId(id);
+    setEditorFixtureId('new');
+  }
+
+  function handleEditorClose() {
+    setEditorFixtureId(null);
+    setNewFixtureDraft(null);
   }
 
   function handleRemove() {
@@ -255,7 +264,12 @@ export default function FixturePanel({ onClose }) {
       {editorFixtureId && (
         <FixtureEditor
           fixtureId={editorFixtureId}
-          onClose={() => setEditorFixtureId(null)}
+          draftFixture={editorFixtureId === 'new' ? newFixtureDraft : null}
+          onCreate={fixture => {
+            addFixture(fixture);
+            setSelectedId(fixture.id);
+          }}
+          onClose={handleEditorClose}
         />
       )}
     </div>

@@ -5,6 +5,7 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useShow } from '../store/showStore.js';
 import theme from '../theme.js';
+import ChatPanel from './ChatPanel.jsx';
 
 const SCENE_KEYS = ['A','S','D','F','G','H','J','K','L','Z','X','C','V'];
 const RIGHT_PANEL_MIN_WIDTH = 260;
@@ -12,6 +13,12 @@ const RIGHT_PANEL_MAX_WIDTH = 640;
 const DESK_MIN_WIDTH = 360;
 const MAX_PAGE = 10;
 const GRID = 40;          // tamanho do quadradinho da grade — o aparelho ocupa exatamente 1 quadrado
+
+const CUSTOM_FUNCTIONS_BY_TYPE = {
+  ribalta: [
+    { id: 'ribalta_all_on', label: 'ALL ON' },
+  ],
+};
 
 const C = {
   bg: theme.colors.bgDarker, surface: theme.colors.panel, border: theme.colors.borderSoft,
@@ -117,6 +124,8 @@ export default function Main({ onOpenFixtures }) {
   const [rightPanelTab, setRightPanelTab] = useState('description');
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
   const [rightPanelResize, setRightPanelResize] = useState(null); // { startX, startWidth }
+  const [customFunctionMenuFixtureId, setCustomFunctionMenuFixtureId] = useState(null);
+  const [activeCustomFunctionByFixture, setActiveCustomFunctionByFixture] = useState({});
   const [testPanelPos, setTestPanelPos] = useState({ x: null, y: 56 });
   const [testPanelDrag, setTestPanelDrag] = useState(null); // { offsetX, offsetY }
 
@@ -536,6 +545,97 @@ export default function Main({ onOpenFixtures }) {
     await window.vp.setChannel(dmxChannel, val);
   }
 
+  function getFixtureDmxChannels(fixture) {
+    if (!fixture) return [];
+    const startChannel = fixture.startChannel || 1;
+    const channelCount = fixture.channelCount ?? (fixture.channels || []).length;
+    return Array.from({ length: channelCount }, (_, i) => startChannel + i);
+  }
+
+  function getFixtureType(fixture) {
+    return String(fixture?.fixtureType || fixture?.type || '').toLowerCase();
+  }
+
+  function getFixtureCustomFunctions(fixture) {
+    return CUSTOM_FUNCTIONS_BY_TYPE[getFixtureType(fixture)] || [];
+  }
+
+  function toggleCustomFunctionMenu(fixtureId) {
+    setCustomFunctionMenuFixtureId(prev => (prev === fixtureId ? null : fixtureId));
+  }
+
+  function selectCustomFunction(fixture, functionId) {
+    const available = getFixtureCustomFunctions(fixture);
+    if (!available.some(fn => fn.id === functionId)) return;
+    setActiveCustomFunctionByFixture(prev => {
+      const next = { ...prev };
+      if (next[fixture.id] === functionId) delete next[fixture.id];
+      else next[fixture.id] = functionId;
+      return next;
+    });
+    setCustomFunctionMenuFixtureId(null);
+  }
+
+  function getRibaltaLedChannels(fixture) {
+    if (getFixtureType(fixture) !== 'ribalta') return [];
+    const startChannel = fixture.startChannel || 1;
+    return (fixture.channels || [])
+      .map((name, i) => ({ name: String(name || '').toLowerCase(), channel: startChannel + i }))
+      .filter(item => /^led_?[1-8]$/.test(item.name))
+      .map(item => item.channel);
+  }
+
+  function isRibaltaAllOnActive(fixture) {
+    return getFixtureType(fixture) === 'ribalta'
+      && activeCustomFunctionByFixture[fixture.id] === 'ribalta_all_on';
+  }
+
+  async function handleRibaltaAllOnFader(fixture, value) {
+    if (!isRibaltaAllOnActive(fixture)) return;
+    const val = Number(value);
+    const channels = getRibaltaLedChannels(fixture);
+    setLiveValues(prev => {
+      const next = { ...prev };
+      channels.forEach(channel => { next[channel] = val; });
+      return next;
+    });
+    await window.vp.setChannelRange(channels, val);
+  }
+
+  function handleFitFixtures() {
+    const rect = mesaRef.current?.getBoundingClientRect();
+    const fixtures = show.fixtures || [];
+    if (!rect || fixtures.length === 0) {
+      setView({ zoom: 1, panX: 0, panY: 0 });
+      return;
+    }
+
+    const minX = Math.min(...fixtures.map(f => f.posX ?? 10));
+    const minY = Math.min(...fixtures.map(f => f.posY ?? 10));
+    const maxX = Math.max(...fixtures.map(f => (f.posX ?? 10) + GRID));
+    const maxY = Math.max(...fixtures.map(f => (f.posY ?? 10) + GRID));
+    const contentWidth = Math.max(GRID, maxX - minX);
+    const contentHeight = Math.max(GRID, maxY - minY);
+    const padding = GRID * 2;
+    const fitZoom = Math.min(
+      1,
+      4,
+      Math.max(
+        0.3,
+        Math.min(
+          rect.width / (contentWidth + padding),
+          rect.height / (contentHeight + padding)
+        )
+      )
+    );
+
+    setView({
+      zoom: fitZoom,
+      panX: (rect.width - contentWidth * fitZoom) / 2 - minX * fitZoom,
+      panY: (rect.height - contentHeight * fitZoom) / 2 - minY * fitZoom,
+    });
+  }
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#1d2b30', color:'#ffffff', fontFamily:'Arial, Helvetica, sans-serif' }}>
       <style>{`
@@ -589,16 +689,26 @@ export default function Main({ onOpenFixtures }) {
                 const rawX = wx - dragging.offX;
                 const rawY = wy - dragging.offY;
                 // snap: encaixa o aparelho de quadradinho em quadradinho
-                const snapX = Math.max(0, Math.round(rawX / GRID) * GRID);
-                const snapY = Math.max(0, Math.round(rawY / GRID) * GRID);
+                const snapX = Math.round(rawX / GRID) * GRID;
+                const snapY = Math.round(rawY / GRID) * GRID;
+                const deltaX = snapX - dragging.origin.x;
+                const deltaY = snapY - dragging.origin.y;
+                const movingIds = new Set(dragging.ids);
+                const nextPositions = dragging.fixtures.map(item => ({
+                  id: item.id,
+                  posX: Math.round((item.x + deltaX) / GRID) * GRID,
+                  posY: Math.round((item.y + deltaY) / GRID) * GRID,
+                }));
                 // colisão: 1 aparelho por quadrado — não deixa entrar onde já existe outro
-                const overlaps = show.fixtures.some(o => {
-                  if (o.id === dragging.id) return false;
+                const overlaps = nextPositions.some(pos => show.fixtures.some(o => {
+                  if (movingIds.has(o.id)) return false;
                   const ox = o.posX ?? 10, oy = o.posY ?? 10;
-                  return snapX < ox + GRID && snapX + GRID > ox
-                      && snapY < oy + GRID && snapY + GRID > oy;
-                });
-                if (!overlaps) updateFixture(dragging.id, { posX: snapX, posY: snapY });
+                  return pos.posX < ox + GRID && pos.posX + GRID > ox
+                      && pos.posY < oy + GRID && pos.posY + GRID > oy;
+                }));
+                if (!overlaps) {
+                  nextPositions.forEach(pos => updateFixture(pos.id, { posX: pos.posX, posY: pos.posY }));
+                }
                 return;
               }
               if (selection) {
@@ -649,7 +759,19 @@ export default function Main({ onOpenFixtures }) {
                     const rect = mesaRef.current.getBoundingClientRect();
                     const wx = (e.clientX - rect.left - view.panX) / view.zoom;
                     const wy = (e.clientY - rect.top - view.panY) / view.zoom;
-                    setDragging({ id: f.id, offX: wx - (f.posX ?? 10), offY: wy - (f.posY ?? 10) });
+                    const draggingIds = multiSelected.includes(f.id) ? multiSelected : [f.id];
+                    const draggingFixtures = show.fixtures
+                      .filter(item => draggingIds.includes(item.id))
+                      .map(item => ({ id: item.id, x: item.posX ?? 10, y: item.posY ?? 10 }));
+                    const origin = { x: f.posX ?? 10, y: f.posY ?? 10 };
+                    setDragging({
+                      id: f.id,
+                      ids: draggingIds,
+                      origin,
+                      fixtures: draggingFixtures,
+                      offX: wx - origin.x,
+                      offY: wy - origin.y,
+                    });
                   }}
                   onClick={(e) => { e.stopPropagation(); setSelectedFixtureId(f.id === selectedFixtureId ? null : f.id); }}
                   style={{
@@ -661,7 +783,7 @@ export default function Main({ onOpenFixtures }) {
                     background:'#233237',
                     color:'#ffffff',
                     border: isSelected ? '2px solid #b7dede' : '1px solid #5f8588',
-                    borderRadius:0, boxShadow:'none', cursor: dragging?.id === f.id ? 'grabbing' : 'grab',
+                    borderRadius:0, boxShadow:'none', cursor: dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab',
                     display:'flex', flexDirection:'column',
                     alignItems:'center', justifyContent:'center', gap:1,
                     userSelect:'none', overflow:'hidden',
@@ -772,16 +894,17 @@ export default function Main({ onOpenFixtures }) {
               {[
                 ['Z+', 44],
                 ['Z-', 44],
-                ['ZFit', 70],
+                ['ZFit', 70, handleFitFixtures],
                 ['BO', 92],
                 ['freeZe', 78],
                 ['WPT', 26],
                 ['WPTE', 26],
                 ['WSeq', 26],
-              ].map(([label, height]) => (
+              ].map(([label, height, onClick]) => (
                 <button
                   key={label}
                   type="button"
+                  onClick={onClick}
                   style={{
                     width:'100%',
                     height,
@@ -796,7 +919,7 @@ export default function Main({ onOpenFixtures }) {
                     textAlign:'center',
                     outline:'none',
                     boxShadow:'none',
-                    cursor:'default',
+                    cursor:onClick ? 'pointer' : 'default',
                     padding:0,
                     margin:0,
                     display:'flex',
@@ -809,31 +932,131 @@ export default function Main({ onOpenFixtures }) {
               ))}
             </div>
             <div style={{ flex:1, background:'#35484f', color:'#ffffff', overflow:'auto', position:'relative' }}>
-              {rightPanelTab === 'chat' && (
-                <div style={{ background:'#35484f', color:'#c8dddd', padding:8, fontSize:12, fontFamily:'Arial, Helvetica, sans-serif' }}>
-                  em desenvolvimento
-                </div>
-              )}
-              {rightPanelTab === 'description' && selectedFixture && (selectedFixture.channels || []).map((chanName, i) => {
-                const dmxCh = selectedFixture.startChannel + i;
-                const val = liveValues[dmxCh] ?? 0;
+              {rightPanelTab === 'chat' && <ChatPanel />}
+              {rightPanelTab === 'description' && selectedFixture && (() => {
+                const fixtureChannels = getFixtureDmxChannels(selectedFixture);
+                const fixtureFunctions = getFixtureCustomFunctions(selectedFixture);
+                const storedCustomFunction = activeCustomFunctionByFixture[selectedFixture.id];
+                const activeCustomFunction = fixtureFunctions.some(fn => fn.id === storedCustomFunction) ? storedCustomFunction : null;
+                const customFunctionMenuOpen = customFunctionMenuFixtureId === selectedFixture.id;
+                const ribaltaAllOnActive = isRibaltaAllOnActive(selectedFixture);
+                const ribaltaLedChannels = getRibaltaLedChannels(selectedFixture);
+                const ribaltaAllOnValue = ribaltaLedChannels.length
+                  ? Math.max(...ribaltaLedChannels.map(channel => liveValues[channel] ?? 0))
+                  : 0;
                 return (
-                  <div key={i} style={{ marginBottom:10, padding:'0 8px' }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
-                      <span style={{ display:'flex', gap:4, minWidth:0 }}>
-                        <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:11, color:'#9bb4b7', flexShrink:0 }}>{dmxCh}</span>
-                        <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, color:'#c8dddd', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{chanName || `Canal ${i+1}`}</span>
+                  <div style={{ paddingTop:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', marginBottom:customFunctionMenuOpen ? 0 : 8, background:theme.colors.panelDark, borderTop:`1px solid ${theme.colors.borderSoft}`, borderBottom:`1px solid ${theme.colors.borderSoft}` }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleCustomFunctionMenu(selectedFixture.id)}
+                        title="Funções personalizadas"
+                        style={{
+                          order:2,
+                          minWidth:142,
+                          maxWidth:142,
+                          height:24,
+                          padding:'0 8px',
+                          background:activeCustomFunction ? theme.colors.selection : theme.colors.bgDarker,
+                          color:theme.colors.text,
+                          border:`1px solid ${activeCustomFunction ? theme.colors.borderStrong : theme.colors.border}`,
+                          borderRadius:0,
+                          boxSizing:'border-box',
+                          fontFamily:theme.typography.fontFamily,
+                          fontSize:10,
+                          fontWeight:700,
+                          lineHeight:1,
+                          display:'flex',
+                          alignItems:'center',
+                          justifyContent:'center',
+                          cursor:'pointer',
+                          boxShadow:'none',
+                          outline:'none',
+                          whiteSpace:'nowrap',
+                          overflow:'hidden',
+                          textOverflow:'clip',
+                        }}
+                      >
+                        Funções personalizadas
+                      </button>
+                      <span style={{ order:1, minWidth:0, flex:1, fontFamily:theme.typography.fontFamily, fontSize:13, fontWeight:700, color:theme.colors.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {selectedFixture.name}
                       </span>
-                      <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.sliderThumb.fontSize, fontWeight:theme.typography.sliderThumb.fontWeight, color:theme.colors.primary, minWidth:28, textAlign:'right' }}>{val}</span>
                     </div>
-                    <input
-                      type="range" min={0} max={255} value={val}
-                      onChange={e => handleFader(dmxCh, e.target.value)}
-                      style={{ width:'100%', accentColor:theme.colors.primary, cursor:'pointer', height:4 }}
-                    />
+
+                    {customFunctionMenuOpen && (
+                      <div style={{ margin:'0 8px 8px', border:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.panelDark }}>
+                        {fixtureFunctions.length === 0 && (
+                          <div style={{ minHeight:28, display:'flex', alignItems:'center', padding:'0 8px', fontFamily:theme.typography.fontFamily, fontSize:11, color:theme.colors.textMuted, background:theme.colors.bgDarker }}>
+                            Nenhuma função para este tipo
+                          </div>
+                        )}
+                        {fixtureFunctions.map(fn => {
+                          const active = activeCustomFunction === fn.id;
+                          return (
+                            <button
+                              key={fn.id}
+                              type="button"
+                              onClick={() => selectCustomFunction(selectedFixture, fn.id)}
+                              style={{
+                                width:'100%',
+                                height:30,
+                                padding:'0 8px',
+                                background:active ? theme.colors.selection : theme.colors.bgDarker,
+                                color:theme.colors.text,
+                                border:'none',
+                                borderLeft:`3px solid ${active ? theme.colors.borderStrong : theme.colors.bgDarker}`,
+                                borderBottom:`1px solid ${theme.colors.borderSoft}`,
+                                borderRadius:0,
+                                boxSizing:'border-box',
+                                fontFamily:theme.typography.fontFamily,
+                                fontSize:12,
+                                fontWeight:700,
+                                textAlign:'left',
+                                cursor:'pointer',
+                                outline:'none',
+                                display:'flex',
+                                alignItems:'center',
+                              }}
+                            >
+                              {fn.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {fixtureChannels.map((dmxCh, i) => {
+                      const chanName = (selectedFixture.channels && selectedFixture.channels[i]) || `Canal ${i+1}`;
+                      const normalizedChanName = String(chanName || '').toLowerCase();
+                      const maskedByAllOn = ribaltaAllOnActive && /^led_?[2-8]$/.test(normalizedChanName);
+                      if (maskedByAllOn) return null;
+
+                      const allOnMaster = ribaltaAllOnActive && /^led_?1$/.test(normalizedChanName);
+                      const val = allOnMaster ? ribaltaAllOnValue : (liveValues[dmxCh] ?? 0);
+                      return (
+                        <div key={dmxCh} style={{ marginBottom:10, padding:'0 8px' }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                            <span style={{ display:'flex', gap:4, minWidth:0 }}>
+                              <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:11, color:'#9bb4b7', flexShrink:0 }}>{dmxCh}</span>
+                              <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, color:'#c8dddd', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{allOnMaster ? `${chanName} / ALL ON` : chanName}</span>
+                            </span>
+                            <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.sliderThumb.fontSize, fontWeight:theme.typography.sliderThumb.fontWeight, color:theme.colors.primary, minWidth:28, textAlign:'right' }}>{val}</span>
+                          </div>
+                          <input
+                            type="range" min={0} max={255} value={val}
+                            onChange={e => {
+                              if (allOnMaster) handleRibaltaAllOnFader(selectedFixture, e.target.value);
+                              else handleFader(dmxCh, e.target.value);
+                            }}
+                            style={{ width:'100%', accentColor:theme.colors.primary, cursor:'pointer', height:4 }}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 );
-              })}
+              })()}
             </div>
           </div>
         </div>

@@ -12,12 +12,19 @@ const C = {
   overlay: 'rgba(0,0,0,0.7)', input: '#2e2e2e', inputBorder: '#444',
 };
 
-export default function FixtureEditor({ fixtureId, onClose }) {
+export default function FixtureEditor({ fixtureId, draftFixture, onCreate, onClose }) {
   const { show, updateFixture } = useShow();
-  const original = show.fixtures.find(f => f.id === fixtureId);
+  const isNewFixture = fixtureId === 'new';
+  const original = isNewFixture
+    ? draftFixture
+    : show.fixtures.find(f => f.id === fixtureId);
+  const editorFixtureId = original?.id || fixtureId;
 
   const [tab, setTab] = useState('basico');
   const [name, setName] = useState(original?.name || '');
+  const [manufacturer, setManufacturer] = useState(original?.manufacturer || '');
+  const [model, setModel] = useState(original?.model || '');
+  const [note, setNote] = useState(original?.note ?? original?.observation ?? '');
   const [startChannel, setStartChannel] = useState(original?.startChannel || 1);
   const [channelCount, setChannelCount] = useState(original?.channelCount || 1);
   const [channels, setChannels] = useState(() => {
@@ -46,12 +53,22 @@ export default function FixtureEditor({ fixtureId, onClose }) {
   }, [onClose]);
 
   function handleConfirm() {
-    updateFixture(fixtureId, {
+    const fixtureData = {
       name,
+      manufacturer,
+      model,
+      note,
+      observation: '',
       startChannel: Number(startChannel),
       channelCount: Number(channelCount),
       channels,
-    });
+    };
+
+    if (isNewFixture) {
+      onCreate?.({ ...original, ...fixtureData });
+    } else {
+      updateFixture(fixtureId, fixtureData);
+    }
     onClose();
   }
 
@@ -84,10 +101,16 @@ export default function FixtureEditor({ fixtureId, onClose }) {
           {tab === 'basico' && (
             <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
               <Field label="Id">
-                <input value={fixtureId} disabled style={inputStyle(true)} />
+                <input value={editorFixtureId} disabled style={inputStyle(true)} />
               </Field>
               <Field label="Nome">
                 <input value={name} onChange={e => setName(e.target.value)} style={inputStyle()} />
+              </Field>
+              <Field label="Fabricante">
+                <input value={manufacturer} onChange={e => setManufacturer(e.target.value)} style={inputStyle()} />
+              </Field>
+              <Field label="Modelo">
+                <input value={model} onChange={e => setModel(e.target.value)} style={inputStyle()} />
               </Field>
               <Field label="Número de canais">
                 <input type="number" min={1} max={512} value={channelCount}
@@ -96,6 +119,9 @@ export default function FixtureEditor({ fixtureId, onClose }) {
               <Field label="Canal de início">
                 <input type="number" min={1} max={512} value={startChannel}
                   onChange={e => setStartChannel(e.target.value)} style={inputStyle()} />
+              </Field>
+              <Field label="Observacoes">
+                <textarea value={note} onChange={e => setNote(e.target.value)} style={{ ...inputStyle(), minHeight:64, resize:'vertical' }} />
               </Field>
             </div>
           )}
