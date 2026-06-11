@@ -44,7 +44,8 @@ vp-light/
 │   ├── App.jsx        ← roteador de telas
 │   ├── main.jsx       ← entry point React
 │   ├── screens/
-│   │   ├── Main.jsx         ← tela principal: mesa de aparelhos, faders, cenas A-M, F1-F12
+│   │   ├── Main.jsx         ← tela principal: mesa de aparelhos, faders, cenas, scripts e páginas
+│   │   ├── ChatPanel.jsx    ← aba Chat do painel direito, com menu de skills locais
 │   │   ├── FixturePanel.jsx ← painel de aparelhos: tabela, novo/remover/duplicar
 │   │   └── FixtureEditor.jsx← modal: abas Básico e Descrição
 │   └── store/
@@ -52,8 +53,11 @@ vp-light/
 ├── scripts/
 │   └── *.js           ← scripts de efeito DMX (F1–F12)
 ├── shows/
-│   └── vp.show.json ← show padrão carregado na inicialização
+│   ├── vp.show.json        ← show padrão carregado na inicialização
+│   └── fixture_template.json ← modelo aberto pelo fluxo "Criar novo aparelho (AI)"
 ├── .agents/           ← skills dos agentes VS Code
+├── skills/            ← cópias/skills locais para agentes externos
+├── README_SKILL.md    ← documentação estrutural para agentes
 ├── index.html
 ├── vite.config.js
 └── package.json
@@ -78,11 +82,14 @@ Renderer (React)
 
 ## Atalhos de teclado (tela principal)
 
-| Tecla   | Ação                    |
-|---------|-------------------------|
-| A – M   | Ativa / desativa a cena |
-| Espaço  | BLACKOUT                |
-| ESC     | Fecha modal aberto      |
+| Tecla | Ação |
+|-------|------|
+| A, S, D, F, G, H, J, K, L, Z, X, C, V | Ativa/desativa a cena da página atual ou alterna o script daquela tecla, quando existir |
+| Espaço | BLACKOUT |
+| ESC | Fecha modal, menu de contexto ou pop-up aberto |
+
+Na tela principal, os botões `PgUp` e `PgDw` mudam a página visual atual. Os botões `F1` a `F12`
+ficam na barra inferior e executam scripts globais associados a cada F-key.
 
 ---
 
@@ -96,6 +103,12 @@ Renderer (React)
     {
       "id": "fixture_123",
       "name": "parLed1",
+      "manufacturer": "Fabricante",
+      "model": "Modelo",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "Frente",
+      "note": "Observação operacional",
       "startChannel": 1,
       "channelCount": 8,
       "channels": ["dimmer", "strobo", "", "", "red", "green", "blue", "white"],
@@ -115,6 +128,14 @@ Renderer (React)
       }
     }
   },
+  "page_scripts": {
+    "1": {
+      "A": {
+        "name": "script-da-cena-a",
+        "file": "C:\\vp-light\\scripts\\script-da-cena-a.js"
+      }
+    }
+  },
   "scripts": {
     "F1": {
       "name": "rgb-loop",
@@ -128,11 +149,24 @@ Renderer (React)
 `canal DMX real = startChannel + índice no array channels`
 O alias (nome do canal) é um rótulo visual usado pelos agentes de script.
 
+Ao salvar, o sistema valida fixtures antes de gravar: `channelCount` precisa bater com o tamanho
+de `channels`, a faixa `startChannel..startChannel + channelCount - 1` precisa ficar dentro de
+1–512, e duas fixtures não podem ocupar o mesmo canal DMX.
+
+Campos como `manufacturer`, `model`, `fixtureType`, `group`, `universe` e `note` são usados pela
+tabela de configuração, pelo painel de descrição e pelos agentes de normalização. `page_scripts`
+guarda scripts associados às teclas de cena por página; `scripts` guarda scripts globais dos
+botões `F1` a `F12`.
+
 ---
 
-## Scripts de efeito (F1–F12)
+## Scripts de efeito
 
-Scripts são arquivos `.js` em `C:\vp-light\scripts\` associados aos botões F1–F12.
+Scripts são arquivos `.js` em `C:\vp-light\scripts\`. Existem dois usos:
+
+- **Scripts globais:** associados aos botões `F1` a `F12`.
+- **Scripts de cena:** associados a uma tecla de cena da página atual (`A`, `S`, `D`, etc.) e
+  salvos em `page_scripts`.
 
 Estrutura obrigatória:
 
@@ -142,8 +176,45 @@ function OnExecute()  { } // chamado a cada 40ms
 function OnTerminate(){ } // chamado ao desativar ou blackout
 ```
 
-Para criar: clique direito no botão F-key → Criar Script → define o nome → abre no VS Code.
-Para ativar/desativar: clique esquerdo no botão F-key.
+Funções disponíveis dentro do script:
+
+```js
+SetChannel(1, 255);                    // define um canal DMX real
+const dimmer = getChannel(id, "dimmer"); // resolve um alias de canal de uma fixture
+```
+
+`SetChannel` não sobrescreve canais que estejam bloqueados por cenas ativas. O BLACKOUT para todos
+os scripts em execução antes de zerar o universo.
+
+Para scripts globais: clique direito em um botão `F1`–`F12`, escolha criar/editar/mover/limpar,
+e use clique esquerdo para ativar/desativar. Ao criar ou editar, o arquivo abre no VS Code.
+
+Para scripts de cena: clique direito em uma tecla de cena na barra inferior. Uma tecla pode guardar
+uma cena comum ou um script; ao criar script naquela tecla, a cena existente naquela posição é
+removida.
+
+---
+
+## Aparelhos e patch DMX
+
+A tela **Configuração de aparelhos** mostra a lista de fixtures, com filtro por nome, fabricante,
+modelo, tipo, endereço e quantidade de canais. O editor de aparelho tem abas **Básico** e
+**Descrição**:
+
+- **Básico:** nome, fabricante, modelo, número de canais, canal de início e observações.
+- **Descrição:** alias de cada canal DMX, usado nos faders, no painel de descrição e pelos scripts.
+
+Para criar manualmente, use **Criar novo aparelho (Manual)**, preencha os dados e confirme. O
+aparelho só entra no show ao clicar em **Confirmar** no editor. Para preparar um cadastro com IA,
+use **Criar novo aparelho (AI)**; o sistema abre `shows/fixture_template.json` no VS Code para
+servir como modelo.
+
+Na mesa principal, fixtures podem ser arrastadas na grade. A posição usa snap por quadrado e evita
+sobreposição visual durante o arraste. A seleção por área permite mover múltiplas fixtures juntas.
+
+O painel direito da tela principal alterna entre **Chat** e **Descrição**. Em **Descrição**, os
+faders mostram os canais da fixture selecionada e acompanham a prioridade real do universo:
+cenas ativas primeiro, depois scripts em execução, depois zero.
 
 ---
 
@@ -154,8 +225,8 @@ Skills ficam em `skills/` (pastas com `SKILL.md`) e servem tarefas específicas.
 - `desenvolvedor-backend-vplight`: backend/engine, Art‑Net, IPC, scripts de efeito.
 - `desenvolvedor-frontend-vplight`: UI, telas, tokens do `src/theme.js` e consistência visual.
 - `gerador-de-prompts-vplight`: gera prompts formatados para o CoWork (geração de mudanças).
-- `sync-skills-projetct-vplight`: audita e valida skills contra o `README_SKILL.md`.
-- `sync-system`: sincroniza `README_SKILL.md` e `README.md` a partir de mudanças no código.
+- `fiscal-de-skills-vplight`: audita e valida skills contra o `README_SKILL.md`.
+- `fiscal-do-sistema`: sincroniza `README_SKILL.md` e `README.md` a partir de mudanças no código.
 
 Uso rápido:
 1. Leia `skills/<nome>/SKILL.md` para entender o propósito da skill.
@@ -163,27 +234,39 @@ Uso rápido:
 3. Para gerar scripts, cole `shows/vp.show.json` antes de pedir geração.
 4. Ao alterar equipamentos ou o show, atualize e cole `vp.show.json` antes de usar as skills.
 
+A aba **Chat** dentro do vp-light lista as skills de `.agents/skills/*/SKILL.md` no botão `+` e
+insere a menção no cursor do input. O envio de mensagens depende de um backend exposto em
+`window.vp.sendChat`; sem essa ponte, a própria interface avisa que o chat ainda não está conectado.
+
 ---
 
-## Gerando Scripts DMX
+## Gerando Scripts DMX com agentes
 
-Existem duas formas de gerar scripts para os botões F1–F12:
+Existem duas formas de gerar scripts DMX para associar a botões `F1`–`F12` ou a teclas de cena:
 
 ### 1. Via CoWork (Claude)
 
-Abra o projeto `C:\vp-light` no CoWork e entre no chat **"Gerar Scripts"**. Mencione a skill `gerador-de-scripts-vplight` e descreva o efeito desejado informando o id do fixture e as características (cores, strobo, dimmer, etc.).
+Abra o projeto `C:\vp-light` no CoWork e mencione a skill `gerador-de-prompts-vplight` para
+formatar a solicitação, ou use uma skill técnica específica quando o agente disponível suportar
+escrita direta em `scripts/`. Descreva o efeito desejado informando o id da fixture e as
+características dos canais (cores, strobo, dimmer, etc.).
 
-O agente lê automaticamente o `vp.show.json` para mapear os fixtures e suas funções por canal (via label da descrição), e gera o arquivo `.js` direto na pasta `scripts/` do projeto.
+O agente deve usar `vp.show.json` para mapear as fixtures e suas funções por canal (via label da
+descrição), e então gerar ou orientar a criação do arquivo `.js` na pasta `scripts/` do projeto.
 
-Reinicie o `npm run dev` para o script aparecer no sistema.
+Depois de criar o arquivo, associe-o a uma F-key ou a uma tecla de cena pelo menu de contexto na
+tela principal.
 
 ### 2. Via Copilot no VS Code
 
-No chat do VS Code, mencione a skill `gerador-de-scripts-vplight` e anexe o arquivo `vp.show.json`. Descreva o efeito desejado da mesma forma.
+No chat do VS Code, mencione a skill adequada e anexe `shows/vp.show.json`. Descreva o efeito
+desejado da mesma forma.
 
-O agente mapeia os fixtures pelo mesmo critério (label da descrição do canal) e gera o arquivo `.js` na pasta `scripts/` do projeto.
+O agente mapeia as fixtures pelo mesmo critério (label da descrição do canal) e gera ou orienta o
+arquivo `.js` na pasta `scripts/` do projeto.
 
-Reinicie o `npm run dev` para o script aparecer no sistema.
+Se o arquivo for criado com o app já aberto, use o menu de script para criar/associar ou reabra o
+show para recarregar metadados persistidos.
 
 ---
 
@@ -208,9 +291,14 @@ Reinicie o `npm run dev` para o script aparecer no sistema.
 
 **Scripts não aparecem ao reiniciar:**
 - Confirme que o campo `scripts` existe no `vp.show.json`
+- Para scripts de cena, confirme que o campo `page_scripts` existe no `vp.show.json`
 - Confirme que os caminhos dos arquivos `.js` estão corretos
+
+**Show não salva depois de editar aparelhos:**
+- Confira se `channelCount` é igual ao tamanho do array `channels`
+- Verifique se a faixa de canais da fixture fica entre 1 e 512
+- Confirme que o endereço DMX da fixture não sobrepõe outro aparelho
 
 **Engine não inicia:**
 - Verifique o console do DevTools por erros no socket UDP
 - Confirme que a porta 6454 não está bloqueada pelo firewall
-

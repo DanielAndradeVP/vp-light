@@ -8,7 +8,7 @@
 > Ele tem dois leitores:
 > 1. **O desenvolvedor** (humano), que atualiza este arquivo sempre que cria algo novo,
 >    corrige um bug que mudou estrutura, adiciona um equipamento ou muda um contrato.
-> 2. **A skill `sync-skills-projetct-vplight`** (agente), que lê este arquivo e compara
+> 2. **A skill `fiscal-de-skills-vplight`** (agente), que lê este arquivo e compara
 >    com uma skill-alvo para decidir se a skill ainda está alinhada e "competente".
 >
 > **Regra de ouro:** se uma informação aqui mudar, qualquer skill que repita essa

@@ -1,9 +1,9 @@
 ---
-name: sync-system
-description: "Sincronizador de documentação do vp-light. Analisa os arquivos alterados e os em preparação (working tree + staged no git) e atualiza os dois READMEs do projeto: o README_SKILL.md (linguagem de máquina, para agentes/skills) e o README.md (linguagem humana, documentação do sistema). Cada um no seu estilo. Use quando o usuário mexeu no código e disser: 'sincroniza a documentação', 'atualiza os READMEs', 'reflete as mudanças', 'rodei umas alterações, atualiza os docs', 'sync-system', ou após criar/alterar fixture, contrato IPC, tela, script ou token visual. NÃO altera código-fonte — só os dois READMEs."
+name: fiscal-do-sistema
+description: "Sincronizador de documentação do vp-light. Analisa os arquivos alterados e os em preparação (working tree + staged no git) e atualiza os dois READMEs do projeto: o README_SKILL.md (linguagem de máquina, para agentes/skills) e o README.md (linguagem humana, documentação do sistema). Cada um no seu estilo. Use quando o usuário mexeu no código e disser: 'sincroniza a documentação', 'atualiza os READMEs', 'reflete as mudanças', 'rodei umas alterações, atualiza os docs', 'fiscal-do-sistema', ou após criar/alterar fixture, contrato IPC, tela, script ou token visual. NÃO altera código-fonte — só os dois READMEs."
 ---
 
-# sync-system
+# fiscal-do-sistema
 
 Mantém a documentação do vp-light em dia com o código. Você olha **o que mudou** (arquivos
 alterados e os que estão em preparação no git) e **reflete essas mudanças estruturais** nos
@@ -13,7 +13,7 @@ dois READMEs do projeto — cada um na sua linguagem.
 código alterado / em preparação
         │
         ▼
-   [ sync-system ]
+   [ fiscal-do-sistema ]
         ├──► README_SKILL.md   (linguagem de máquina — para o agente/skill)
         └──► README.md         (linguagem humana — documentação do sistema)
 ```

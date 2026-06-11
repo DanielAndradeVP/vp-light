@@ -1,9 +1,9 @@
 ---
-name: sync-skills-projetct-vplight
+name: fiscal-de-skills-vplight
 description: "Auditor de alinhamento de skills do vp-light. Compara uma skill-alvo com o README_SKILL.md (fonte da verdade estrutural do projeto) e aponta o que na skill está desatualizado ou desalinhado, para que ela continue competente. Use quando o usuário quiser verificar/sincronizar uma skill do vp-light após mudança no projeto, ou disser: 'a skill X ainda está alinhada?', 'valida a skill', 'sincroniza a skill com o projeto', 'o README_SKILL mudou, revisa as skills', 'audita a skill alvo'. NÃO reescreve a skill inteira nem reporta bugs do sistema — só lista o que mudar."
 ---
 
-# sync-skills-projetct-vplight
+# fiscal-de-skills-vplight
 
 Auditor de alinhamento entre uma **skill-alvo** do vp-light e o estado estrutural do
 projeto. Não conhece o projeto de cabeça: a **fonte da verdade é sempre o
