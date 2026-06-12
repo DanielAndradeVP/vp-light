@@ -65,6 +65,30 @@ function isFixtureEnabled(fixture) {
   return fixture?.enabled !== false;
 }
 
+// Retorna uma string css rgb() baseada nos canais "red"/"green"/"blue"/"dimmer" do fixture
+// usando os valores de liveValues. Retorna null se o fixture não tiver esses canais,
+// se dimmer for zero, ou se RGB forem todos zero.
+function getFixtureLiveColor(fixture, liveValues) {
+  if (!fixture?.channels?.length) return null;
+  const start = fixture.startChannel || 1;
+  let dimmerCh = null, redCh = null, greenCh = null, blueCh = null;
+  fixture.channels.forEach((label, i) => {
+    const l = String(label || '').toLowerCase();
+    const ch = start + i;
+    if (l === 'dimmer') dimmerCh = ch;
+    if (l === 'red')    redCh    = ch;
+    if (l === 'green')  greenCh  = ch;
+    if (l === 'blue')   blueCh   = ch;
+  });
+  if (redCh === null && greenCh === null && blueCh === null) return null;
+  if (dimmerCh !== null && (liveValues[dimmerCh] ?? 0) === 0) return null;
+  const r = liveValues[redCh]   ?? 0;
+  const g = liveValues[greenCh] ?? 0;
+  const b = liveValues[blueCh]  ?? 0;
+  if (r === 0 && g === 0 && b === 0) return null;
+  return `rgb(${r},${g},${b})`;
+}
+
 function getFixtureDmxChannelList(fixture) {
   if (!fixture) return [];
   const startChannel = Number(fixture.startChannel) || 1;
@@ -624,19 +648,16 @@ export default function Main({ onOpenFixtures }) {
       }
     });
 
-    // Snapshot do universo — só quando há script rodando (valores em tempo real)
-    const anyScriptRunning = Object.values(scripts).some(s => s?.running);
+    // Snapshot do universo — sempre consultado para refletir valores manuais e scripts
     let snapshot = null;
-    if (anyScriptRunning) {
-      try { snapshot = await window.vp.getUniverse(); } catch { snapshot = null; }
-    }
+    try { snapshot = await window.vp.getUniverse(); } catch { snapshot = null; }
 
     // Resolve cada canal do fixture por prioridade
     const resolved = {};
     for (let i = 0; i < count; i++) {
       const ch = start + i;
       if (ch in sceneMerged)                       resolved[ch] = sceneMerged[ch];        // cena vence
-      else if (snapshot && snapshot[ch] != null)   resolved[ch] = Number(snapshot[ch]);   // script ao vivo
+      else if (snapshot && snapshot[ch] != null)   resolved[ch] = Number(snapshot[ch]);   // universo real (script ou manual)
       else                                         resolved[ch] = 0;
     }
     setLiveValues(resolved);
@@ -702,6 +723,18 @@ export default function Main({ onOpenFixtures }) {
     const val = Number(value);
     setLiveValues(prev => ({ ...prev, [dmxChannel]: val }));
     await window.vp.setChannel(dmxChannel, val);
+  }
+
+  async function handleGroupedFader(entries, value) {
+    const val = Number(value);
+    const updates = {};
+    entries.forEach(({ dmxCh }) => {
+      if (!disabledFixtureChannels.has(Number(dmxCh))) updates[dmxCh] = val;
+    });
+    setLiveValues(prev => ({ ...prev, ...updates }));
+    await Promise.all(
+      Object.entries(updates).map(([ch, v]) => window.vp.setChannel(Number(ch), v))
+    );
   }
 
   function getFixtureDmxChannels(fixture) {
@@ -914,6 +947,7 @@ export default function Main({ onOpenFixtures }) {
               {show.fixtures.map(f => {
                 const fixtureEnabled = isFixtureEnabled(f);
                 const isSelected = fixtureEnabled && (f.id === selectedFixtureId || multiSelected.includes(f.id));
+                const liveColor = fixtureEnabled ? getFixtureLiveColor(f, liveValues) : null;
                 return (
                 <div
                   key={f.id}
@@ -940,7 +974,10 @@ export default function Main({ onOpenFixtures }) {
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!fixtureEnabled) return;
-                    setSelectedFixtureId(f.id === selectedFixtureId ? null : f.id);
+                    setMultiSelected(prev =>
+                      prev.includes(f.id) ? prev.filter(id => id !== f.id) : [...prev, f.id]
+                    );
+                    setSelectedFixtureId(f.id);
                   }}
                   style={{
                     position:'absolute',
@@ -948,7 +985,7 @@ export default function Main({ onOpenFixtures }) {
                     top: getFixtureGridPosition(f).y,
                     width:GRID, height:GRID,
                     boxSizing:'border-box',
-                    background: fixtureEnabled ? '#233237' : '#1d2b30',
+                    background: liveColor ?? (fixtureEnabled ? '#233237' : '#1d2b30'),
                     color:'#ffffff',
                     border: fixtureEnabled ? (isSelected ? '2px solid #b7dede' : '1px solid #5f8588') : '1px dashed #6f8588',
                     opacity: fixtureEnabled ? 1 : 0.42,
@@ -1120,7 +1157,77 @@ export default function Main({ onOpenFixtures }) {
             </div>
             <div style={{ flex:1, background:'#35484f', color:'#ffffff', overflow:'auto', position:'relative' }}>
               {rightPanelTab === 'chat' && <ChatPanel />}
-              {rightPanelTab === 'description' && selectedFixture && (() => {
+              {rightPanelTab === 'description' && multiSelected.length >= 2 && (() => {
+                // Painel agrupado: agrupa canais por label entre os fixtures selecionados.
+                // Canais com mesmo label em 2+ fixtures → fader único que afeta todos.
+                // Label único ou sem label → fader individual do último fixture clicado.
+                const selFixtures = show.fixtures.filter(f => multiSelected.includes(f.id) && isFixtureEnabled(f));
+                const lastFx = selFixtures.find(f => f.id === selectedFixtureId) || selFixtures[selFixtures.length - 1];
+                if (!lastFx) return null;
+
+                // Mapeia label → [{fixture, dmxCh}] para todos os fixtures selecionados
+                const labelMap = {};
+                selFixtures.forEach(fx => {
+                  const count = fx.channelCount ?? (fx.channels || []).length;
+                  for (let i = 0; i < count; i++) {
+                    const lbl = (fx.channels && fx.channels[i]) || '';
+                    if (!lbl) continue;
+                    if (!labelMap[lbl]) labelMap[lbl] = [];
+                    labelMap[lbl].push({ fixture: fx, dmxCh: (fx.startChannel || 1) + i });
+                  }
+                });
+
+                // Constrói as linhas usando a ordem de canais do último fixture
+                const lastCount = lastFx.channelCount ?? (lastFx.channels || []).length;
+                const rows = [];
+                const renderedGroupedLabels = new Set();
+                for (let i = 0; i < lastCount; i++) {
+                  const lbl = (lastFx.channels && lastFx.channels[i]) || '';
+                  const dmxCh = (lastFx.startChannel || 1) + i;
+                  if (lbl && labelMap[lbl] && labelMap[lbl].length > 1) {
+                    if (renderedGroupedLabels.has(lbl)) continue;
+                    renderedGroupedLabels.add(lbl);
+                    rows.push({ grouped: true, label: lbl, entries: labelMap[lbl], dmxCh });
+                  } else {
+                    rows.push({ grouped: false, label: lbl || `Canal ${i + 1}`, entries: [{ fixture: lastFx, dmxCh }], dmxCh });
+                  }
+                }
+
+                return (
+                  <div style={{ paddingTop: 8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', marginBottom:8, background:theme.colors.panelDark, borderTop:`1px solid ${theme.colors.borderSoft}`, borderBottom:`1px solid ${theme.colors.borderSoft}` }}>
+                      <span style={{ fontFamily:theme.typography.fontFamily, fontSize:13, fontWeight:700, color:theme.colors.text }}>
+                        {selFixtures.length} aparelhos selecionados
+                      </span>
+                    </div>
+                    {rows.map((row, idx) => {
+                      const val = liveValues[row.dmxCh] ?? 0;
+                      return (
+                        <div key={idx} style={{ marginBottom:10, padding:'0 8px' }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                            <span style={{ display:'flex', gap:4, alignItems:'center', minWidth:0 }}>
+                              {row.grouped && (
+                                <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:9, color:theme.colors.accent, fontWeight:700, flexShrink:0 }}>×{row.entries.length}</span>
+                              )}
+                              <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, color:'#c8dddd', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.label}</span>
+                            </span>
+                            <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.sliderThumb.fontSize, fontWeight:theme.typography.sliderThumb.fontWeight, color:theme.colors.primary, minWidth:28, textAlign:'right' }}>{val}</span>
+                          </div>
+                          <input
+                            type="range" min={0} max={255} value={val}
+                            onChange={e => {
+                              if (row.grouped) handleGroupedFader(row.entries, e.target.value);
+                              else handleFader(row.dmxCh, e.target.value);
+                            }}
+                            style={{ width:'100%', accentColor:theme.colors.primary, cursor:'pointer', height:4 }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              {rightPanelTab === 'description' && multiSelected.length < 2 && selectedFixture && (() => {
                 const fixtureChannels = getFixtureDmxChannels(selectedFixture);
                 const fixtureFunctions = getFixtureCustomFunctions(selectedFixture);
                 const storedCustomFunction = activeCustomFunctionByFixture[selectedFixture.id];

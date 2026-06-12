@@ -177,6 +177,7 @@ export default function FixturePanel({ onClose }) {
               <tbody>
                 {filteredFixtures.map(f => {
                   const selected = selectedId === f.id;
+                  const enabled = f.enabled !== false;
                   const modelText = [f.manufacturer, f.model || f.fixtureType].filter(Boolean).join(' / ');
                   const universeText = f.universe ?? '';
                   return (
@@ -184,17 +185,17 @@ export default function FixturePanel({ onClose }) {
                       key={f.id}
                       onClick={() => setSelectedId(f.id)}
                       onDoubleClick={() => setEditorFixtureId(f.id)}
-                      style={{ cursor:'pointer' }}
+                      style={{ cursor:'pointer', opacity: enabled ? 1 : 0.45 }}
                     >
-                      <Cell selected={selected}>{f.name}</Cell>
-                      <Cell selected={selected}>{modelText}</Cell>
-                      <Cell selected={selected}>{universeText}</Cell>
-                      <Cell selected={selected}>{f.startChannel ?? ''}</Cell>
-                      <Cell selected={selected}>{f.channelCount ?? ''}</Cell>
-                      <Cell selected={selected}>{f.group ?? ''}</Cell>
-                      <Cell selected={selected}>{f.par ?? ''}</Cell>
-                      <Cell selected={selected}>{f.rdm ? 'Sim' : ''}</Cell>
-                      <Cell selected={selected}>{f.note || f.observation || ''}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{f.name}{!enabled ? ' (OFF)' : ''}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{modelText}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{universeText}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{f.startChannel ?? ''}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{f.channelCount ?? ''}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{f.group ?? ''}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{f.par ?? ''}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{f.rdm ? 'Sim' : ''}</Cell>
+                      <Cell selected={selected} enabled={enabled}>{f.note || f.observation || ''}</Cell>
                     </tr>
                   );
                 })}
@@ -276,9 +277,11 @@ export default function FixturePanel({ onClose }) {
   );
 }
 
-function Cell({ children, selected }) {
+function Cell({ children, selected, enabled = true }) {
+  const bg = selected ? '#35484f' : (enabled ? '#4a5d64' : '#2d3d43');
+  const color = enabled ? '#ffffff' : '#7a9a9e';
   return (
-    <td style={{ background:selected ? '#35484f' : '#4a5d64', color:'#ffffff', fontSize:13, fontWeight:400, height:22, border:'1px solid #b7c7c9', padding:'2px 6px', overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis', boxSizing:'border-box', fontFamily:'Arial, Helvetica, sans-serif' }}>
+    <td style={{ background: bg, color, fontSize:13, fontWeight:400, height:22, border:'1px solid #b7c7c9', padding:'2px 6px', overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis', boxSizing:'border-box', fontFamily:'Arial, Helvetica, sans-serif' }}>
       {children}
     </td>
   );

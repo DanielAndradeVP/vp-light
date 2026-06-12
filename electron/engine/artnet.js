@@ -1,5 +1,7 @@
 /**
- * artnet.js — Envia pacotes Art-Net (ArtDMX) via UDP broadcast
+ * artnet.js — Envia pacotes Art-Net (ArtDMX) via UDP
+ *   - Primário: loopback 127.0.0.1 (app receptor local — sempre funciona)
+ *   - Secundário: broadcast 255.255.255.255 (nós físicos na LAN, best-effort)
  *
  * Protocolo:
  *   "Art-Net\0" (8 bytes)
@@ -16,6 +18,14 @@
 const dgram = require('dgram');
 
 const ARTNET_PORT  = 6454;
+// Destino primário: o app receptor "ArtNet to DMX" roda na MESMA máquina,
+// ouvindo no adaptador loopback (127.0.0.1). Enviar direto pra cá garante
+// entrega SEMPRE — com ou sem cabo de rede conectado — porque o loopback
+// não depende de nenhuma interface física nem da tabela de rotas do Windows.
+const LOOPBACK_IP  = '127.0.0.1';
+// Destino secundário (best-effort): broadcast pra alcançar eventuais nós
+// Art-Net físicos na LAN. Pode falhar/sair pela placa errada dependendo do
+// cabo — por isso é só complemento, nunca o caminho principal.
 const BROADCAST_IP = '255.255.255.255';
 
 // Buffer pré-alocado reutilizado em todos os frames — sem alocação por frame
@@ -67,7 +77,10 @@ function sendArtDMX(universeData) {
   const sock = getSocket();
   if (!sock) return;
 
-  sock.send(packet, 0, packet.length, ARTNET_PORT, BROADCAST_IP, (err) => {
+  // 1) Envio PRIMÁRIO para o app local via loopback — caminho garantido,
+  //    independente de cabo de rede. É este envio que controla a saúde do
+  //    socket (contagem de erros / recriação).
+  sock.send(packet, 0, packet.length, ARTNET_PORT, LOOPBACK_IP, (err) => {
     if (err) {
       consecutiveSendErrors++;
       console.error(`[artnet] send error (${consecutiveSendErrors}/${MAX_SEND_ERRORS}):`, err.message);
@@ -81,6 +94,11 @@ function sendArtDMX(universeData) {
       consecutiveSendErrors = 0;
     }
   });
+
+  // 2) Envio SECUNDÁRIO em broadcast para nós Art-Net físicos na LAN.
+  //    Best-effort: erros aqui são ignorados de propósito (não derrubam o
+  //    caminho loopback nem poluem o log), pois dependem do estado da rede.
+  sock.send(packet, 0, packet.length, ARTNET_PORT, BROADCAST_IP, () => {});
 }
 
 function closeSocket() {

@@ -6,9 +6,9 @@
     "notes": "Show base para o Fire. Salvar antes de sair!",
     "viewport": {
       "grid": {
-        "zoom": 1.9487171000000019,
-        "panX": 122.87325611899905,
-        "panY": 292.152667096
+        "zoom": 1.3310000000000008,
+        "panX": -31.674863636364137,
+        "panY": 322.3398099173553
       }
     }
   },
@@ -16,7 +16,6 @@
     {
       "id": "fixture_1780805067518_parled_deluxe_1",
       "name": "ParLed_Deluxe_1",
-      "enabled": false,
       "startChannel": 1,
       "channelCount": 8,
       "channels": [
@@ -36,12 +35,13 @@
       "fixtureType": "par_led",
       "universe": 0,
       "group": "ParLed Deluxe",
-      "note": "DMX 1-8. Canais 1-4 ainda nao identificados e marcados como pending_label_1..4. Canal 5=dimmer, 6=red, 7=green, 8=blue."
+      "note": "DMX 1-8. Canais 1-4 ainda nao identificados e marcados como pending_label_1..4. Canal 5=dimmer, 6=red, 7=green, 8=blue.",
+      "enabled": true
     },
     {
       "id": "fixture_1780805067518",
       "name": "parLed1",
-      "enabled": true,
+      "enabled": false,
       "startChannel": 1,
       "channelCount": 8,
       "channels": [
@@ -61,7 +61,7 @@
       "fixtureType": "par_led",
       "universe": 0,
       "group": "Teste",
-      "note": "Fixture de teste restaurado do historico git. DMX 1-8."
+      "note": "Fixture de teste (casa). Desativar enabled:false antes de ir pra igreja."
     },
     {
       "id": "fixture_1780805067518_parled_deluxe_2",
@@ -126,8 +126,8 @@
         "blue",
         "pending_label_8"
       ],
-      "posX": 280,
-      "posY": -120,
+      "posX": 360,
+      "posY": -200,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -150,7 +150,7 @@
         "blue",
         "pending_label_8"
       ],
-      "posX": 360,
+      "posX": 280,
       "posY": -120,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
@@ -542,35 +542,35 @@
   "scripts": {
     "F1": {
       "name": "aurora-boreal-f1",
-      "file": "C:\\vp-light\\scripts\\aurora-boreal-f1.js"
+      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\aurora-boreal-f1.js"
     },
     "F2": {
       "name": "f1-color-pingpong",
-      "file": "C:\\vp-light\\scripts\\f1-color-pingpong.js"
+      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\f1-color-pingpong.js"
     },
     "F3": {
       "name": "altar-roxo-profundo",
-      "file": "C:\\vp-light\\scripts\\altar-roxo-profundo.js"
+      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\altar-roxo-profundo.js"
     },
     "F4": {
       "name": "louvorzao-branco-fogo",
-      "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js"
+      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\louvorzao-branco-fogo.js"
     },
     "F5": {
       "name": "rgb-loop",
-      "file": "C:\\vp-light\\scripts\\rgb-loop.js"
+      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\rgb-loop.js"
     },
     "F6": {
       "name": "fogo-crescente",
-      "file": "C:\\vp-light\\scripts\\fogo-crescente.js"
+      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\fogo-crescente.js"
     },
     "F7": {
       "name": "flash-gloria",
-      "file": "C:\\vp-light\\scripts\\flash-gloria.js"
+      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\flash-gloria.js"
     },
     "F8": {
-      "name": "tempestade-roxa",
-      "file": "C:\\vp-light\\scripts\\tempestade-roxa.js"
+      "name": "oceano-profundo",
+      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\oceano-profundo.js"
     }
   }
 }
