@@ -38,6 +38,7 @@ vp-light/
 │   ├── show.js        ← lê/salva o .show.json
 │   └── engine/
 │       ├── engine.js  ← loop 40ms (25fps)
+│       ├── compositor.js ← composição por camadas, scripts e macros
 │       ├── universe.js← Uint8Array[512] dos canais DMX
 │       └── artnet.js  ← pacotes UDP Art-Net para SL3000
 ├── src/
@@ -52,6 +53,8 @@ vp-light/
 │       └── showStore.js ← estado global via React Context
 ├── scripts/
 │   └── *.js           ← scripts de efeito DMX (F1–F12)
+├── banco-de-conhecimento/
+│   └── *.md           ← notas por grupo de aparelho injetadas em scripts novos
 ├── shows/
 │   ├── vp.show.json        ← show padrão carregado na inicialização
 │   └── fixture_template.json ← modelo aberto pelo fluxo "Criar novo aparelho (AI)"
@@ -71,8 +74,9 @@ vp-light/
 Renderer (React)
   └─ window.vp.*  [preload bridge]
        └─ ipcMain handler  [electron/main.js]
-            └─ universe.js  [Uint8Array 512 canais]
-                 └─ engine loop 40ms
+            ├─ universe.js  [estado dos 512 canais]
+            └─ compositor.js [camadas de scripts e macros]
+                 └─ engine loop 40ms: renderFrame + Art-Net
                       └─ artnet.sendArtDMX()
                            └─ UDP broadcast 255.255.255.255:6454
                                 └─ SL3000 → XLR → Fixtures
@@ -113,7 +117,8 @@ ficam na barra inferior e executam scripts globais associados a cada F-key.
       "channelCount": 8,
       "channels": ["dimmer", "strobo", "", "", "red", "green", "blue", "white"],
       "posX": 10,
-      "posY": 10
+      "posY": 10,
+      "enabled": true
     }
   ],
   "pages": {
@@ -158,6 +163,13 @@ tabela de configuração, pelo painel de descrição e pelos agentes de normaliz
 guarda scripts associados às teclas de cena por página; `scripts` guarda scripts globais dos
 botões `F1` a `F12`.
 
+Quando uma fixture fica com `enabled: false`, ela continua registrada no show, mas seus canais não
+participam do controle ativo enquanto não houver outra fixture habilitada cobrindo os mesmos canais.
+Isso permite manter um aparelho documentado no patch sem mandar DMX para ele.
+
+Os caminhos em `scripts` e `page_scripts` podem aparecer absolutos no arquivo, mas o app recarrega
+os scripts pelo `name` dentro de `C:\vp-light\scripts\`. Isso mantém o show mais portátil entre PCs.
+
 ---
 
 ## Scripts de efeito
@@ -167,6 +179,11 @@ Scripts são arquivos `.js` em `C:\vp-light\scripts\`. Existem dois usos:
 - **Scripts globais:** associados aos botões `F1` a `F12`.
 - **Scripts de cena:** associados a uma tecla de cena da página atual (`A`, `S`, `D`, etc.) e
   salvos em `page_scripts`.
+
+O modelo atual de execução usa composição por camadas. Cada script ativo vira uma camada com seu
+próprio buffer de 512 canais. A engine tem um único relógio de 40ms: em cada frame, o compositor
+executa os scripts, mistura as camadas e só então o engine envia o universo por Art-Net. Scripts
+não têm mais um `setInterval` próprio para renderizar DMX.
 
 Estrutura obrigatória:
 
@@ -183,15 +200,33 @@ SetChannel(1, 255);                    // define um canal DMX real
 const dimmer = getChannel(id, "dimmer"); // resolve um alias de canal de uma fixture
 ```
 
-`SetChannel` não sobrescreve canais que estejam bloqueados por cenas ativas. O BLACKOUT para todos
-os scripts em execução antes de zerar o universo.
+`SetChannel` escreve no buffer da camada do script. O compositor aplica as regras de prioridade na
+hora de misturar tudo: canais de fixtures desabilitadas são ignorados, e scripts não sobrescrevem
+canais bloqueados por cenas ativas. O BLACKOUT para scripts, scripts de cena e macros antes de
+zerar o universo.
 
 Para scripts globais: clique direito em um botão `F1`–`F12`, escolha criar/editar/mover/limpar,
 e use clique esquerdo para ativar/desativar. Ao criar ou editar, o arquivo abre no VS Code.
 
+Ao criar um script novo, o modal pode incluir um **Banco de conhecimento**. Marcar grupos como
+Par LEDs, Ribaltas, Moving Heads, Bruts ou Fita LED faz o app inserir no topo do arquivo comentários
+vindos de `banco-de-conhecimento/<grupo>.md`. É um atalho para deixar o script nascer com notas de
+canais, valores úteis e cuidados daquele tipo de aparelho.
+
 Para scripts de cena: clique direito em uma tecla de cena na barra inferior. Uma tecla pode guardar
 uma cena comum ou um script; ao criar script naquela tecla, a cena existente naquela posição é
 removida.
+
+### Macros
+
+Uma macro é uma sequência de scripts já existentes. Ela não substitui o contrato `OnStart`,
+`OnExecute` e `OnTerminate`; ela usa esses scripts como passos.
+
+Cada passo pode ter duração, fade-in, fade-out e overlap. Com isso, o compositor consegue fazer
+crossfade entre looks: um script vai saindo enquanto o próximo entra. A mistura padrão é HTP, ou
+seja, em cada canal vence o valor mais forte; também existe modo linear para somar valores
+ponderados. Macros rodam no backend por IPC (`createMacro`, `startMacro`, `stopMacro`,
+`nextMacroStep`, `removeMacro`) e ainda não têm uma tela dedicada no app.
 
 ---
 
@@ -227,6 +262,7 @@ Skills ficam em `skills/` (pastas com `SKILL.md`) e servem tarefas específicas.
 - `gerador-de-prompts-vplight`: gera prompts formatados para o CoWork (geração de mudanças).
 - `fiscal-de-skills-vplight`: audita e valida skills contra o `README_SKILL.md`.
 - `fiscal-do-sistema`: sincroniza `README_SKILL.md` e `README.md` a partir de mudanças no código.
+- `alinhador-de-sistema`: caminho inverso do fiscal; lê a documentação atual e corrige código antigo que divergiu dela, uma área por vez.
 
 Uso rápido:
 1. Leia `skills/<nome>/SKILL.md` para entender o propósito da skill.

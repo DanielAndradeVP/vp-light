@@ -6,9 +6,9 @@
     "notes": "Show base para o Fire. Salvar antes de sair!",
     "viewport": {
       "grid": {
-        "zoom": 1.3310000000000008,
-        "panX": -31.674863636364137,
-        "panY": 322.3398099173553
+        "zoom": 1.6105100000000012,
+        "panX": 201.35609499999975,
+        "panY": 381.7463
       }
     }
   },
@@ -36,12 +36,12 @@
       "universe": 0,
       "group": "ParLed Deluxe",
       "note": "DMX 1-8. Canais 1-4 ainda nao identificados e marcados como pending_label_1..4. Canal 5=dimmer, 6=red, 7=green, 8=blue.",
-      "enabled": true
+      "enabled": false
     },
     {
       "id": "fixture_1780805067518",
       "name": "parLed1",
-      "enabled": false,
+      "enabled": true,
       "startChannel": 1,
       "channelCount": 8,
       "channels": [
@@ -354,12 +354,12 @@
       "startChannel": 271,
       "channelCount": 13,
       "channels": [
-        "tilt",
-        "speed",
         "dimmer",
-        "led_1",
-        "led_2",
-        "led_3",
+        "red",
+        "green",
+        "blue",
+        "strobo",
+        "special_1",
         "led_4",
         "led_5",
         "led_6",
@@ -375,7 +375,8 @@
       "fixtureType": "ribalta",
       "universe": 0,
       "group": "Ribaltas",
-      "note": "DIREITA (A). DMX 271-283. Tilt funcional=105; Speed=90; LEDs 1-8 em 255 = branco cheio; Strobe=0 desligado; Special=0 modo normal."
+      "note": "DIREITA (A). DMX 271-283. Tilt funcional=105; Speed=90; LEDs 1-8 em 255 = branco cheio; Strobe=0 desligado; Special=0 modo normal.",
+      "observation": ""
     },
     {
       "id": "fixture_1780805067518_fita_led",
@@ -540,37 +541,49 @@
     "1": {}
   },
   "scripts": {
-    "F1": {
-      "name": "aurora-boreal-f1",
-      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\aurora-boreal-f1.js"
-    },
     "F2": {
-      "name": "f1-color-pingpong",
-      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\f1-color-pingpong.js"
-    },
-    "F3": {
-      "name": "altar-roxo-profundo",
-      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\altar-roxo-profundo.js"
-    },
-    "F4": {
-      "name": "louvorzao-branco-fogo",
-      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\louvorzao-branco-fogo.js"
-    },
-    "F5": {
-      "name": "rgb-loop",
-      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\rgb-loop.js"
+      "name": "terceiro-teste-funcionalidade-nova",
+      "file": "C:\\vp-light\\scripts\\terceiro-teste-funcionalidade-nova.js"
     },
     "F6": {
       "name": "fogo-crescente",
-      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\fogo-crescente.js"
+      "file": "C:\\vp-light\\scripts\\fogo-crescente.js"
     },
     "F7": {
       "name": "flash-gloria",
-      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\flash-gloria.js"
+      "file": "C:\\vp-light\\scripts\\flash-gloria.js"
     },
     "F8": {
       "name": "oceano-profundo",
-      "file": "C:\\Users\\Micro\\Documents\\GitHub\\vp-light\\scripts\\oceano-profundo.js"
+      "file": "C:\\vp-light\\scripts\\oceano-profundo.js"
+    },
+    "F9": {
+      "name": "teste-04",
+      "file": "C:\\vp-light\\scripts\\teste-04.js"
+    },
+    "F10": {
+      "name": "nova-funcionalidade-teste",
+      "file": "C:\\vp-light\\scripts\\nova-funcionalidade-teste.js"
+    },
+    "F11": {
+      "name": "segundo-teste-funcionalidade-nova",
+      "file": "C:\\vp-light\\scripts\\segundo-teste-funcionalidade-nova.js"
+    },
+    "F12": {
+      "name": "terceiro-teste-funcionalidade-nova",
+      "file": "C:\\vp-light\\scripts\\terceiro-teste-funcionalidade-nova.js"
+    },
+    "F3": {
+      "name": "altar-roxo-profundo",
+      "file": "C:\\vp-light\\scripts\\altar-roxo-profundo.js"
+    },
+    "F4": {
+      "name": "louvorzao-branco-fogo",
+      "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js"
+    },
+    "F5": {
+      "name": "rgb-loop",
+      "file": "C:\\vp-light\\scripts\\rgb-loop.js"
     }
   }
 }

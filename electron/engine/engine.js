@@ -10,6 +10,7 @@
 
 const { getUniverse } = require('./universe');
 const { sendArtDMX, closeSocket } = require('./artnet');
+const compositor = require('./compositor');
 
 const FPS = 25;
 const INTERVAL_MS = Math.round(1000 / FPS); // 40ms
@@ -24,7 +25,8 @@ function start() {
   }
   frameCount = 0;
   intervalId = setInterval(() => {
-    sendArtDMX(getUniverse());
+    compositor.renderFrame();      // relógio único: compõe as camadas no universo
+    sendArtDMX(getUniverse());     // e envia o frame
     frameCount++;
   }, INTERVAL_MS);
   console.log(`[engine] iniciado @ ${FPS}fps (${INTERVAL_MS}ms/frame)`);

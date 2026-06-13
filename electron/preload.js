@@ -100,6 +100,13 @@ contextBridge.exposeInMainWorld('vp', {
   togglePageScript:  (pageId, sceneKey)       => ipcRenderer.invoke('page_script:toggle', pageId, sceneKey),
   getAllPageScripts:  (pageId)                 => ipcRenderer.invoke('page_script:getAll', pageId),
 
+  // ─── MACROS (sequenciador + crossfade — backend Fase 2; UI a fazer) ─────────
+  createMacro:   (id, def) => ipcRenderer.invoke('macro:create', id, def),
+  startMacro:    (id)      => ipcRenderer.invoke('macro:start', id),
+  stopMacro:     (id)      => ipcRenderer.invoke('macro:stop', id),
+  nextMacroStep: (id)      => ipcRenderer.invoke('macro:next', id),
+  removeMacro:   (id)      => ipcRenderer.invoke('macro:remove', id),
+
   // ─── FIXTURES ─────────────────────────────────────────────────────────────
   openFixtureTemplate: () => ipcRenderer.invoke('fixture:openTemplate'),
 });

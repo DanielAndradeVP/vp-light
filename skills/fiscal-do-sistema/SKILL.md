@@ -1,6 +1,6 @@
 ---
 name: fiscal-do-sistema
-description: "Sincronizador de documentação do vp-light. Analisa os arquivos alterados e os em preparação (working tree + staged no git) e atualiza os dois READMEs do projeto: o README_SKILL.md (linguagem de máquina, para agentes/skills) e o README.md (linguagem humana, documentação do sistema). Cada um no seu estilo. Use quando o usuário mexeu no código e disser: 'sincroniza a documentação', 'atualiza os READMEs', 'reflete as mudanças', 'rodei umas alterações, atualiza os docs', 'fiscal-do-sistema', ou após criar/alterar fixture, contrato IPC, tela, script ou token visual. NÃO altera código-fonte — só os dois READMEs."
+description: "Sincronizador de documentação do vp-light. Analisa os arquivos alterados e os em preparação (working tree + staged no git) e atualiza os dois READMEs do projeto: o README_SKILL.md (linguagem de máquina, para agentes/skills) e o README.md (linguagem humana, documentação do sistema). Cada um no seu estilo. Use quando o usuário mexeu no código e disser: 'sincroniza a documentação', 'atualiza os READMEs', 'reflete as mudanças', 'rodei umas alterações, atualiza os docs', 'fiscal-do-sistema', ou após criar/alterar fixture, contrato IPC, tela, script, compositor de scripts, macro, sequenciador ou token visual. NÃO altera código-fonte — só os dois READMEs."
 ---
 
 # fiscal-do-sistema
@@ -46,6 +46,8 @@ Foque no que altera a "forma" do sistema:
 - Mudança no modelo do `show.json` (novos blocos/campos, fixtures, scripts).
 - Mudança nas specs da engine (`engine/*.js`): tick, porta, broadcast, universo.
 - Mudança no contrato dos scripts de efeito (`OnStart/OnExecute/OnTerminate`, `SetChannel`).
+- Mudança no compositor de scripts (`electron/engine/compositor.js`): camadas, buffers, merge, envelopes, macros.
+- Mudança no sequenciador de macros: passos, duração, fade, overlap, `mergeMode`, start/stop/next/remove.
 - Novo equipamento/fixture, nova convenção de canais.
 - Mudança de tokens visuais em `src/theme.js` (paleta, tipografia, espaçamento).
 - Mudança em `package.json` (versão, scripts npm, dependências, build/files).
@@ -53,6 +55,27 @@ Foque no que altera a "forma" do sistema:
 
 **Ignore** mudança puramente cosmética de código que não altera contrato nem estrutura
 (refactor interno, renomear variável local, comentário).
+
+---
+
+## Conhecimento estrutural fixo: execução de scripts
+
+Use estes pontos como base ao decidir o que rastrear e documentar nos READMEs:
+
+- `electron/engine/compositor.js` existe e é o único escritor de saída de scripts no universo DMX.
+- Scripts ativos são camadas. Cada camada tem buffer próprio `Uint8Array(512)`.
+- `SetChannel` não escreve direto no `universe`; escreve no buffer da camada via closure.
+- A assinatura de execução continua compatível: `new Function('SetChannel', 'getChannel', 'ctx', ...)`.
+- Scripts não devem usar `setInterval` próprio para renderização nem escrever direto via `universe.setChannel`.
+- O tick único é o loop de 40ms do `electron/engine/engine.js`: chama `compositor.renderFrame()` e depois `sendArtDMX`.
+- A mescla padrão das camadas é HTP/max. `weight` vem do envelope, com fade-in/fade-out contados em frames.
+- `universe.setChannel` direto resta para faders manuais (`dmx:setChannel`, `dmx:setChannelRange`), não para scripts.
+- O compositor tem sequenciador de macro: `createMacro`, `startMacro`, `stopMacro`, `triggerNextStep`, `removeMacro`, `stopAllMacros`.
+- Passos de macro podem conter `durationFrames`, `fadeInFrames`, `fadeOutFrames`, `overlapFrames` e `mergeMode` (`htp`/`linear`).
+- `electron/preload.js` expõe contratos IPC de macro via `window.vp.createMacro`, `startMacro`, `stopMacro`, `nextMacroStep`, `removeMacro`.
+
+Ao encontrar mudanças nesses pontos, atualize `README_SKILL.md` nas seções de engine/IPC/scripts
+e `README.md` nas seções de fluxo, scripts de efeito ou uso de macros, conforme o estilo de cada arquivo.
 
 ---
 

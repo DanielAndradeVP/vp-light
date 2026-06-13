@@ -114,9 +114,9 @@ function saveShow(showData) {
   // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
   validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) {
-    // Fallback defensivo: se showData não trouxer scripts, preserva os do currentShow.
-    // Caso normal: main.js já injeta scriptMeta antes de chamar saveShow.
-    if (currentShow?.scripts && (!showData.scripts || Object.keys(showData.scripts).length === 0)) {
+    // Fallback defensivo: se showData não trouxer scripts (undefined/null), preserva os do
+    // currentShow. Não aplica quando scripts={} — esse é o estado legítimo após script:clear.
+    if (currentShow?.scripts && showData.scripts == null) {
       showData = { ...showData, scripts: currentShow.scripts };
     }
     currentShow = showData;

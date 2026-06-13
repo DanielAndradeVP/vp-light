@@ -1,6 +1,6 @@
 ---
 name: desenvolvedor-backend-vplight
-description: "Engenheiro backend sênior do vp-light — software DMX desktop da Igreja Vida e Paz (Electron + Node.js + React). Use SEMPRE que Carlos precisar de: arquitetura do vp-light, engine DMX, protocolo Art-Net UDP, .show.json, scripts de efeito (.js em C:\\vp-light\\scripts\\), integração com SL3000, IPC via window.vp.*, sistema de cenas (ASDFGHJKLZXCV) e páginas, blackout, resolveUniverseState, activeSceneChannels, scriptsRef, ou qualquer decisão técnica do vp-light. Ativar quando mencionar: 'engine DMX', 'Art-Net', 'Electron DMX', 'scripts de efeito', 'F1–F12', 'faders ao vivo', 'fixtures draggable', 'rubber-band selection', 'cenas', ou código + iluminação + vp-light."
+description: "Engenheiro backend sênior do vp-light — software DMX desktop da Igreja Vida e Paz (Electron + Node.js + React). Use SEMPRE que Carlos precisar de: arquitetura do vp-light, engine DMX, compositor de camadas, protocolo Art-Net UDP, .show.json, scripts de efeito (.js em C:\\vp-light\\scripts\\), macros, integração com SL3000, IPC via window.vp.*, sistema de cenas (ASDFGHJKLZXCV) e páginas, page_scripts, blackout, resolveUniverseState, activeSceneChannels, scriptsRef, ou qualquer decisão técnica do vp-light. Ativar quando mencionar: 'engine DMX', 'compositor', 'camadas', 'Art-Net', 'Electron DMX', 'scripts de efeito', 'macro', 'F1–F12', 'faders ao vivo', 'fixtures draggable', 'rubber-band selection', 'cenas', 'page_scripts', ou código + iluminação + vp-light."
 ---
 
 # desenvolvedor-backend-vplight
@@ -22,10 +22,10 @@ Engenheiro backend sênior do vp-light — software DMX da Igreja Vida e Paz. St
 | Protocolo | Art-Net UDP porta 6454 → broadcast 255.255.255.255 → SL3000 → XLR → fixtures |
 | Stack | Electron + React + Vite (renderer) + Node.js (main) |
 | Arquivo de show | `shows/vp.show.json` em disco |
-| Scripts de efeito | `.js` em `C:\vp-light\scripts\`, executados via `new Function()` no main |
-| IA futura | API Claude para geração de cenas por prompt |
+| Scripts de efeito | `.js` em `C:\vp-light\scripts\`, executados pelo compositor no main |
+| IA integrada | Aba Chat no painel direito via `window.vp.sendChat` |
 
-**Fixtures alvo do projeto:** ParLed_Deluxe_1–9, Ribalta_1 e 2, Moving_01, Moving_01_LD230, Moving_07, Moving_08, Moving_Wosh_01, Moving_Wosh_2, Fita_Led, Mini_Brut_01–04, Mini_Brut_All (grupo). _(Roster planejado; o show atual em disco pode ter um patch menor — sempre conferir o `vp.show.json`.)_
+**Fixtures ativos:** ParLed_Deluxe_1–9, Ribalta_1 e 2, ribalta-rgb-static_1–4, Moving_01, Moving_01_LD230, Moving_07, Moving_08, Moving_Wosh_01, Moving_Wosh_2, Fita_Led, Mini_Brut_01–04, Mini_Brut_All (grupo)
 
 ---
 
@@ -34,27 +34,30 @@ Engenheiro backend sênior do vp-light — software DMX da Igreja Vida e Paz. St
 ```
 C:\vp-light\
 ├── electron/
-│   ├── main.js          → IPC handlers, inicia engine, carrega show, executa scripts
-│   ├── preload.js       → expõe window.vp.* para o renderer
-│   ├── show.js          → lê e salva o .show.json
+│   ├── main.js           → IPC handlers, inicia engine, carrega show
+│   ├── preload.js        → expõe window.vp.* para o renderer
+│   ├── show.js           → lê e salva o .show.json
 │   └── engine/
-│       ├── engine.js    → loop setInterval 40ms (start/stop)
-│       ├── universe.js  → Uint8Array[512] (setChannel, blackout, applyScene, getUniverse, getUniverseSnapshot)
-│       └── artnet.js    → monta pacote ArtDMX e envia UDP broadcast
+│       ├── engine.js     → loop setInterval 40ms: chama compositor.renderFrame() + sendArtDMX
+│       ├── compositor.js → composição por camadas, execução de scripts e macros
+│       ├── universe.js   → Uint8Array[512] (setChannel, blackout, applyScene, getUniverse, getUniverseSnapshot)
+│       └── artnet.js     → monta pacote ArtDMX e envia UDP broadcast
 ├── src/
-│   ├── App.jsx          → roteador de telas (main ↔ fixtures)
-│   ├── main.jsx         → entry point React
-│   ├── theme.js         → tokens visuais (cores, tipografia, espaçamento)
+│   ├── App.jsx           → roteador de telas
+│   ├── main.jsx          → entry point React
 │   ├── store/
-│   │   └── showStore.js → estado global: fixtures, páginas, cenas, seleção, updateScene, updateFixture
+│   │   └── showStore.js  → estado global via React Context
 │   └── screens/
-│       ├── Main.jsx         → mesa draggable com rubber-band selection, faders ao vivo, cenas A/S/D/F/G/H/J/K/L/Z/X/C/V, F1–F12, páginas
-│       ├── FixturePanel.jsx → tabela Id/Nome/Canal/QTD Canais, novo/remover/duplicar
-│       ├── FixtureEditor.jsx→ modal: abas Básico (id, nome, nº canais, canal início) e Descrição (nome de cada canal)
-│       └── SceneEditor.jsx  → editor de cena por fixture/canal (existe no código, NÃO roteado no App.jsx)
-├── scripts/             → arquivos .js dos scripts de efeito (um por nome) + sync-scripts.js
+│       ├── Main.jsx          → mesa draggable, faders, cenas, scripts, páginas
+│       ├── ChatPanel.jsx     → aba Chat do painel direito, menu de skills locais
+│       ├── FixturePanel.jsx  → tabela, novo/remover/duplicar
+│       └── FixtureEditor.jsx → modal: abas Básico e Descrição
+├── scripts/              → arquivos .js dos scripts de efeito (um por nome)
+├── banco-de-conhecimento/
+│   └── *.md              → notas por grupo de aparelho injetadas ao criar script novo
 ├── shows/
-│   └── vp.show.json     → show padrão carregado na inicialização
+│   ├── vp.show.json          → show padrão carregado na inicialização
+│   └── fixture_template.json → modelo aberto pelo fluxo "Criar novo aparelho (AI)"
 ├── index.html
 ├── vite.config.js
 └── package.json
@@ -66,9 +69,9 @@ C:\vp-light\
 
 - **Engine DMX roda APENAS no main process** (`electron/engine/`). Nunca no renderer.
 - **Renderer comunica com main APENAS via `window.vp.*`** (preload.js). Nunca acessa hardware diretamente.
-- Alterações visuais → `src/screens/` e `src/theme.js`
+- Alterações visuais → `src/screens/`
 - Alterações de estado global do renderer → `src/store/showStore.js`
-- Alterações de IPC, engine ou scripts → `electron/` (**requer reiniciar `npm run dev`**)
+- Alterações de IPC, engine ou compositor → `electron/` (**requer reiniciar `npm run dev`**)
 - Arquivos em `src/` têm hot reload automático via Vite
 
 ---
@@ -76,20 +79,24 @@ C:\vp-light\
 ## Fluxo de Dados
 
 ```
-Usuário interage → React (src/screens/)
-  → window.vp.* (preload.js)
-    → ipcMain (electron/main.js)
-      → universe.js
-        → engine.js
-          → artnet.js → UDP → SL3000 → DMX512 → fixture
+Renderer (React)
+  └─ window.vp.*  [preload bridge]
+       └─ ipcMain handler  [electron/main.js]
+            ├─ universe.js  [estado dos 512 canais]
+            └─ compositor.js [camadas de scripts e macros]
+                 └─ engine loop 40ms: renderFrame + Art-Net
+                      └─ artnet.sendArtDMX()
+                           └─ UDP broadcast 255.255.255.255:6454
+                                └─ SL3000 → XLR → Fixtures
 ```
 
 ---
 
 ## Engine DMX
 
+### universe.js
+
 ```js
-// engine/universe.js
 const universe = new Uint8Array(512);
 function setChannel(channel, value) {
   universe[channel - 1] = Math.max(0, Math.min(255, value));
@@ -103,114 +110,166 @@ function getUniverseSnapshot() { return Buffer.from(universe); }
 module.exports = { setChannel, applyScene, blackout, getUniverse, getUniverseSnapshot };
 ```
 
-```js
-// engine/artnet.js
-const dgram = require('dgram');
-const socket = dgram.createSocket('udp4');
-socket.bind(() => socket.setBroadcast(true));
+### engine.js
 
-function sendArtDMX(universeData) {
-  const packet = Buffer.alloc(18 + 512);
-  Buffer.from('Art-Net\0').copy(packet, 0);
-  packet.writeUInt16LE(0x5000, 8);   // Opcode ArtDMX
-  packet.writeUInt16BE(14, 10);       // ProtVer 14
-  packet[12] = 0; packet[13] = 0;    // Sequence, Physical
-  packet.writeUInt16LE(0, 14);        // Universe 0
-  packet.writeUInt16BE(512, 16);      // Length
-  universeData.copy(packet, 18);
-  socket.send(packet, 6454, '255.255.255.255');
-}
-module.exports = { sendArtDMX };
-```
+O engine não envia DMX diretamente. A cada 40ms chama o compositor para compor as camadas e só então envia:
 
 ```js
-// engine/engine.js
-const { getUniverseSnapshot } = require('./universe');
+const compositor = require('./compositor');
 const { sendArtDMX } = require('./artnet');
 let interval = null;
 
 function start() {
   if (interval) return;
-  interval = setInterval(() => sendArtDMX(getUniverseSnapshot()), 40);
+  interval = setInterval(() => {
+    compositor.renderFrame();  // executa scripts e macros, compõe camadas
+    sendArtDMX(compositor.getOutput()); // envia o frame resultante
+  }, 40);
 }
 function stop() { clearInterval(interval); interval = null; }
 module.exports = { start, stop };
 ```
+
+### compositor.js
+
+Módulo central de composição por camadas. Cada script ativo é uma camada com buffer próprio `Uint8Array(512)`. O compositor executa os scripts, mistura as camadas (HTP por padrão) e grava o resultado no universo.
+
+- `SetChannel(canal, valor)` dentro de um script escreve no **buffer da camada**, não no universo global.
+- O compositor aplica prioridade: cenas ativas bloqueiam canais via `activeSceneChannels`; canais de fixtures com `enabled: false` são ignorados.
+- Ao chamar `renderFrame()`, o compositor executa `OnExecute()` de cada script ativo e mistura as camadas.
+- Macros também rodam pelo compositor — cada passo da macro é um script com envelope de fade-in/out.
+
+---
+
+## Scripts de Efeito
+
+### Modelo de execução (atual — composição por camadas)
+
+Cada script ativo é uma **camada independente com buffer próprio `Uint8Array(512)`**. Scripts não têm `setInterval` próprio. O único relógio é o loop de 40ms do `engine.js`, que chama `compositor.renderFrame()` a cada tick.
+
+```js
+function OnStart()    { } // chamado uma vez ao ativar
+function OnExecute()  { } // chamado a cada 40ms pelo compositor
+function OnTerminate(){ } // chamado ao desativar ou blackout
+```
+
+### Funções disponíveis dentro do script
+
+```js
+SetChannel(1, 255);                         // escreve no buffer da camada (não no universo diretamente)
+const dimmer = getChannel('fixture_id', 'dimmer'); // resolve alias de canal de uma fixture → número DMX
+```
+
+`getChannel(fixtureId, alias)` consulta o show carregado e retorna o canal DMX absoluto correspondente ao alias. Útil para scripts que precisam localizar canais sem hardcodar números.
+
+### Tipos de script
+
+- **Scripts globais:** associados a `F1`–`F12`. Persistidos em `scripts` no show.json.
+- **Scripts de cena:** associados a uma tecla de cena da página (`A`, `S`, `D`...). Persistidos em `page_scripts` no show.json. Ao criar script numa tecla que já tem cena, a cena é removida (uma tecla = uma coisa).
+
+### Banco de conhecimento
+
+Ao criar script novo, o modal permite selecionar grupos de aparelhos (Par LEDs, Ribaltas, Moving Heads, Bruts, Fita LED). O `script:create` lê os `.md` correspondentes em `banco-de-conhecimento/` e injeta o conteúdo como bloco de comentário no topo do arquivo `.js` gerado.
+
+### Regras de prioridade
+
+- Canais bloqueados por cenas ativas (`activeSceneChannels`) não são sobrescritos pelos scripts.
+- Múltiplos scripts podem rodar simultaneamente — o compositor mistura as camadas (HTP).
+- BLACKOUT para todos os scripts antes de zerar o universo.
+
+---
+
+## Macros
+
+Uma macro é uma **sequência de scripts existentes** com controle de tempo entre passos.
+
+- Cada passo pode ter: duração, fade-in, fade-out e overlap com o próximo.
+- Com overlap + fade, o compositor faz crossfade entre looks: um script vai saindo enquanto o próximo entra.
+- Mistura padrão: **HTP** (em cada canal vence o valor mais forte). Modo alternativo: linear (soma ponderada).
+- Macros rodam no backend; o renderer controla via IPC.
+
+**Contratos IPC de macro:**
+
+```
+createMacro(id, steps)   → cria a macro com seus passos
+startMacro(id)           → inicia a execução
+stopMacro(id)            → para e chama OnTerminate nos passos ativos
+nextMacroStep(id)        → avança manualmente para o próximo passo
+removeMacro(id)          → remove da memória
+```
+
+Macros ainda não têm UI dedicada no app.
 
 ---
 
 ## IPC Electron
 
 ```js
-// electron/main.js — handlers completos
-const { ipcMain } = require('electron');
-const universe = require('./engine/universe');
-const engine   = require('./engine/engine');
+// electron/main.js — handlers relevantes
+ipcMain.handle('dmx:setChannel',             (_, ch, val)          => universe.setChannel(ch, val));
+ipcMain.handle('dmx:setChannelRange',        (_, start, vals)      => /* aplica array de valores a partir de start */);
+ipcMain.handle('dmx:blackout',               ()                    => universe.blackout());
+ipcMain.handle('dmx:activateScene',          (_, channels)         => universe.applyScene(channels));
+ipcMain.handle('dmx:getSnapshot',            ()                    => Array.from(universe.getUniverse()));
+ipcMain.handle('dmx:restoreState',           (_, channels)         => universe.applyScene(channels));
+ipcMain.handle('dmx:setActiveSceneChannels', (_, map)              => { activeSceneChannels = map; });
 
-// --- DMX core ---
-ipcMain.handle('dmx:setChannel',          (_, ch, val)       => universe.setChannel(ch, val));
-ipcMain.handle('dmx:blackout',            ()                 => universe.blackout());
-ipcMain.handle('dmx:activateScene',       (_, channels)      => universe.applyScene(channels));
-ipcMain.handle('dmx:restoreState',        (_, channels)      => universe.applyScene(channels));
-ipcMain.handle('dmx:getUniverse',         ()                 => /* { [canal]: valor } apenas > 0 */ snapshotObj());
-ipcMain.handle('dmx:setActiveScenes',     (_, scenesMap)     => universe.setActiveScenes(scenesMap)); // { [id]: { name, channels } }
-ipcMain.handle('dmx:getConflicts',        ()                 => universe.detectConflicts());          // lista de conflitos
-// activeSceneChannels: mapa { [canal]: valor } dos canais bloqueados por cenas ativas
-// usado pelo SetChannel interno dos scripts para checar prioridade
-ipcMain.handle('dmx:setActiveSceneChannels', (_, map)        => { activeSceneChannels = map; });
+ipcMain.handle('engine:start',               ()                    => engine.start());
+ipcMain.handle('engine:stop',                ()                    => engine.stop());
+ipcMain.handle('engine:status',              ()                    => engine.getStatus());
 
-// --- Engine ---
-ipcMain.handle('engine:start',            ()                 => engine.start());
-ipcMain.handle('engine:stop',             ()                 => engine.stop());
-ipcMain.handle('engine:status',           ()                 => engine.getStatus()); // → { running, frames }
+ipcMain.handle('script:getAll',              ()                    => scriptManager.getAll());
+ipcMain.handle('script:create',              (_, fkey, name, opts) => scriptManager.create(fkey, name, opts));
+ipcMain.handle('script:edit',                (_, fkey)             => scriptManager.edit(fkey));
+ipcMain.handle('script:clear',               (_, fkey)             => scriptManager.clear(fkey));
+ipcMain.handle('script:toggle',              (_, fkey)             => scriptManager.toggle(fkey));
 
-// --- Scripts (identificador é a F-key: "F1".."F12") ---
-ipcMain.handle('script:getAll',           ()                       => scriptManager.getAll());        // → { [fkey]: { name, file, running } }
-ipcMain.handle('script:list',             ()                       => scriptManager.list());          // → { ok, files }
-ipcMain.handle('script:create',           (_, fkey, name, options) => scriptManager.create(fkey, name, options));
-ipcMain.handle('script:edit',             (_, fkey, filePath)      => scriptManager.edit(fkey, filePath));
-ipcMain.handle('script:clear',            (_, fkey)                => scriptManager.clear(fkey));
-ipcMain.handle('script:toggle',           (_, fkey)                => scriptManager.toggle(fkey, activeSceneChannels)); // → { ok, running }
+ipcMain.handle('macro:create',               (_, id, steps)        => macroManager.create(id, steps));
+ipcMain.handle('macro:start',                (_, id)               => macroManager.start(id));
+ipcMain.handle('macro:stop',                 (_, id)               => macroManager.stop(id));
+ipcMain.handle('macro:nextStep',             (_, id)               => macroManager.nextStep(id));
+ipcMain.handle('macro:remove',               (_, id)               => macroManager.remove(id));
 
-// --- Show (persistência) ---
-ipcMain.handle('show:load',               (_, path)          => showManager.load(path));
-ipcMain.handle('show:save',               (_, data)          => showManager.save(data));
-ipcMain.handle('show:saveAs',             (_, data)          => showManager.saveAs(data));
-ipcMain.handle('show:get',                ()                 => showManager.get());
-ipcMain.handle('show:updateScene',        (_, page, key, scene) => showManager.updateScene(page, key, scene));
+ipcMain.handle('show:load',                  (_, path)             => showManager.load(path));
+ipcMain.handle('show:save',                  (_, data)             => showManager.save(data));
+ipcMain.handle('show:get',                   ()                    => showManager.get());
+ipcMain.handle('show:updateScene',           (_, page, key, scene) => showManager.updateScene(page, key, scene));
 ```
 
 ```js
-// electron/preload.js — window.vp.* completo
-const { contextBridge, ipcRenderer } = require('electron');
+// electron/preload.js — window.vp.*
 contextBridge.exposeInMainWorld('vp', {
-  // DMX core
-  setChannel:             (ch, val)           => ipcRenderer.invoke('dmx:setChannel', ch, val),
-  blackout:               ()                  => ipcRenderer.invoke('dmx:blackout'),
-  activateScene:          (channels)          => ipcRenderer.invoke('dmx:activateScene', channels),
-  restoreState:           (channels)          => ipcRenderer.invoke('dmx:restoreState', channels),
-  getUniverse:            ()                  => ipcRenderer.invoke('dmx:getUniverse'),            // { [canal]: valor } apenas > 0
-  setActiveSceneChannels: (channels)          => ipcRenderer.invoke('dmx:setActiveSceneChannels', channels),
-  setActiveScenes:        (scenesMap)         => ipcRenderer.invoke('dmx:setActiveScenes', scenesMap),
-  getConflicts:           ()                  => ipcRenderer.invoke('dmx:getConflicts'),
+  // DMX
+  setChannel:             (ch, val)            => ipcRenderer.invoke('dmx:setChannel', ch, val),
+  setChannelRange:        (start, vals)        => ipcRenderer.invoke('dmx:setChannelRange', start, vals),
+  blackout:               ()                   => ipcRenderer.invoke('dmx:blackout'),
+  activateScene:          (channels)           => ipcRenderer.invoke('dmx:activateScene', channels),
+  getSnapshot:            ()                   => ipcRenderer.invoke('dmx:getSnapshot'),
+  restoreState:           (channels)           => ipcRenderer.invoke('dmx:restoreState', channels),
+  setActiveSceneChannels: (map)                => ipcRenderer.invoke('dmx:setActiveSceneChannels', map),
 
   // Engine
-  startEngine:            ()                  => ipcRenderer.invoke('engine:start'),
-  stopEngine:             ()                  => ipcRenderer.invoke('engine:stop'),
-  getEngineStatus:        ()                  => ipcRenderer.invoke('engine:status'),
+  startEngine:            ()                   => ipcRenderer.invoke('engine:start'),
+  stopEngine:             ()                   => ipcRenderer.invoke('engine:stop'),
+  getEngineStatus:        ()                   => ipcRenderer.invoke('engine:status'),
 
-  // Scripts (identificador = F-key)
-  getAllScripts:           ()                       => ipcRenderer.invoke('script:getAll'),
-  listScripts:             ()                       => ipcRenderer.invoke('script:list'),
-  createScript:            (fkey, name, options)    => ipcRenderer.invoke('script:create', fkey, name, options),
-  editScript:              (fkey, filePath)         => ipcRenderer.invoke('script:edit', fkey, filePath),
-  clearScript:             (fkey)                   => ipcRenderer.invoke('script:clear', fkey),
-  toggleScript:            (fkey)                   => ipcRenderer.invoke('script:toggle', fkey),
+  // Scripts
+  getAllScripts:           ()                   => ipcRenderer.invoke('script:getAll'),
+  createScript:            (fkey, name, opts)  => ipcRenderer.invoke('script:create', fkey, name, opts),
+  editScript:              (fkey)              => ipcRenderer.invoke('script:edit', fkey),
+  clearScript:             (fkey)              => ipcRenderer.invoke('script:clear', fkey),
+  toggleScript:            (fkey)              => ipcRenderer.invoke('script:toggle', fkey),
 
-  // Show (persistência)
+  // Macros
+  createMacro:             (id, steps)         => ipcRenderer.invoke('macro:create', id, steps),
+  startMacro:              (id)                => ipcRenderer.invoke('macro:start', id),
+  stopMacro:               (id)                => ipcRenderer.invoke('macro:stop', id),
+  nextMacroStep:           (id)                => ipcRenderer.invoke('macro:nextStep', id),
+  removeMacro:             (id)                => ipcRenderer.invoke('macro:remove', id),
+
+  // Show
   loadShow:                (path)              => ipcRenderer.invoke('show:load', path),
   saveShow:                (data)              => ipcRenderer.invoke('show:save', data),
-  saveShowAs:              (data)              => ipcRenderer.invoke('show:saveAs', data),
   getShow:                 ()                  => ipcRenderer.invoke('show:get'),
   updateScene:             (page, key, scene)  => ipcRenderer.invoke('show:updateScene', page, key, scene),
 });
@@ -220,117 +279,88 @@ contextBridge.exposeInMainWorld('vp', {
 
 ## Modelo de Dados — .show.json
 
-Blocos de topo: `version`, `meta`, `fixtures`, `pages`, `scripts`.
-
 ```json
 {
   "version": "1.0",
-  "meta": {
-    "name": "Vida e Paz — Show Principal",
-    "createdAt": "2025-01-01",
-    "notes": "Show base para o Fire. Salvar antes de sair!"
-  },
+  "meta": { "name": "Nome do Show" },
   "fixtures": [
     {
-      "id": "fixture_1780805067518",
-      "name": "parLed1",
+      "id": "fixture_123",
+      "name": "ParLed 1",
+      "manufacturer": "Fabricante",
+      "model": "Modelo",
+      "fixtureType": "par_led",
+      "universe": 0,
+      "group": "Frente",
+      "note": "Observação operacional",
       "startChannel": 1,
       "channelCount": 8,
-      "channels": ["dimmer","strobo","","","red","green","blue","white"],
-      "posX": 338,
-      "posY": 357
+      "channels": ["dimmer", "strobo", "", "", "red", "green", "blue", "white"],
+      "posX": 10,
+      "posY": 10,
+      "enabled": true
     }
   ],
   "pages": {
     "1": {
       "name": "LOUVOR",
       "scenes": {
-        "A": {
-          "name": "roxo",
-          "color": "#aa00aa",
-          "channels": { "1": 255, "5": 255, "7": 255 }
-        }
+        "A": { "name": "BASE QUENTE", "color": "#cc6600", "channels": { "1": 255, "5": 200 } }
       }
     }
   },
+  "page_scripts": {
+    "1": {
+      "A": { "name": "script-da-cena-a", "file": "C:\\vp-light\\scripts\\script-da-cena-a.js" }
+    }
+  },
   "scripts": {
-    "F1": { "name": "louvorzao-branco-fogo", "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js" }
+    "F1": { "name": "rgb-loop", "file": "C:\\vp-light\\scripts\\rgb-loop.js" }
   }
 }
 ```
 
-- `startChannel` é 1-based; canal real = `startChannel + índice no array channels`.
-- `channels` do fixture é array de aliases; posição `""` = canal sem função definida.
-- `scene.channels` é mapa `{ "canal": valor }`, normalmente só valores > 0.
-- `scripts` é indexado por F-key (`"F1"`…`"F12"`), com `{ name, file }`.
+**Campos novos nos fixtures:**
+- `manufacturer`, `model`, `fixtureType`, `universe`, `group`, `note` — usados pela tabela de configuração, painel de descrição e agentes.
+- `enabled` — `false` mantém o fixture no show sem mandar DMX. Canais de fixtures desabilitadas são ignorados pelo compositor.
 
----
-
-## Scripts de Efeito
-
-- Arquivos `.js` em `C:\vp-light\scripts\`, um por script
-- Executados via `new Function()` no main process
-- **Cada script ativo roda em um `setInterval` próprio de 40ms** — loop independente do envio Art-Net. Há, portanto, vários loops simultâneos (1 do engine + 1 por script ativo)
-- Têm acesso a `SetChannel(canal, valor)`
-- Associados aos botões F1–F12 (a F-key é o identificador)
-- Abertos e editados em editor externo (VS Code) via processo do main
-
-**Estrutura obrigatória:**
-
-```js
-function OnStart() { }      // chamado uma vez ao ativar
-
-function OnExecute() {      // chamado a cada 40ms
-  SetChannel(1, 255);
-}
-
-function OnTerminate() { }  // chamado ao desativar
-```
-
-**Regras de prioridade:**
-- **Cena ativa vence o script — via `activeSceneChannels`**: ao chamar `SetChannel(ch, val)` dentro de um script, o main verifica o mapa `activeSceneChannels` antes de aplicar. Canais controlados por cenas ativas são intocáveis pelos scripts.
-- Múltiplos scripts podem rodar simultaneamente.
+**`page_scripts`** fica ao lado de `scripts`. Indexado por `pageId` e depois por tecla de cena. Uma tecla só pode ter cena **ou** page_script, nunca os dois.
 
 ---
 
 ## Comportamento das Cenas
 
-- **SCENE_KEYS** (ordem real, layout de teclado, definida em `Main.jsx`): `['A','S','D','F','G','H','J','K','L','Z','X','C','V']` — linha do meio + início da linha de baixo. **Não é A–M alfabético.**
-- Clicar numa cena ativa → desativa (toggle)
-- Ao ativar: aplica `channels` no universo e atualiza faders na tela
-- Salvar cena: botão direito → Salvar Cena → modal (nome + cor)
-- Limpar cena: botão direito → Limpar Cena
-- Cenas armazenam: `{ name, color, channels }` onde `channels = { "canalNum": valor }`
+- **SCENE_KEYS:** `['A','S','D','F','G','H','J','K','L','Z','X','C','V']`
+- Máximo 3 cenas ativas simultaneamente
+- Cena ativa → toggle ao clicar
+- Tecla de cena pode ter **cena** ou **script de cena** — nunca os dois. Ao criar script numa tecla com cena, a cena é removida.
+- Ao desativar todas: blackout automático
+- Salvar cena: botão direito → Salvar Cena
+- Limpar: botão direito → Limpar Cena/Script
 
 ---
 
-## Padrões — Main.jsx
+## Padrões do Renderer
 
 ### `resolveUniverseState(nextActiveScenes, nextScripts)`
 
-Função central em `Main.jsx` que decide o que fazer com o universo DMX após qualquer mudança de estado (ativar/desativar cena ou script): reconstrói o estado combinado das cenas ativas, chama `restoreState(merged)` e atualiza o mapa de canais bloqueados via `setActiveSceneChannels`.
+Função central em `Main.jsx` que recalcula o estado DMX após qualquer mudança:
 
 ```js
 function resolveUniverseState(nextActiveScenes, nextScripts) {
-  const hasActiveScene  = nextActiveScenes.length > 0;
-  const hasActiveScript = Object.values(nextScripts).some(s => s.active);
-
-  if (!hasActiveScene && !hasActiveScript) {
-    window.vp.blackout();
-    return;
-  }
+  const hasActive = nextActiveScenes.length > 0 || Object.values(nextScripts).some(s => s.active);
+  if (!hasActive) { window.vp.blackout(); return; }
 
   const merged = {};
   nextActiveScenes.forEach(key => {
     const scene = pages[currentPage].scenes[key];
     if (scene?.channels) Object.assign(merged, scene.channels);
   });
-
   window.vp.restoreState(merged);
 
-  const lockedChannels = {};
-  Object.entries(merged).forEach(([ch]) => { lockedChannels[ch] = true; });
-  window.vp.setActiveSceneChannels(lockedChannels);
+  const locked = {};
+  Object.keys(merged).forEach(ch => { locked[ch] = true; });
+  window.vp.setActiveSceneChannels(locked);
 }
 ```
 
@@ -339,52 +369,16 @@ function resolveUniverseState(nextActiveScenes, nextScripts) {
 ```js
 const scriptsRef = useRef(scripts);
 useEffect(() => { scriptsRef.current = scripts; }, [scripts]);
-
-async function handleToggleScript(index) {
-  const current = scriptsRef.current; // ← sempre o estado mais recente
-  // ...
-}
-```
-
-### Teclas F1–F12 → `handleToggleScript`
-
-```js
-function handleKey(e) {
-  const fIndex = ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']
-    .indexOf(e.key);
-  if (fIndex !== -1) handleToggleScript(fIndex);
-}
 ```
 
 ---
 
-## Comportamento dos Fixtures
+## Comportamento dos Fixtures na Mesa
 
-- Aparecem como quadradinhos draggables na mesa (posição salva em `posX`/`posY`)
-- Rubber-band selection: arrastar área seleciona múltiplos
-- Clicar na área vazia desmarca seleção
-- Painel direito exibe faders ao vivo do fixture selecionado
-- Cada fader chama `window.vp.setChannel()` em tempo real ao mover
-
----
-
-## Cores do Sistema (paleta atual — teal/verde, de `src/theme.js`)
-
-```
-bg:            #26363c      surface:        #35484f
-bgDark:        #1d2b30      surfaceAlt:     #2d3f45
-bgDarker:      #000000      surfaceRaised:  #40545c
-border:        #8db8b8      panel:          #35484f
-borderSoft:    #5f8588      panelDark:      #24343a
-text:          #ffffff      textSecondary:  #c8dddd
-textMuted:     #9bb4b7      textDisabled:   #6f8588
-primary:       #8db8b8      accent:         #00d000
-active:        #00ff00      warn:           #ff3333
-danger:        #cc2222      selection:      #4e6b73
-buttonBg:      #000000      buttonSurface:  #233237      buttonHover: #30464d
-```
-
-Tipografia base: `Arial, Helvetica, sans-serif`. `theme.js` também define `typography` e `spacing`.
+- Quadradinhos draggables com **snap por quadrado** e sem sobreposição visual durante arraste.
+- **Rubber-band selection:** arrastar área seleciona múltiplos; mover arrasta todos juntos.
+- Clicar área vazia desmarca seleção.
+- Painel direito alterna entre **Chat** e **Descrição**. Em Descrição: faders dos canais da fixture selecionada.
 
 ---
 
@@ -395,8 +389,8 @@ Tipografia base: `Arial, Helvetica, sans-serif`. `theme.js` também define `typo
 | Desktop | Electron | Carlos conhece, suporte USB nativo |
 | Protocolo | Art-Net UDP broadcast | SL3000 aceita Enttec Open DMX / Art-Net |
 | FPS engine | 25fps (40ms) | Suficiente para DMX, leve no CPU |
-| Scripts | JavaScript puro via new Function() | Sem dependências, executável no main |
-| Estado | JSON em memória + `shows/vp.show.json` em disco | Simples, salva manualmente |
+| Scripts | Camadas com buffer próprio, compositor único | Permite crossfade e prioridade sem race condition |
+| Estado | JSON em memória + .show.json em disco | Simples, salva manualmente |
 | Broadcast | 255.255.255.255 porta 6454 | SL3000 recebe independente de IP |
 | IPC | contextBridge + ipcMain/ipcRenderer | Seguro, padrão Electron |
 
@@ -409,26 +403,3 @@ Tipografia base: `Arial, Helvetica, sans-serif`. `theme.js` também define `typo
 3. **SL3000 é o gargalo** — 1 universo, 512 canais, USB. Tudo precisa caber
 4. **O Fire é o deadline** — todas as decisões técnicas apontam para esse evento
 5. **Renderer pode ser lento, engine não** — o que não pode travar é o loop de 40ms no main
-
----
-
-## Como Apoiar Carlos
-
-**Feature nova:**
-- Código funcional imediato, no padrão já estabelecido
-- Sinalizar se algo pode travar o loop de 40ms
-
-**Fixture novo:**
-- Calcular `startChannel` com base nos fixtures existentes
-- Verificar se cabe nos 512 canais
-- Sugerir nomes de canais baseados no manual
-
-**Debug DMX:**
-- Verificar snapshot do universo via `dmx:getUniverse`
-- Checar broadcast com Wireshark (UDP porta 6454)
-- Confirmar driver Enttec Open DMX ativo
-
-**Integração futura com Claude API:**
-- Prompt: `"gere uma cena para momento de altar com PAR LEDs azuis e moving heads lentos"`
-- Saída esperada: `{ channels: { "1": 200, "4": 255, ... } }` no formato `.show.json`
-- Sempre incluir o fixture map no prompt — a IA não conhece o patch

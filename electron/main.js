@@ -13,15 +13,17 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 
-const universe = require('./engine/universe');
-const engine   = require('./engine/engine');
-const show     = require('./show');
+const universe   = require('./engine/universe');
+const engine     = require('./engine/engine');
+const compositor = require('./engine/compositor');
+const show       = require('./show');
 
 const isDev = !app.isPackaged;
 const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
 
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
 if (!fs.existsSync(SCRIPTS_DIR)) fs.mkdirSync(SCRIPTS_DIR);
+const BANCO_DIR = path.join(__dirname, '..', 'banco-de-conhecimento');
 
 function getVSCodeCandidates() {
   const candidates = ['code', 'code.cmd'];
@@ -236,6 +238,7 @@ let activeSceneChannels = {}; // { [canal]: valor } — scripts não sobrescreve
 
 ipcMain.handle('dmx:setActiveSceneChannels', (_, channels) => {
   activeSceneChannels = filterDisabledFixtureChannels(channels);
+  compositor.setSceneLock(activeSceneChannels); // guard de cena aplicado na composição
   return { ok: true };
 });
 
@@ -287,13 +290,10 @@ ipcMain.handle('show:save', (_, showData) => {
       '| scripts:', Object.keys(currentShow?.scripts || {})
     );
 
-    // Scripts: main process é fonte da verdade — scriptMeta sobrescreve tudo.
+    // Scripts: scriptMeta do main é a ÚNICA fonte de verdade.
+    // Não herdar do disco nem do renderer — qualquer entrada que não esteja
+    // em scriptMeta neste momento foi removida via script:clear e não deve voltar.
     const mergedScripts = {};
-    // 1. base do disco
-    for (const [k, v] of Object.entries(currentShow?.scripts || {})) mergedScripts[k] = v;
-    // 2. o que o renderer mandou (pode ter sido modificado via sync-scripts)
-    for (const [k, v] of Object.entries(showData.scripts || {})) mergedScripts[k] = v;
-    // 3. scriptMeta do main vence — é a fonte de verdade em runtime
     for (const [fkey, meta] of Object.entries(scriptMeta)) {
       mergedScripts[fkey] = { name: meta.name, file: meta.file };
     }
@@ -386,10 +386,9 @@ function stopRunningPageScript(pageId, sceneKey, reason) {
   const k = psKey(pageId, sceneKey);
   const running = runningPageScripts[k];
   if (!running) return false;
-  const { interval, context } = running;
-  clearInterval(interval);
-  if (typeof context.OnTerminate === 'function') {
-    try { context.OnTerminate(); } catch (e) {
+  compositor.removeLayer(`page:${k}`);
+  if (typeof running.context.OnTerminate === 'function') {
+    try { running.context.OnTerminate(); } catch (e) {
       console.error(`[page_script] OnTerminate error (${reason}) (${k}):`, e.message);
     }
   }
@@ -430,12 +429,11 @@ function stopRunningScript(fkey, reason) {
   const running = runningScripts[fkey];
   if (!running) return false;
 
-  const { interval, context } = running;
-  clearInterval(interval);
+  compositor.removeLayer(fkey);
 
-  if (typeof context.OnTerminate === 'function') {
+  if (typeof running.context.OnTerminate === 'function') {
     try {
-      context.OnTerminate();
+      running.context.OnTerminate();
     } catch (e) {
       console.error(`[script] OnTerminate error ao parar (${reason}) (${fkey}):`, e.message);
     }
@@ -453,6 +451,7 @@ function stopAllRunningScripts(reason) {
     const colonIdx = k.indexOf(':');
     stopRunningPageScript(k.slice(0, colonIdx), k.slice(colonIdx + 1), reason);
   }
+  compositor.stopAllMacros(); // blackout/shutdown também encerra macros e suas camadas
 }
 
 function saveScriptMeta() {
@@ -554,10 +553,61 @@ function getFixtureChannel(fixtureId, alias) {
   return index === -1 ? null : fixture.startChannel + index;
 }
 
+// Compila um arquivo de script numa CAMADA { buffer, touched, context } pronta para o compositor.
+// SetChannel escreve no buffer da camada (guards aplicados na composição). Lança se o arquivo
+// não existir ou não compilar. Reutilizado pelas macros (factory por passo).
+function compileLayer(filePath) {
+  const code = fs.readFileSync(filePath, 'utf-8');
+  const buffer = new Uint8Array(512);
+  const touched = new Uint8Array(512);
+  const ctx = {};
+  const SetChannel = (ch, val) => {
+    if (ch < 1 || ch > 512) return;
+    const idx = ch - 1;
+    buffer[idx] = Math.max(0, Math.min(255, Math.round(Number(val))));
+    touched[idx] = 1;
+  };
+  const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
+  const fn = new Function('SetChannel', 'getChannel', 'ctx', `
+    ${code}
+    ctx.OnStart = typeof OnStart === 'function' ? OnStart : null;
+    ctx.OnExecute = typeof OnExecute === 'function' ? OnExecute : null;
+    ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
+  `);
+  fn(SetChannel, getChannel, ctx);
+  if (typeof ctx.OnStart === 'function') { try { ctx.OnStart(); } catch (e) {} }
+  return { buffer, touched, context: ctx };
+}
+
 ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
   const file = path.join(SCRIPTS_DIR, `${name}.js`);
-  if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, [
+  const groups = Array.isArray(options.groups) ? options.groups : [];
+  console.log('[script:create] fkey=%s name=%s groups=%j fileExists=%s', fkey, name, groups, fs.existsSync(file));
+
+  // Sempre (re)escreve quando grupos foram selecionados — garante injeção do banco.
+  // Sem grupos: só cria se o arquivo ainda não existe (comportamento original).
+  const shouldWrite = groups.length > 0 || !fs.existsSync(file);
+
+  if (shouldWrite) {
+    let knowledgeBlock = '';
+    if (groups.length > 0) {
+      const lines = ['// === BANCO DE CONHECIMENTO DOS APARELHOS ==='];
+      groups.forEach(group => {
+        const mdFile = path.join(BANCO_DIR, `${group}.md`);
+        if (fs.existsSync(mdFile)) {
+          const mdContent = fs.readFileSync(mdFile, 'utf-8');
+          console.log('[script:create] lendo %s (%d bytes)', mdFile, mdContent.length);
+          mdContent.split('\n').forEach(line => lines.push(`// ${line}`));
+          lines.push('//');
+        } else {
+          console.warn('[script:create] arquivo não encontrado: %s', mdFile);
+        }
+      });
+      lines.push('// ===========================================');
+      knowledgeBlock = lines.join('\n') + '\n\n';
+    }
+    console.log('[script:create] knowledgeBlock length=%d', knowledgeBlock.length);
+    fs.writeFileSync(file, knowledgeBlock + [
       `function OnStart() {`,
       `  // inicialização`,
       `}`,
@@ -603,12 +653,17 @@ function startScript(fkey) {
   } catch (e) {
     return { ok: false, error: 'Arquivo não encontrado' };
   }
-  // Monta contexto de execução do script
+  // Buffer próprio da camada (pré-alocado, reusado por frame) + máscara de canais tocados.
+  const buffer = new Uint8Array(512);
+  const touched = new Uint8Array(512);
   const ctx = {};
+  // SetChannel escreve no buffer DA CAMADA (não no universo). Os guards de cena ativa
+  // e de fixture desabilitado são aplicados pelo compositor sobre o resultado mesclado.
   const SetChannel = (ch, val) => {
-    if (!isDmxChannelEnabled(ch)) return;
-    if (ch in activeSceneChannels) return; // canal bloqueado por cena ativa
-    universe.setChannel(ch, val);
+    if (ch < 1 || ch > 512) return;
+    const idx = ch - 1;
+    buffer[idx] = Math.max(0, Math.min(255, Math.round(Number(val))));
+    touched[idx] = 1;
   };
   // getChannel: resolve o canal real de um alias do fixture (ex.: getChannel(id, "strobo")).
   const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
@@ -626,21 +681,12 @@ function startScript(fkey) {
   if (typeof ctx.OnStart === 'function') {
     try { ctx.OnStart(); } catch (e) {}
   }
-  const interval = setInterval(() => {
-    if (typeof ctx.OnExecute === 'function') {
-      try { ctx.OnExecute(); } catch (e) {
-        clearInterval(interval);
-        if (typeof ctx.OnTerminate === 'function') {
-          try { ctx.OnTerminate(); } catch (te) {
-            console.error(`[script] OnTerminate error (${fkey}):`, te.message);
-          }
-        }
-        delete runningScripts[fkey];
-        console.error(`[script] OnExecute error (${fkey}), script parado:`, e.message);
-      }
-    }
-  }, 40);
-  runningScripts[fkey] = { interval, context: ctx };
+  // Registra a camada — o relógio único (engine → compositor) roda o OnExecute por frame.
+  compositor.addLayer(fkey, {
+    buffer, touched, context: ctx,
+    onError: () => { delete runningScripts[fkey]; emitScriptsChanged(); },
+  });
+  runningScripts[fkey] = { context: ctx };
   return { ok: true, running: true };
 }
 
@@ -796,11 +842,15 @@ ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
   let code;
   try { code = fs.readFileSync(meta.file, 'utf-8'); }
   catch (e) { return { ok: false, error: 'Arquivo nao encontrado' }; }
+  const buffer = new Uint8Array(512);
+  const touched = new Uint8Array(512);
   const ctx = {};
+  // SetChannel escreve no buffer da camada; guards aplicados pelo compositor.
   const SetChannel = (ch, val) => {
-    if (!isDmxChannelEnabled(ch)) return;
-    if (ch in activeSceneChannels) return;
-    universe.setChannel(ch, val);
+    if (ch < 1 || ch > 512) return;
+    const idx = ch - 1;
+    buffer[idx] = Math.max(0, Math.min(255, Math.round(Number(val))));
+    touched[idx] = 1;
   };
   const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
   try {
@@ -813,17 +863,11 @@ ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
     fn(SetChannel, getChannel, ctx);
   } catch (e) { return { ok: false, error: `Erro ao compilar: ${e.message}` }; }
   if (typeof ctx.OnStart === 'function') { try { ctx.OnStart(); } catch (e) {} }
-  const interval = setInterval(() => {
-    if (typeof ctx.OnExecute === 'function') {
-      try { ctx.OnExecute(); } catch (e) {
-        clearInterval(interval);
-        if (typeof ctx.OnTerminate === 'function') { try { ctx.OnTerminate(); } catch (te) {} }
-        delete runningPageScripts[k];
-        console.error(`[page_script] script parado (${k}):`, e.message);
-      }
-    }
-  }, 40);
-  runningPageScripts[k] = { interval, context: ctx };
+  compositor.addLayer(`page:${k}`, {
+    buffer, touched, context: ctx,
+    onError: () => { delete runningPageScripts[k]; },
+  });
+  runningPageScripts[k] = { context: ctx };
   return { ok: true, running: true };
 });
 
@@ -835,6 +879,44 @@ ipcMain.handle('page_script:getAll', (_, pageId) => {
   }
   return result;
 });
+
+// ─────────────────────────────────────────────────────────────
+// IPC HANDLERS — MACROS (sequenciador com crossfade — Fase 2)
+// ─────────────────────────────────────────────────────────────
+const FRAME_MS = 40;
+function msToFrames(ms) { return Math.max(0, Math.round((Number(ms) || 0) / FRAME_MS)); }
+
+// def = {
+//   steps: [ { name, durationMs|null (null/'infinite' = até trigger), fadeInMs, fadeOutMs, overlapMs } ],
+//   mergeMode: 'htp' | 'linear',
+//   loop: bool
+// }
+ipcMain.handle('macro:create', (_, id, def = {}) => {
+  try {
+    if (!id) return { ok: false, error: 'id da macro obrigatório' };
+    const stepsIn = Array.isArray(def.steps) ? def.steps : [];
+    const steps = stepsIn.map(s => {
+      const file = path.join(SCRIPTS_DIR, `${s.name}.js`);
+      const infinite = s.durationMs == null || s.durationMs === 'infinite';
+      return {
+        makeLayer: () => compileLayer(file),  // compila no momento do disparo (recarrega do disco)
+        durationFrames: infinite ? Infinity : Math.max(1, msToFrames(s.durationMs)),
+        fadeInFrames: msToFrames(s.fadeInMs),
+        fadeOutFrames: msToFrames(s.fadeOutMs),
+        overlapFrames: msToFrames(s.overlapMs),
+      };
+    });
+    compositor.createMacro(id, steps, { mergeMode: def.mergeMode, loop: def.loop });
+    return { ok: true, steps: steps.length };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('macro:start',  (_, id) => ({ ok: compositor.startMacro(id) }));
+ipcMain.handle('macro:stop',   (_, id) => ({ ok: compositor.stopMacro(id) }));
+ipcMain.handle('macro:next',   (_, id) => ({ ok: compositor.triggerNextStep(id) }));
+ipcMain.handle('macro:remove', (_, id) => ({ ok: compositor.removeMacro(id) }));
 
 // ─────────────────────────────────────────────────────────────
 // IPC HANDLERS — FIXTURES
@@ -885,6 +967,9 @@ app.whenReady().then(() => {
       console.warn('[main] falha ao carregar show padrao:', e.message);
     }
   }
+
+  // Guard de fixture desabilitado aplicado na composição (uma vez por frame).
+  compositor.setDisabledChannelsProvider(getDisabledFixtureChannelSet);
 
   engine.start();
   console.log('[main] engine DMX iniciado');

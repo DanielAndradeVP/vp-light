@@ -414,6 +414,8 @@ export default function Main({ onOpenFixtures }) {
   const [createModalTab, setCreateModalTab] = useState('novo');
   const [existingScripts, setExistingScripts] = useState([]);
   const [selectedExisting, setSelectedExisting] = useState(null);
+  const [selectedGroups, setSelectedGroups] = useState(new Set());   // seleção de grupo (banco de conhecimento)
+  const [selectedFixtures, setSelectedFixtures] = useState(new Set()); // seleção individual de fixture
   const [moveModal, setMoveModal] = useState(null); // { sourceFkey }
   const [pageScripts, setPageScripts] = useState({}); // { [sceneKey]: { name, file, running } }
   const pageScriptsRef = useRef(pageScripts);
@@ -422,6 +424,13 @@ export default function Main({ onOpenFixtures }) {
   const [sceneScriptName, setSceneScriptName] = useState('');
 
   const FKEYS = ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
+  const FIXTURE_GROUPS = [
+    { key: 'par-led',  label: 'Par LEDs',      fixtures: ['ParLed_Deluxe_1','ParLed_Deluxe_2','ParLed_Deluxe_3','ParLed_Deluxe_4','ParLed_Deluxe_5','ParLed_Deluxe_6','ParLed_Deluxe_7','ParLed_Deluxe_8','ParLed_Deluxe_9'] },
+    { key: 'ribalta',  label: 'Ribaltas',       fixtures: ['Ribalta_1','Ribalta_2','ribalta-rgb-static_1','ribalta-rgb-static_2','ribalta-rgb-static_3','ribalta-rgb-static_4'] },
+    { key: 'moving',   label: 'Moving Heads',   fixtures: ['Moving_01','Moving_07','Moving_08','Moving_Wosh_01','Moving_Wosh_2'] },
+    { key: 'brut',     label: 'Bruts',          fixtures: ['Mini_Brut_01','Mini_Brut_02','Mini_Brut_03','Mini_Brut_04'] },
+    { key: 'fita-led', label: 'Fita LED',       fixtures: ['Fita_Led'] },
+  ];
   const currentPageNumber = Math.max(1, Number.parseInt(currentPage, 10) || 1);
   const currentPageId = String(currentPageNumber);
 
@@ -527,7 +536,10 @@ export default function Main({ onOpenFixtures }) {
 
   async function handleCreateScript() {
     if (!scriptName.trim() || !createModal) return;
-    const result = await window.vp.createScript(createModal.fkey, scriptName.trim());
+    const finalGroups = FIXTURE_GROUPS
+      .filter(g => selectedGroups.has(g.key) || g.fixtures.some(f => selectedFixtures.has(f)))
+      .map(g => g.key);
+    const result = await window.vp.createScript(createModal.fkey, scriptName.trim(), { groups: finalGroups });
     if (result.ok) {
       setScripts(prev => ({
         ...prev,
@@ -536,6 +548,8 @@ export default function Main({ onOpenFixtures }) {
     }
     setCreateModal(null);
     setScriptName('');
+    setSelectedGroups(new Set());
+    setSelectedFixtures(new Set());
   }
 
   async function handleClearScript(fkey) {
@@ -1502,7 +1516,7 @@ export default function Main({ onOpenFixtures }) {
               <span style={{ fontSize:13, fontWeight:600 }}>
                 {scripts[createModal.fkey] ? 'Editar Script' : 'Script'} — {createModal.fkey}
               </span>
-              <button onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
+              <button onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
 
             {/* Abas */}
@@ -1523,15 +1537,72 @@ export default function Main({ onOpenFixtures }) {
 
             {/* Conteúdo — Novo Script */}
             {createModalTab === 'novo' && (
-              <div style={{ padding:16 }}>
-                <div style={{ fontSize:11, color:'#888', marginBottom:6 }}>Nome do script</div>
-                <input
-                  value={scripts[createModal.fkey] ? scripts[createModal.fkey].name : scriptName}
-                  onChange={e => setScriptName(e.target.value)}
-                  disabled={!!scripts[createModal.fkey]}
-                  placeholder="Nome do script..."
-                  style={{ width:'100%', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, color: scripts[createModal.fkey] ? theme.colors.textDisabled : theme.colors.text, background:theme.colors.surface, padding:theme.spacing.inputPadding, marginTop:theme.spacing.inputMarginTop, border:'none', borderBottom:`1px solid ${theme.colors.textSecondary}`, outline:'none', boxSizing:'border-box' }}
-                />
+              <div style={{ padding:16, display:'flex', flexDirection:'column', gap:14 }}>
+                {/* Nome */}
+                <div>
+                  <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted, marginBottom:4 }}>Nome do script</div>
+                  <input
+                    value={scripts[createModal.fkey] ? scripts[createModal.fkey].name : scriptName}
+                    onChange={e => setScriptName(e.target.value)}
+                    disabled={!!scripts[createModal.fkey]}
+                    placeholder="Nome do script..."
+                    style={{ width:'100%', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, color: scripts[createModal.fkey] ? theme.colors.textDisabled : theme.colors.text, background:theme.colors.surface, padding:theme.spacing.inputPadding, border:'none', borderBottom:`1px solid ${theme.colors.textSecondary}`, outline:'none', boxSizing:'border-box' }}
+                  />
+                </div>
+
+                {/* Banco de conhecimento — só exibe para script novo */}
+                {!scripts[createModal.fkey] && (
+                  <div>
+                    <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted, marginBottom:8 }}>Banco de conhecimento</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                      {FIXTURE_GROUPS.map(group => {
+                        const groupActive = selectedGroups.has(group.key);
+                        const anyFixture = group.fixtures.some(f => selectedFixtures.has(f));
+                        const effective = groupActive || anyFixture;
+                        return (
+                          <div key={group.key} style={{ border:`1px solid ${effective ? theme.colors.primary : theme.colors.borderSoft}`, borderRadius:theme.radius.md, overflow:'hidden', background: effective ? theme.colors.primaryOverlay : 'transparent', transition:'border-color .15s' }}>
+                            {/* Cabeçalho do grupo */}
+                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderBottom:`1px solid ${effective ? theme.colors.primary : theme.colors.borderSoft}` }}>
+                              <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.toolbar.fontSize, fontWeight:700, color: effective ? theme.colors.primary : theme.colors.text }}>{group.label}</span>
+                              <button
+                                onClick={() => {
+                                  if (groupActive) {
+                                    setSelectedGroups(prev => { const s = new Set(prev); s.delete(group.key); return s; });
+                                    setSelectedFixtures(prev => { const s = new Set(prev); group.fixtures.forEach(f => s.delete(f)); return s; });
+                                  } else {
+                                    setSelectedGroups(prev => new Set([...prev, group.key]));
+                                    setSelectedFixtures(prev => { const s = new Set(prev); group.fixtures.forEach(f => s.delete(f)); return s; });
+                                  }
+                                }}
+                                style={{ fontFamily:theme.typography.fontFamily, fontSize:10, padding:'2px 8px', borderRadius:theme.radius.sm, border:`1px solid ${groupActive ? theme.colors.primary : theme.colors.borderSoft}`, background: groupActive ? theme.colors.primary : theme.colors.buttonSurface, color: groupActive ? theme.colors.bgDarker : theme.colors.text, cursor:'pointer', fontWeight:700, letterSpacing:'.03em' }}
+                              >{groupActive ? '✓ Tudo' : 'Tudo'}</button>
+                            </div>
+                            {/* Fixtures individuais */}
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:4, padding:6 }}>
+                              {group.fixtures.map(fname => {
+                                const isOn = groupActive || selectedFixtures.has(fname);
+                                return (
+                                  <button
+                                    key={fname}
+                                    onClick={() => {
+                                      if (groupActive) return; // grupo inteiro ativo, chips são visuais
+                                      setSelectedFixtures(prev => {
+                                        const s = new Set(prev);
+                                        if (s.has(fname)) s.delete(fname); else s.add(fname);
+                                        return s;
+                                      });
+                                    }}
+                                    style={{ fontFamily:theme.typography.fontFamily, fontSize:9, padding:'2px 6px', borderRadius:theme.radius.sm, border:`1px solid ${isOn ? theme.colors.accent : theme.colors.borderSoft}`, background: isOn ? theme.colors.accentOverlay : theme.colors.buttonSurface, color: isOn ? theme.colors.accent : theme.colors.textMuted, cursor: groupActive ? 'default' : 'pointer', whiteSpace:'nowrap' }}
+                                  >{fname.replace(/_/g,' ')}</button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1559,7 +1630,7 @@ export default function Main({ onOpenFixtures }) {
             {/* Footer */}
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
               <button
-                onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); }}
+                onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }}
                 style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}
               >Cancelar</button>
 
