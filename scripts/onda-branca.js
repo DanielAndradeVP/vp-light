@@ -17,8 +17,8 @@ const ID_B03  = 'fixture_1780805067518_mini_brut_03';
 const ID_B04  = 'fixture_1780805067518_mini_brut_04';
 
 // ── Canais resolvidos ───────────────────────────────────────────────────────
-let m1_cw, m1_strobo, m1_dimmer, m1_prism, m1_pan, m1_tilt, m1_speed;
-let m2_cw, m2_strobo, m2_dimmer, m2_prism, m2_pan, m2_tilt, m2_speed;
+let m1_cw, m1_strobo, m1_fecho, m1_prism, m1_pan, m1_tilt, m1_speed;
+let m2_cw, m2_strobo, m2_fecho, m2_prism, m2_pan, m2_tilt, m2_speed;
 let r1_tilt, r1_speed, r1_dimmer, r1_strobo, r1_function;
 let r2_tilt, r2_speed, r2_dimmer, r2_strobo, r2_function;
 let r1_leds = null, r2_leds = null;
@@ -70,20 +70,20 @@ function OnStart() {
   // Moving Head 1
   m1_cw     = getChannel(ID_M1, 'color_wheel');
   m1_strobo = getChannel(ID_M1, 'strobo');
-  m1_dimmer = getChannel(ID_M1, 'dimmer');
-  m1_prism  = getChannel(ID_M1, 'prism');
+  m1_fecho  = getChannel(ID_M1, 'fecho_lampada');
+  m1_prism  = getChannel(ID_M1, 'prism_1');
   m1_pan    = getChannel(ID_M1, 'pan');
   m1_tilt   = getChannel(ID_M1, 'tilt');
-  m1_speed  = getChannel(ID_M1, 'speed');
+  m1_speed  = getChannel(ID_M1, 'virtual_speed');
 
   // Moving Head 2
   m2_cw     = getChannel(ID_M2, 'color_wheel');
   m2_strobo = getChannel(ID_M2, 'strobo');
-  m2_dimmer = getChannel(ID_M2, 'dimmer');
-  m2_prism  = getChannel(ID_M2, 'prism');
+  m2_fecho  = getChannel(ID_M2, 'fecho_lampada');
+  m2_prism  = getChannel(ID_M2, 'prism_1');
   m2_pan    = getChannel(ID_M2, 'pan');
   m2_tilt   = getChannel(ID_M2, 'tilt');
-  m2_speed  = getChannel(ID_M2, 'speed');
+  m2_speed  = getChannel(ID_M2, 'virtual_speed');
 
   // Ribalta 1
   r1_tilt     = getChannel(ID_R1, 'tilt');
@@ -136,7 +136,7 @@ function OnExecute() {
     ch(m1_pan,    M1_PAN_C); ch(m2_pan, M2_PAN_C);
     ch(m1_tilt,   lerp(M1_TILT_F, M1_TILT_A, p)); // 36 → 78
     ch(m2_tilt,   lerp(M2_TILT_F, M2_TILT_A, p)); // 32 → 72 (espelho)
-    ch(m1_dimmer, 255); ch(m2_dimmer, 255);
+    ch(m1_fecho, 255); ch(m2_fecho, 255);
     ch(m1_strobo, 255); ch(m2_strobo, 255);         // 255 = shutter aberto
     ch(m1_prism,  0);   ch(m2_prism,  0);
   }
@@ -148,7 +148,7 @@ function OnExecute() {
     ch(m2_pan,    lerp(M2_PAN_C, M2_PAN_R, fp));    // 84 → 44 (lateral direita)
     ch(m1_tilt,   lerp(M1_TILT_A, M1_TILT_L, fp)); // 78 → 35
     ch(m2_tilt,   lerp(M2_TILT_A, M2_TILT_L, fp)); // 72 → 26
-    ch(m1_dimmer, 255); ch(m2_dimmer, 255);
+    ch(m1_fecho, 255); ch(m2_fecho, 255);
     ch(m1_strobo, 255); ch(m2_strobo, 255);
     // Prism ativa aos 150 ticks (6s = marca de 18s no loop total)
     // NOTA: valor 16 tenta ativar prism 3-faces — ajustar se o fixture usar valor diferente
@@ -171,8 +171,8 @@ function OnExecute() {
     ch(m2_tilt,   lerp(M2_TILT_F, M2_TILT_A, (1 - s1) / 2)); // oscila 32 ↔ 72, invertido
     // Strobo via toggle de dimmer (~8Hz = toggle a cada 3 ticks)
     const son = (lt % 3) < 2;
-    ch(m1_dimmer, son ? 255 : 0);
-    ch(m2_dimmer, son ? 255 : 0);
+    ch(m1_fecho, son ? 255 : 0);
+    ch(m2_fecho, son ? 255 : 0);
     ch(m1_strobo, 255); ch(m2_strobo, 255);
     ch(m1_prism,  0);   ch(m2_prism,  0);
   }
@@ -180,7 +180,7 @@ function OnExecute() {
     ch(m1_speed,  210); ch(m2_speed,  210);
     ch(m1_pan,    M1_PAN_C);  ch(m2_pan,  M2_PAN_C);
     ch(m1_tilt,   M1_TILT_F); ch(m2_tilt, M2_TILT_F);
-    ch(m1_dimmer, 255); ch(m2_dimmer, 255);
+    ch(m1_fecho, 255); ch(m2_fecho, 255);
     ch(m1_strobo, 255); ch(m2_strobo, 255);
     ch(m1_prism,  0);   ch(m2_prism,  0);
   }
@@ -272,7 +272,7 @@ function OnExecute() {
 // ── OnTerminate ─────────────────────────────────────────────────────────────
 function OnTerminate() {
   // Moving Heads — apaga dimmer, fecha prism, zera cw
-  ch(m1_dimmer, 0); ch(m2_dimmer, 0);
+  ch(m1_fecho, 0); ch(m2_fecho, 0);
   ch(m1_strobo, 0); ch(m2_strobo, 0);
   ch(m1_prism,  0); ch(m2_prism,  0);
   ch(m1_cw,     0); ch(m2_cw,     0);

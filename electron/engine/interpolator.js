@@ -26,7 +26,7 @@ const UNITS_AT_128 = 5;
  *   speedChannel: number,
  *   panChannel:   number | null,
  *   tiltChannel:  number | null,
- *   speed:        number  (0–255, não vai ao DMX),
+ *   speed:        number  (0–255 vindo do fader; 0 = rápido, 255 = lento),
  *   panCurrent:   number  (valor lógico atual interpolado),
  *   panTarget:    number  (valor lógico alvo),
  *   tiltCurrent:  number,
@@ -119,8 +119,6 @@ function setTarget(channel, value) {
  */
 function tick() {
   for (const state of Object.values(_fixtures)) {
-    if (state.speed <= 0) continue; // frozen — não move, não escreve
-
     _advance(state, 'pan');
     _advance(state, 'tilt');
   }
@@ -134,10 +132,11 @@ function _advance(state, type) {
   const target  = type === 'pan' ? state.panTarget  : state.tiltTarget;
 
   let next;
-  if (state.speed >= 255) {
+  const effectiveSpeed = 255 - state.speed;
+  if (effectiveSpeed >= 255) {
     next = target; // snap imediato
   } else {
-    const step = Math.max(1, Math.round(state.speed * UNITS_AT_128 / 128));
+    const step = Math.max(1, Math.round(effectiveSpeed * UNITS_AT_128 / 128));
     const diff = target - current;
     if (diff === 0) {
       next = current;

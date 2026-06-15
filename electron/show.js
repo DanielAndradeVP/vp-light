@@ -40,6 +40,14 @@ function normalizeFixtureCalibration(fixture) {
     delete next.panOffset;
   }
 
+  if (isFixtureNamed(next, 'Ribalta_1')) {
+    next.tiltOffset = 23;
+  }
+
+  if (isFixtureNamed(next, 'Ribalta_2')) {
+    delete next.tiltOffset;
+  }
+
   return next;
 }
 
@@ -191,18 +199,11 @@ function getStartupChannels() {
   const fixtures = currentShow?.fixtures || [];
   const startupChannels = {};
 
-  const movingHead1 = fixtures.find(fx => normalizeAlias(fx?.name) === 'moving head beam 1');
-  const movingHead2 = fixtures.find(fx => normalizeAlias(fx?.name) === 'moving head beam 2');
-
-  if (movingHead1 && movingHead1.enabled !== false) {
-    const channel = getFixtureChannelByAlias(movingHead1, 'fecho_lampada');
+  fixtures.forEach((fixture) => {
+    if (fixture?.enabled === false) return;
+    const channel = getFixtureChannelByAlias(fixture, 'fecho_lampada');
     if (channel) startupChannels[channel] = 255;
-  }
-
-  if (movingHead2 && movingHead2.enabled !== false) {
-    const channel = getFixtureChannelByAlias(movingHead2, 'speed');
-    if (channel) startupChannels[channel] = 255;
-  }
+  });
 
   return startupChannels;
 }

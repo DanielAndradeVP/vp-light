@@ -10,8 +10,10 @@
 let _channelOffsets = {};
 
 function setChannelOffsets(map) {
-  _channelOffsets = map || {};
-  _universe.applyOffsetBaselines();
+  const previousOffsets = _channelOffsets || {};
+  const nextOffsets = map || {};
+  _universe.rebaseChannelOffsets(previousOffsets, nextOffsets);
+  _channelOffsets = nextOffsets;
 }
 
 class DmxUniverse {
@@ -52,6 +54,26 @@ class DmxUniverse {
       if (!this._validateChannel(ch)) continue;
       this._buffer[this._toIndex(ch)] = this._normalizeValue(offset);
     }
+  }
+
+  /**
+   * Troca o mapa de offsets preservando o valor lógico atual de cada canal.
+   * Se um canal perde offset, remove do buffer o baseline físico antigo.
+   */
+  rebaseChannelOffsets(previousOffsets, nextOffsets) {
+    const channels = new Set([
+      ...Object.keys(previousOffsets || {}),
+      ...Object.keys(nextOffsets || {}),
+    ]);
+    channels.forEach(channel => {
+      const ch = Number(channel);
+      if (!this._validateChannel(ch)) return;
+      const index = this._toIndex(ch);
+      const previousOffset = Number(previousOffsets?.[ch] ?? previousOffsets?.[channel] ?? 0) || 0;
+      const nextOffset = Number(nextOffsets?.[ch] ?? nextOffsets?.[channel] ?? 0) || 0;
+      const logical = Math.max(0, this._buffer[index] - previousOffset);
+      this._buffer[index] = this._normalizeValue(logical + nextOffset);
+    });
   }
 
   /**

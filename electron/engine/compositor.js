@@ -30,6 +30,7 @@
  */
 
 const universe = require('./universe');
+const interpolator = require('./interpolator');
 
 // id -> camada
 const _layers = new Map();
@@ -155,7 +156,16 @@ function renderFrame() {
     if (ch in _sceneLock) continue;     // canal travado por cena ativa
     let out = linear ? sum : htp;
     if (out > 255) out = 255;
-    universe.setChannel(ch, Math.round(out));
+    const value = Math.round(out);
+    if (interpolator.isVirtualChannel(ch)) {
+      interpolator.setSpeed(ch, value);
+      continue;
+    }
+    if (interpolator.isControlledChannel(ch)) {
+      interpolator.setTarget(ch, value);
+      continue;
+    }
+    universe.setChannel(ch, value);
   }
 
   // 4. remove camadas que terminaram o fade-out neste frame

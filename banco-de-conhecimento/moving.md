@@ -56,29 +56,29 @@ Ambos os Beams têm o mesmo layout de 16 canais (offset relativo ao startChannel
 |--------|-----------------|--------------|--------------|
 | 1      | color_wheel     | 123          | 203          |
 | 2      | strobo          | 124          | 204          |
-| 3      | dimmer          | 125          | 205          |
-| 4      | gobo            | 126          | 206          |
-| 5      | prism           | 127          | 207          |
+| 3      | fecho_lampada   | 125          | 205          |
+| 4      | gobo_wheel      | 126          | 206          |
+| 5      | prism_1         | 127          | 207          |
 | 6      | prism_rotation  | 128          | 208          |
-| 7      | (sem função)    | 129          | 209          |
+| 7      | virtual_speed   | 129          | 209          |
 | 8      | frost           | 130          | 210          |
 | 9      | focus           | 131          | 211          |
 | 10     | pan             | 132          | 212          |
 | 11     | pan_fine        | 133          | 213          |
 | 12     | tilt            | 134          | 214          |
 | 13     | tilt_fine       | 135          | 215          |
-| 14     | speed           | 136          | 216          |
+| 14     | special_random  | 136          | 216          |
 | 15     | reset           | 137          | 217          |
-| 16     | control         | 138          | 218          |
+| 16     |                 | 138          | 218          |
 
 ## Uso em Scripts DMX
 
-> Canais: M1 pan=132, tilt=134, dimmer=125 · M2 pan=212, tilt=214, dimmer=205. Tilt provisório.
+> Canais: M1 pan=132, tilt=134, fecho_lampada=125, virtual_speed=129 · M2 pan=212, tilt=214, fecho_lampada=205, virtual_speed=209. Tilt provisório.
 
 ```js
 // Nivelado para frente (simétrico) — posição neutra
-SetChannel(125, 255); SetChannel(132, 84); SetChannel(134, 36); // Beam 1 dimmer/pan/tilt
-SetChannel(205, 255); SetChannel(212, 84); SetChannel(214, 32); // Beam 2 dimmer/pan/tilt
+SetChannel(125, 255); SetChannel(132, 84); SetChannel(134, 36); // Beam 1 fecho_lampada/pan/tilt
+SetChannel(205, 255); SetChannel(212, 84); SetChannel(214, 32); // Beam 2 fecho_lampada/pan/tilt
 ```
 
 ```js

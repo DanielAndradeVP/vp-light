@@ -6,9 +6,9 @@
     "notes": "Show base para o Fire. Salvar antes de sair!",
     "viewport": {
       "grid": {
-        "zoom": 1.3310000000000008,
-        "panX": 756.8376360562804,
-        "panY": 617.5496544634932
+        "zoom": 1.948717100000002,
+        "panX": 751.9363857950037,
+        "panY": 510.65800375657403
       }
     }
   },
@@ -264,7 +264,7 @@
       "channelCount": 16,
       "channels": [
         "color_wheel",
-        "strobo_dimmer",
+        "strobo",
         "fecho_lampada",
         "gobo_wheel",
         "prism_1",
@@ -280,7 +280,7 @@
         "indefinido",
         "reset"
       ],
-      "posX": -80,
+      "posX": -160,
       "posY": -40,
       "manufacturer": "Light Party",
       "model": "Moving Head Beam 200W",
@@ -301,9 +301,9 @@
       "channels": [
         "color_wheel",
         "strobo",
-        "dimmer",
-        "gobo",
-        "prism",
+        "fecho_lampada",
+        "gobo_wheel",
+        "prism_1",
         "prism_rotation",
         "virtual_speed",
         "frost",
@@ -312,18 +312,18 @@
         "pan_fine",
         "tilt",
         "tilt_fine",
-        "speed",
+        "special_random",
         "reset",
-        "control"
+        ""
       ],
-      "posX": 0,
+      "posX": -80,
       "posY": -40,
       "manufacturer": "Light Party",
       "model": "MovingHead_Beam 230W_16channels",
       "fixtureType": "moving_head_beam",
       "universe": 0,
       "group": "Moving Heads",
-      "note": "DMX 203-218. Color adjustment: 0=branco; Strobo: 255=aberto; Dimmer: 0=off, 255=max; Gobo: 0=sem gobo; Tilt: 170-255 range operacional.",
+      "note": "DMX 203-218. CH1 color_wheel: 0=branco, vermelho, amarelo, roxo escuro, verde, azul escuro, branco, ambar. CH2 strobo: 255 aberto/fixo com fecho_lampada em 255; 175 lento, 190 medio, 205 rapido. CH3 fecho_lampada. CH4 gobo_wheel. CH5 prism_1. CH6 prism_rotation. CH7 virtual_speed invertido pelo interpolador: 0=mais rapido, 255=mais lento. CH8 frost. CH9 focus. CH10 pan. CH11 pan_fine. CH12 tilt. CH13 tilt_fine. CH14 special_random. CH15 reset. CH16 indefinido.",
       "tiltOffset": 6,
       "virtualPanTiltSpeed": true
     },
@@ -355,7 +355,7 @@
       "universe": 0,
       "group": "Ribaltas",
       "note": "ESQUERDA (B). DMX 258-270. Tilt funcional=110; Speed=190; LEDs 1-8 em 255 = branco cheio; Strobe=0 desligado; Special=0 modo normal.",
-      "tiltOffset": 20
+      "tiltOffset": 23
     },
     {
       "id": "fixture_1780805067518_ribalta_2",
@@ -385,8 +385,7 @@
       "universe": 0,
       "group": "Ribaltas",
       "note": "DIREITA (A). DMX 271-283. Tilt funcional=105; Speed=90; LEDs 1-8 em 255 = branco cheio; Strobe=0 desligado; Special=0 modo normal.",
-      "observation": "",
-      "tiltOffset": 3
+      "observation": ""
     },
     {
       "id": "fixture_1780805067518_ribalta_rgb_static_1",
@@ -401,8 +400,8 @@
         "strobo",
         "special"
       ],
-      "posX": 0,
-      "posY": -120,
+      "posX": 240,
+      "posY": -40,
       "manufacturer": "Light Party",
       "model": "Ribalta RGB Static 20 LEDs",
       "fixtureType": "ribalta_rgb_static",
@@ -485,7 +484,7 @@
         "dimmer"
       ],
       "posX": 200,
-      "posY": 40,
+      "posY": 80,
       "manufacturer": "FitaLedDimmer",
       "model": "Fita de Led",
       "fixtureType": "fita_led"
@@ -499,7 +498,7 @@
         "dimmer"
       ],
       "posX": -120,
-      "posY": 40,
+      "posY": 80,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -517,7 +516,7 @@
         "dimmer"
       ],
       "posX": -40,
-      "posY": 40,
+      "posY": 80,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -534,7 +533,7 @@
         "dimmer"
       ],
       "posX": 40,
-      "posY": 40,
+      "posY": 80,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -551,7 +550,7 @@
         "dimmer"
       ],
       "posX": 120,
-      "posY": 40,
+      "posY": 80,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -706,6 +705,148 @@
             "267": 255,
             "268": 255,
             "271": 89,
+            "273": 255,
+            "274": 255,
+            "275": 255,
+            "276": 255,
+            "277": 255,
+            "278": 255,
+            "279": 255,
+            "280": 255,
+            "281": 255
+          }
+        },
+        "G": {
+          "name": "rib-01",
+          "color": "#000000",
+          "channels": {
+            "124": 255,
+            "125": 255,
+            "134": 251,
+            "204": 255,
+            "205": 255,
+            "214": 249,
+            "258": 232,
+            "259": 197,
+            "260": 255,
+            "261": 255,
+            "262": 255,
+            "263": 255,
+            "264": 255,
+            "265": 255,
+            "266": 255,
+            "267": 255,
+            "268": 255,
+            "271": 250,
+            "272": 197,
+            "273": 255,
+            "274": 255,
+            "275": 255,
+            "276": 255,
+            "277": 255,
+            "278": 255,
+            "279": 255,
+            "280": 255,
+            "281": 255
+          },
+          "customFunctions": {
+            "fixture_1780805067518_moving_head_beam_1": {
+              "tilt_invert": true
+            },
+            "fixture_1780805067518_moving_head_beam_2": {
+              "tilt_invert": true
+            }
+          }
+        },
+        "H": {
+          "name": "rib-02",
+          "color": "#000000",
+          "channels": {
+            "124": 255,
+            "125": 255,
+            "129": 202,
+            "204": 255,
+            "205": 255,
+            "209": 202,
+            "259": 202,
+            "260": 255,
+            "261": 255,
+            "262": 255,
+            "263": 255,
+            "264": 255,
+            "265": 255,
+            "266": 255,
+            "267": 255,
+            "268": 255,
+            "272": 202,
+            "273": 255,
+            "274": 255,
+            "275": 255,
+            "276": 255,
+            "277": 255,
+            "278": 255,
+            "279": 255,
+            "280": 255,
+            "281": 255
+          }
+        },
+        "K": {
+          "name": "rib-mov-tilt-invertido-01",
+          "color": "#000000",
+          "channels": {
+            "124": 255,
+            "125": 255,
+            "134": 17,
+            "204": 255,
+            "205": 255,
+            "214": 17,
+            "258": 238,
+            "259": 197,
+            "260": 255,
+            "261": 255,
+            "262": 255,
+            "263": 255,
+            "264": 255,
+            "265": 255,
+            "266": 255,
+            "267": 255,
+            "268": 255,
+            "271": 238,
+            "272": 197,
+            "273": 255,
+            "274": 255,
+            "275": 255,
+            "276": 255,
+            "277": 255,
+            "278": 255,
+            "279": 255,
+            "280": 255,
+            "281": 255
+          }
+        },
+        "J": {
+          "name": "rib-mov-tilt-invertido-02",
+          "color": "#000000",
+          "channels": {
+            "124": 255,
+            "125": 255,
+            "134": 17,
+            "204": 255,
+            "205": 255,
+            "214": 17,
+            "258": 232,
+            "259": 197,
+            "260": 255,
+            "261": 255,
+            "262": 255,
+            "263": 255,
+            "264": 255,
+            "265": 255,
+            "266": 255,
+            "267": 255,
+            "268": 255,
+            "271": 238,
+            "272": 197,
             "273": 255,
             "274": 255,
             "275": 255,

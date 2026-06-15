@@ -32,8 +32,8 @@ const ID_BRUT = [
 let parDimmer = [], parRed = [], parGreen = [], parBlue = [];
 let rib1Tilt, rib1Speed, rib1Dimmer, rib1Leds = [];
 let rib2Tilt, rib2Speed, rib2Dimmer, rib2Leds = [];
-let mh1Dimmer, mh1Strobo, mh1ColorWheel, mh1Pan, mh1PanFine, mh1Tilt, mh1Speed;
-let mh2Dimmer, mh2Strobo, mh2ColorWheel, mh2Pan, mh2PanFine, mh2Tilt, mh2Speed;
+let mh1Fecho, mh1Strobo, mh1ColorWheel, mh1Pan, mh1PanFine, mh1Tilt, mh1Speed;
+let mh2Fecho, mh2Strobo, mh2ColorWheel, mh2Pan, mh2PanFine, mh2Tilt, mh2Speed;
 let brutDimmer = [];
 
 // ─── Estado global ────────────────────────────────────────────────────────────
@@ -107,21 +107,21 @@ function OnStart() {
   for (let i = 1; i <= 8; i++) rib2Leds.push(getChannel(ID_RIB2, 'led_' + i));
 
   // Moving Heads
-  mh1Dimmer     = getChannel(ID_MH1, 'dimmer');
+  mh1Fecho      = getChannel(ID_MH1, 'fecho_lampada');
   mh1Strobo     = getChannel(ID_MH1, 'strobo');
   mh1ColorWheel = getChannel(ID_MH1, 'color_wheel');
   mh1Pan        = getChannel(ID_MH1, 'pan');
   mh1PanFine    = getChannel(ID_MH1, 'pan_fine');
   mh1Tilt       = getChannel(ID_MH1, 'tilt');
-  mh1Speed      = getChannel(ID_MH1, 'speed');
+  mh1Speed      = getChannel(ID_MH1, 'virtual_speed');
 
-  mh2Dimmer     = getChannel(ID_MH2, 'dimmer');
+  mh2Fecho      = getChannel(ID_MH2, 'fecho_lampada');
   mh2Strobo     = getChannel(ID_MH2, 'strobo');
   mh2ColorWheel = getChannel(ID_MH2, 'color_wheel');
   mh2Pan        = getChannel(ID_MH2, 'pan');
   mh2PanFine    = getChannel(ID_MH2, 'pan_fine');
   mh2Tilt       = getChannel(ID_MH2, 'tilt');
-  mh2Speed      = getChannel(ID_MH2, 'speed');
+  mh2Speed      = getChannel(ID_MH2, 'virtual_speed');
 
   // Mini Bruts
   brutDimmer = [];
@@ -227,7 +227,7 @@ function OnExecute() {
   const mh2State = mhStateForPhase((tick + MH2_PHASE_OFFSET) % MH_CYCLE);
 
   // MH1 → pan para a direita
-  if (mh1Dimmer     !== null) SetChannel(mh1Dimmer,     255);
+  if (mh1Fecho      !== null) SetChannel(mh1Fecho,      255);
   if (mh1Strobo     !== null) SetChannel(mh1Strobo,     255); // aberto
   if (mh1ColorWheel !== null) SetChannel(mh1ColorWheel, 0);   // branco
   if (mh1Pan        !== null) SetChannel(mh1Pan,        MH_PAN_CENTER + mh1State.panOffset);
@@ -236,7 +236,7 @@ function OnExecute() {
   if (mh1Speed      !== null) SetChannel(mh1Speed,      30); // motor lento
 
   // MH2 → pan para a esquerda (espelho)
-  if (mh2Dimmer     !== null) SetChannel(mh2Dimmer,     255);
+  if (mh2Fecho      !== null) SetChannel(mh2Fecho,      255);
   if (mh2Strobo     !== null) SetChannel(mh2Strobo,     255);
   if (mh2ColorWheel !== null) SetChannel(mh2ColorWheel, 0);
   if (mh2Pan        !== null) SetChannel(mh2Pan,        MH_PAN_CENTER - mh2State.panOffset);
@@ -284,14 +284,14 @@ function OnTerminate() {
   for (let i = 0; i < rib2Leds.length; i++) {
     if (rib2Leds[i] !== null) SetChannel(rib2Leds[i], 0);
   }
-  if (mh1Dimmer     !== null) SetChannel(mh1Dimmer,     0);
+  if (mh1Fecho      !== null) SetChannel(mh1Fecho,      0);
   if (mh1Strobo     !== null) SetChannel(mh1Strobo,     0);
   if (mh1ColorWheel !== null) SetChannel(mh1ColorWheel, 0);
   if (mh1Pan        !== null) SetChannel(mh1Pan,        MH_PAN_CENTER);
   if (mh1PanFine    !== null) SetChannel(mh1PanFine,    0);
   if (mh1Tilt       !== null) SetChannel(mh1Tilt,       MH_TILT_FLOOR);
   if (mh1Speed      !== null) SetChannel(mh1Speed,      0);
-  if (mh2Dimmer     !== null) SetChannel(mh2Dimmer,     0);
+  if (mh2Fecho      !== null) SetChannel(mh2Fecho,      0);
   if (mh2Strobo     !== null) SetChannel(mh2Strobo,     0);
   if (mh2ColorWheel !== null) SetChannel(mh2ColorWheel, 0);
   if (mh2Pan        !== null) SetChannel(mh2Pan,        MH_PAN_CENTER);

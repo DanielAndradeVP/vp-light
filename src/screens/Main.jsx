@@ -510,7 +510,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       const s = currentScenes[key];
       if (s?.channels) {
         Object.entries(filterDisabledFixtureChannels(s.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
-          if (Number(val) > 0) merged[Number(ch)] = Number(val);
+          merged[Number(ch)] = Number(val);
         });
       }
     });
@@ -525,6 +525,19 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       }
     });
     window.vp.setActiveScenes(scenesMap);
+
+    const customFunctions = mergeSceneCustomFunctions(activeScenes, currentScenes);
+    if (Object.keys(customFunctions).length > 0) {
+      setActiveCustomFunctionByFixture(prev => {
+        const next = { ...prev };
+        Object.entries(customFunctions).forEach(([fixtureId, values]) => {
+          if (typeof values?.tilt_invert !== 'boolean') return;
+          if (values.tilt_invert) next[fixtureId] = 'tilt_invert';
+          else if (next[fixtureId] === 'tilt_invert') delete next[fixtureId];
+        });
+        return next;
+      });
+    }
 
     // Reset acknowledge quando novas cenas são ativadas
     setConflictAcknowledged(false);
@@ -676,14 +689,14 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       if (disabledFixtureChannels.has(Number(ch))) return;
       const channel = Number(ch);
       const numericValue = Math.max(0, Math.min(255, Math.round(Number(val) || 0)));
-      if (numericValue > 0) channels[channel] = numericValue;
-      else delete channels[channel];
+      channels[channel] = numericValue;
     });
 
     const result = await updateScene(currentPageId, saveModal.sceneKey, {
       name: modalName,
       color: modalColor,
       channels,
+      customFunctions: getSceneCustomFunctionsState(),
     });
     if (result?.ok === false) {
       console.warn('[vp] updateScene falhou:', result?.error);
@@ -829,6 +842,27 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     await window.vp.setChannel(dmxChannel, val);
   }
 
+  async function handleZeroSelectedFixtureChannels() {
+    const targetFixtures = multiSelected.length >= 2
+      ? show.fixtures.filter(fixture => multiSelected.includes(fixture.id) && isFixtureEnabled(fixture))
+      : (selectedFixture && isFixtureEnabled(selectedFixture) ? [selectedFixture] : []);
+    if (targetFixtures.length === 0) return;
+
+    const updates = {};
+    targetFixtures.forEach(fixture => {
+      getFixtureDmxChannels(fixture).forEach(dmxCh => {
+        if (disabledFixtureChannels.has(Number(dmxCh))) return;
+        updates[dmxCh] = 0;
+      });
+    });
+    if (Object.keys(updates).length === 0) return;
+    setLiveValues(prev => ({ ...prev, ...updates }));
+    setUniverseSnapshot(prev => ({ ...prev, ...updates }));
+    await Promise.all(
+      Object.keys(updates).map(ch => window.vp.setChannel(Number(ch), 0))
+    );
+  }
+
   async function handleGroupedFader(entries, value) {
     const raw = Number(value);
     const updates = {};
@@ -864,11 +898,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   function getRightPanelChannelLabel(fixture, label) {
     const rawLabel = String(label || '');
-    const fixtureName = String(fixture?.name || '').toLowerCase();
-    if (fixtureName !== 'moving head beam 1') return rawLabel;
-
     const normalizedLabel = rawLabel.toLowerCase();
-    if (normalizedLabel === 'strobo_dimmer') return 'dimmer';
     if (normalizedLabel === 'virtual_speed') return 'speed';
     return rawLabel;
   }
@@ -891,6 +921,31 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       return next;
     });
     setCustomFunctionMenuFixtureId(null);
+  }
+
+  function getSceneCustomFunctionsState() {
+    const customFunctions = {};
+    (show.fixtures || []).forEach(fixture => {
+      if (!isFixtureEnabled(fixture)) return;
+      if (getFixtureType(fixture) !== 'moving_head_beam') return;
+      customFunctions[fixture.id] = {
+        tilt_invert: isTiltInvertActive(fixture),
+      };
+    });
+    return customFunctions;
+  }
+
+  function mergeSceneCustomFunctions(activeKeys, currentScenes) {
+    const merged = {};
+    activeKeys.forEach(key => {
+      const sceneCustom = currentScenes[key]?.customFunctions;
+      if (!sceneCustom || typeof sceneCustom !== 'object') return;
+      Object.entries(sceneCustom).forEach(([fixtureId, values]) => {
+        if (!values || typeof values !== 'object') return;
+        merged[fixtureId] = { ...(merged[fixtureId] || {}), ...values };
+      });
+    });
+    return merged;
   }
 
   function getRibaltaLedChannels(fixture) {
@@ -1504,6 +1559,31 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                       <span style={{ order:1, minWidth:0, flex:1, fontFamily:theme.typography.fontFamily, fontSize:13, fontWeight:700, color:theme.colors.text }}>
                         {selFixtures.length} aparelhos selecionados
                       </span>
+                      <button
+                        type="button"
+                        onClick={handleZeroSelectedFixtureChannels}
+                        title="Zerar canais dos aparelhos selecionados"
+                        style={{
+                          order:3,
+                          width:58,
+                          height:24,
+                          padding:'0 6px',
+                          background:theme.colors.bgDarker,
+                          color:theme.colors.text,
+                          border:`1px solid ${theme.colors.warn}`,
+                          borderRadius:theme.radius.none,
+                          boxSizing:'border-box',
+                          fontFamily:theme.typography.fontFamily,
+                          fontSize:10,
+                          fontWeight:700,
+                          lineHeight:1,
+                          cursor:'pointer',
+                          boxShadow:'none',
+                          outline:'none',
+                        }}
+                      >
+                        Zerar
+                      </button>
                     </div>
 
                     {multiMenuOpen && sharedFunctions.length > 0 && (
@@ -1659,6 +1739,31 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                       <span style={{ order:1, minWidth:0, flex:1, fontFamily:theme.typography.fontFamily, fontSize:13, fontWeight:700, color:theme.colors.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                         {selectedFixture.name}
                       </span>
+                      <button
+                        type="button"
+                        onClick={handleZeroSelectedFixtureChannels}
+                        title="Zerar canais do aparelho"
+                        style={{
+                          order:3,
+                          width:58,
+                          height:24,
+                          padding:'0 6px',
+                          background:theme.colors.bgDarker,
+                          color:theme.colors.text,
+                          border:`1px solid ${theme.colors.warn}`,
+                          borderRadius:theme.radius.none,
+                          boxSizing:'border-box',
+                          fontFamily:theme.typography.fontFamily,
+                          fontSize:10,
+                          fontWeight:700,
+                          lineHeight:1,
+                          cursor:'pointer',
+                          boxShadow:'none',
+                          outline:'none',
+                        }}
+                      >
+                        Zerar
+                      </button>
                     </div>
 
                     {customFunctionMenuOpen && (

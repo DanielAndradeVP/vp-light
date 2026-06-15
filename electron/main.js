@@ -196,21 +196,12 @@ ipcMain.handle('engine:status', () => ({
 // ─────────────────────────────────────────────────────────────
 
 ipcMain.handle('dmx:activateScene', (_, channels) => {
-  universe.applyScene(filterDisabledFixtureChannels(channels));
+  applyDmxChannelMap(filterDisabledFixtureChannels(channels));
   return { ok: true };
 });
 
 ipcMain.handle('dmx:setChannel', (_, channel, value) => {
-  if (!isDmxChannelEnabled(channel)) return { ok: true, ignored: true };
-  if (interpolator.isVirtualChannel(channel)) {
-    // Canal de speed virtual — alimenta o interpolador, não vai ao universo DMX
-    interpolator.setSpeed(channel, value);
-  } else if (interpolator.isControlledChannel(channel)) {
-    // Canal pan/tilt controlado — define o alvo; interpolador avança no próximo tick
-    interpolator.setTarget(channel, value);
-  } else {
-    universe.setChannel(channel, value);
-  }
+  setDmxChannelRuntime(channel, value);
   return { ok: true };
 });
 
@@ -220,14 +211,7 @@ ipcMain.handle('dmx:setChannelRange', (_, channels, value) => {
   }
   const enabledChannels = channels.filter(channel => isDmxChannelEnabled(channel));
   enabledChannels.forEach((channel) => {
-    const ch = Number(channel);
-    if (interpolator.isVirtualChannel(ch)) {
-      interpolator.setSpeed(ch, value);
-    } else if (interpolator.isControlledChannel(ch)) {
-      interpolator.setTarget(ch, value);
-    } else {
-      universe.setChannel(ch, value);
-    }
+    setDmxChannelRuntime(channel, value);
   });
   return { ok: true, count: enabledChannels.length };
 });
@@ -263,7 +247,8 @@ ipcMain.handle('dmx:blackout', () => {
 });
 
 ipcMain.handle('dmx:restoreState', (_, channels) => {
-  universe.restoreState(filterDisabledFixtureChannels(channels));
+  universe.blackout();
+  applyDmxChannelMap(filterDisabledFixtureChannels(channels));
   return { ok: true };
 });
 
@@ -551,6 +536,12 @@ function normalizeRuntimeFixtureFields(showData) {
         delete next.panOffset;
         if (next.virtualPanTiltSpeed == null) next.virtualPanTiltSpeed = true;
       }
+      if (isFixtureNamed(next, 'Ribalta_1')) {
+        next.tiltOffset = 23;
+      }
+      if (isFixtureNamed(next, 'Ribalta_2')) {
+        delete next.tiltOffset;
+      }
       return next;
     }),
   };
@@ -560,14 +551,10 @@ function buildChannelOffsetMap() {
   const current = show.getShow();
   const fixtures = current?.fixtures || [];
   const map = {};
-  const ribalta1 = fixtures.find(fx => isFixtureNamed(fx, 'Ribalta_1'));
-  const ribalta1TiltOffset = Number(ribalta1?.tiltOffset) || 0;
   for (const fx of fixtures) {
     if (!isFixtureEnabled(fx)) continue;
     const panOffset  = getFixturePanOffset(fx);
-    const tiltOffset = isFixtureNamed(fx, 'Ribalta_2')
-      ? ribalta1TiltOffset + 3
-      : Number(fx.tiltOffset) || 0;
+    const tiltOffset = getFixtureTiltOffset(fx);
     if (!panOffset && !tiltOffset) continue;
     const start    = Number(fx.startChannel) || 1;
     const channels = Array.isArray(fx.channels) ? fx.channels : [];
@@ -592,6 +579,13 @@ function getFixturePanOffset(fixture) {
   return 0;
 }
 
+function getFixtureTiltOffset(fixture) {
+  if (isFixtureNamed(fixture, 'Ribalta_1')) return 23;
+  if (isFixtureNamed(fixture, 'Ribalta_2')) return 0;
+  const tiltOffset = Number(fixture?.tiltOffset);
+  return Number.isFinite(tiltOffset) ? tiltOffset : 0;
+}
+
 function isFixtureNamed(fixture, name) {
   return normalizeAlias(fixture?.name) === normalizeAlias(name);
 }
@@ -606,9 +600,6 @@ function isFixtureNamed(fixture, name) {
 function initializeOffsets() {
   const offsetMap = buildChannelOffsetMap();
   universe.setChannelOffsets(offsetMap);
-  for (const [ch, offset] of Object.entries(offsetMap)) {
-    if (offset) universe.setChannel(Number(ch), 0); // lógico 0 → físico = offset
-  }
   interpolator.configure(buildInterpolatorConfig());
 }
 
@@ -699,6 +690,29 @@ function filterDisabledFixtureChannels(channelMap) {
   return filtered;
 }
 
+function setDmxChannelRuntime(channel, value) {
+  const ch = Number(channel);
+  if (!isDmxChannelEnabled(ch)) return false;
+  if (interpolator.isVirtualChannel(ch)) {
+    // Canal de speed virtual — alimenta o interpolador, não vai ao universo DMX
+    interpolator.setSpeed(ch, value);
+    return true;
+  }
+  if (interpolator.isControlledChannel(ch)) {
+    // Canal pan/tilt controlado — define o alvo; interpolador avança no próximo tick
+    interpolator.setTarget(ch, value);
+    return true;
+  }
+  universe.setChannel(ch, value);
+  return true;
+}
+
+function applyDmxChannelMap(channelMap) {
+  Object.entries(channelMap || {}).forEach(([channel, value]) => {
+    setDmxChannelRuntime(channel, value);
+  });
+}
+
 function filterDisabledFixtureScenes(scenesMap) {
   const filteredScenes = {};
   Object.entries(scenesMap || {}).forEach(([id, scene]) => {
@@ -745,8 +759,21 @@ function isRibaltaSpeedFixture(fixture) {
 function getFixtureChannelByAlias(fixture, alias) {
   if (!fixture || !Array.isArray(fixture.channels)) return null;
   const target = normalizeAlias(alias);
-  const index = fixture.channels.findIndex(ch => normalizeAlias(ch) === target);
+  const aliases = getFixtureAliasCandidates(fixture, target);
+  const index = fixture.channels.findIndex(ch => aliases.includes(normalizeAlias(ch)));
   return index === -1 ? null : (Number(fixture.startChannel) || 1) + index;
+}
+
+function getFixtureAliasCandidates(fixture, target) {
+  if (getFixtureType(fixture) !== 'moving_head_beam') return [target];
+  const fallbacks = {
+    dimmer: ['dimmer', 'fecho_lampada'],
+    speed: ['speed', 'virtual_speed'],
+    prism: ['prism', 'prism_1'],
+    gobo: ['gobo', 'gobo_wheel'],
+    strobo_dimmer: ['strobo_dimmer', 'strobo'],
+  };
+  return fallbacks[target] || [target];
 }
 
 // Resolve o canal DMX real (1-based) de um alias dentro de um fixture do show.

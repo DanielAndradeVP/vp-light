@@ -198,7 +198,10 @@ export function ShowProvider({ children }) {
     setShow(prev => {
       const next = JSON.parse(JSON.stringify(prev));
       if (!next.pages[pageId]) next.pages[pageId] = { name: `Página ${pageId}`, scenes: {} };
-      if (!sceneData.name && !sceneData.color && Object.keys(sceneData.channels || {}).length === 0) {
+      if (!sceneData.name
+          && !sceneData.color
+          && Object.keys(sceneData.channels || {}).length === 0
+          && Object.keys(sceneData.customFunctions || {}).length === 0) {
         delete next.pages[pageId].scenes[sceneKey];
       } else {
         next.pages[pageId].scenes[sceneKey] = sceneData;
