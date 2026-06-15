@@ -7,7 +7,6 @@ Use estes `id` e `label` ao escrever scripts. Prefira sempre `getChannel(id, lab
 ## Regra de enderecamento
 
 Canal DMX real = `startChannel + indice no array channels`.
-
 Labels vazias (`""`) aparecem como **sem alias**. Elas nao devem ser usadas com `getChannel`; use o numero cru somente se o usuario pedir explicitamente aquele canal.
 
 ---
@@ -15,11 +14,9 @@ Labels vazias (`""`) aparecem como **sem alias**. Elas nao devem ser usadas com 
 ## ParLed Deluxe
 
 Grupo: `ParLed Deluxe`. Fabricante: `Generico`. Modelo: `ParLed Deluxe`. Universo: `0`.
-
 Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Labels `pending_label_*` existem no show e podem ser usadas por `getChannel`, mas indicam canais ainda nao identificados; evite usa-las em efeito artistico salvo pedido explicito.
 
 ### ParLed_Deluxe_1
-
 - id: `fixture_1780805067518_parled_deluxe_1`
 - startChannel: `1`
 - channelCount: `8`
@@ -37,7 +34,6 @@ Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Lab
 | 7 | blue | 8 |
 
 ### ParLed_Deluxe_2
-
 - id: `fixture_1780805067518_parled_deluxe_2`
 - startChannel: `9`
 - channelCount: `8`
@@ -55,7 +51,6 @@ Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Lab
 | 7 | pending_label_8 | 16 |
 
 ### ParLed_Deluxe_3
-
 - id: `fixture_1780805067518_parled_deluxe_3`
 - startChannel: `17`
 - channelCount: `8`
@@ -73,7 +68,6 @@ Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Lab
 | 7 | pending_label_8 | 24 |
 
 ### ParLed_Deluxe_4
-
 - id: `fixture_1780805067518_parled_deluxe_4`
 - startChannel: `25`
 - channelCount: `8`
@@ -91,7 +85,6 @@ Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Lab
 | 7 | pending_label_8 | 32 |
 
 ### ParLed_Deluxe_5
-
 - id: `fixture_1780805067518_parled_deluxe_5`
 - startChannel: `33`
 - channelCount: `8`
@@ -109,7 +102,6 @@ Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Lab
 | 7 | pending_label_8 | 40 |
 
 ### ParLed_Deluxe_6
-
 - id: `fixture_1780805067518_parled_deluxe_6`
 - startChannel: `49`
 - channelCount: `8`
@@ -127,7 +119,6 @@ Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Lab
 | 7 | pending_label_8 | 56 |
 
 ### ParLed_Deluxe_7
-
 - id: `fixture_1780805067518_parled_deluxe_7`
 - startChannel: `57`
 - channelCount: `8`
@@ -145,7 +136,6 @@ Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Lab
 | 7 | pending_label_8 | 64 |
 
 ### ParLed_Deluxe_8
-
 - id: `fixture_1780805067518_parled_deluxe_8`
 - startChannel: `65`
 - channelCount: `8`
@@ -163,7 +153,6 @@ Observacoes confirmaveis: fixtures RGB com `dimmer`, `red`, `green`, `blue`. Lab
 | 7 | pending_label_8 | 72 |
 
 ### ParLed_Deluxe_9
-
 - id: `fixture_1780805067518_parled_deluxe_9`
 - startChannel: `74`
 - channelCount: `8`
@@ -187,11 +176,9 @@ Pares e grupos uteis: todos os `ParLed_Deluxe_1..9` formam grupo util para chase
 ## Moving Head Beam
 
 Grupo: `Moving Heads`. Fabricante: `Light Party`. Modelo: `MovingHead_Beam 230W_16channels`. Universo: `0`.
-
 Observacoes confirmaveis: moving beam com pan/tilt, color wheel, strobo, dimmer, gobo, prism, frost, focus, speed, reset e control. Nota do show: color_wheel 0 = branco; strobo 255 = aberto; dimmer 0 = off / 255 = max; gobo 0 = sem gobo; tilt operacional 170-255. O indice 6 e sem alias.
 
 ### Moving Head Beam 1
-
 - id: `fixture_1780805067518_moving_head_beam_1`
 - startChannel: `123`
 - channelCount: `16`
@@ -217,7 +204,6 @@ Observacoes confirmaveis: moving beam com pan/tilt, color wheel, strobo, dimmer,
 | 15 | control | 138 |
 
 ### Moving Head Beam 2
-
 - id: `fixture_1780805067518_moving_head_beam_2`
 - startChannel: `203`
 - channelCount: `16`
@@ -249,11 +235,9 @@ Pares e grupos uteis: `Moving Head Beam 1` e `Moving Head Beam 2` sao par natura
 ## Ribaltas
 
 Grupo: `Ribaltas`. Fabricante: `Light Party`. Modelo: `Ribalta`. Universo: `0`.
-
 Observacoes confirmaveis: 13 canais com tilt, speed, dimmer, `led_1..led_8`, strobo e function. Nota do show: LEDs 1-8 em 255 = branco cheio; strobe 0 = desligado; special/function 0 = modo normal. `Ribalta_1` e ESQUERDA (B), tilt funcional 110 e speed 190. `Ribalta_2` e DIREITA (A), tilt funcional 105 e speed 90.
 
 ### Ribalta_1
-
 - id: `fixture_1780805067518_ribalta_1`
 - startChannel: `258`
 - channelCount: `13`
@@ -276,7 +260,6 @@ Observacoes confirmaveis: 13 canais com tilt, speed, dimmer, `led_1..led_8`, str
 | 12 | function | 270 |
 
 ### Ribalta_2
-
 - id: `fixture_1780805067518_ribalta_2`
 - startChannel: `271`
 - channelCount: `13`
@@ -305,11 +288,9 @@ Pares e grupos uteis: ribaltas esquerda/direita para varredura, ping-pong, chase
 ## Fita Led
 
 Fabricante: `FitaLedDimmer`. Modelo: `Fita de Led`. Fixture type: `fita_led`.
-
 Observacoes confirmaveis: dimmer-only. O show atual nao define `universe` nem `group` para este fixture.
 
 ### Fita_Led
-
 - id: `fixture_1780805067518_fita_led`
 - startChannel: `404`
 - channelCount: `1`
@@ -326,11 +307,9 @@ Uso pratico: impacto de brilho ou preenchimento simples; nao ha cor, strobo ou m
 ## Mini Bruts
 
 Grupo: `Mini Bruts`. Fabricante: `Generico`. Modelo: `Halogeno (controlado via Hack Dimmer DMX)`. Universo: `0`.
-
 Observacoes confirmaveis: cada fixture tem um unico canal `dimmer`, 0 = off e 255 = max. Sao aparelhos halogenos nao-DMX adaptados via hack dimmer. O patch nao e sequencial na numeracao fisica/nome.
 
 ### Mini_Brut_01
-
 - id: `fixture_1780805067518_mini_brut_01`
 - startChannel: `409`
 - channelCount: `1`
@@ -341,7 +320,6 @@ Observacoes confirmaveis: cada fixture tem um unico canal `dimmer`, 0 = off e 25
 | 0 | dimmer | 409 |
 
 ### Mini_Brut_02
-
 - id: `fixture_1780805067518_mini_brut_02`
 - startChannel: `402`
 - channelCount: `1`
@@ -352,7 +330,6 @@ Observacoes confirmaveis: cada fixture tem um unico canal `dimmer`, 0 = off e 25
 | 0 | dimmer | 402 |
 
 ### Mini_Brut_03
-
 - id: `fixture_1780805067518_mini_brut_03`
 - startChannel: `401`
 - channelCount: `1`
@@ -363,7 +340,6 @@ Observacoes confirmaveis: cada fixture tem um unico canal `dimmer`, 0 = off e 25
 | 0 | dimmer | 401 |
 
 ### Mini_Brut_04
-
 - id: `fixture_1780805067518_mini_brut_04`
 - startChannel: `410`
 - channelCount: `1`
@@ -380,11 +356,9 @@ Pares e grupos uteis: grupo de impacto/flash dimmer-only. Para chase visual, con
 ## Moving Wosh
 
 Grupo: `Moving Heads`. Fabricante: `Acme`. Modelo: `575W`. Universo: `0`.
-
 Observacoes confirmaveis: moving head de 16 canais com pan/tilt, speed, strobo, color wheel, CMY, gobo2, effects disc, zoom e canais fine. Mistura de cor por CMY subtrativo, nao RGB. Canal DMX 186 esta sem alias porque o perfil recebido nao informou funcao.
 
 ### Moving_Wosh
-
 - id: `fixture_1780805067518_moving_wosh_01`
 - startChannel: `171`
 - channelCount: `16`

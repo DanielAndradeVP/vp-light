@@ -24,7 +24,6 @@ Nunca use catalogo antigo, fixture removido, id antigo ou canal lembrado de memo
 ## Fonte de fixtures atuais
 
 Fixtures ativos documentados no catalogo atual:
-
 - `ParLed_Deluxe_1` a `ParLed_Deluxe_9`
 - `Moving Head Beam 1`
 - `Moving Head Beam 2`
@@ -38,7 +37,6 @@ Fixtures ativos documentados no catalogo atual:
 - `Moving_Wosh`
 
 Grupos atuais confirmados quando presentes no show:
-
 - `ParLed Deluxe`
 - `Moving Heads`
 - `Ribaltas`
@@ -49,7 +47,6 @@ Nao documente nem use como ativos nomes antigos que nao aparecem no catalogo atu
 ## Runtime confirmado
 
 Consulte `references/runtime-e-padroes.md` antes de escrever logica. Resumo:
-
 - Arquivo `.js` executado no main process via `new Function('SetChannel', 'getChannel', 'ctx', code)`.
 - Nao e sandbox rigido, mas scripts gerados nao devem usar `setTimeout`, `setInterval`, `fetch`, `require` ou `import`.
 - APIs injetadas:
@@ -79,7 +76,6 @@ Consulte `references/runtime-e-padroes.md` antes de escrever logica. Resumo:
 ## Padrao de entrega
 
 Entregue um arquivo `.js` completo:
-
 1. Comentario no topo com nome do efeito, descricao de palco e destino (`F1`...`F12` ou page script).
 2. Constantes de ids de fixtures, nao de canais crus.
 3. Variaveis globais para canais resolvidos e estado do efeito.
@@ -92,7 +88,6 @@ Entregue um arquivo `.js` completo:
 ```js
 // nome-do-efeito - descreva o que acontece no palco. Destino: F1.
 const FIXTURE_ID = 'fixture_1780805067518_mini_brut_01';
-
 let dimmer = null;
 let tick = 0;
 let on = false;

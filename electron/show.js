@@ -21,12 +21,26 @@ function normalizeFixturePositions(showData) {
   if (!showData || !Array.isArray(showData.fixtures)) return showData;
   return {
     ...showData,
-    fixtures: showData.fixtures.map(fixture => ({
+    fixtures: showData.fixtures.map(fixture => normalizeFixtureCalibration({
       ...fixture,
       posX: snapFixtureGridValue(fixture?.posX),
       posY: snapFixtureGridValue(fixture?.posY),
     })),
   };
+}
+
+function normalizeFixtureCalibration(fixture) {
+  const next = { ...fixture };
+
+  if (isFixtureNamed(next, 'Moving Head Beam 1')) {
+    next.panOffset = 44;
+  }
+
+  if (isFixtureNamed(next, 'Moving Head Beam 2')) {
+    delete next.panOffset;
+  }
+
+  return next;
 }
 
 /**
@@ -158,6 +172,41 @@ function getShow() {
   return currentShow;
 }
 
+function normalizeAlias(label) {
+  return String(label ?? '').trim().toLowerCase();
+}
+
+function isFixtureNamed(fixture, name) {
+  return normalizeAlias(fixture?.name) === normalizeAlias(name);
+}
+
+function getFixtureChannelByAlias(fixture, alias) {
+  if (!fixture || !Array.isArray(fixture.channels)) return null;
+  const target = normalizeAlias(alias);
+  const index = fixture.channels.findIndex(ch => normalizeAlias(ch) === target);
+  return index === -1 ? null : (Number(fixture.startChannel) || 1) + index;
+}
+
+function getStartupChannels() {
+  const fixtures = currentShow?.fixtures || [];
+  const startupChannels = {};
+
+  const movingHead1 = fixtures.find(fx => normalizeAlias(fx?.name) === 'moving head beam 1');
+  const movingHead2 = fixtures.find(fx => normalizeAlias(fx?.name) === 'moving head beam 2');
+
+  if (movingHead1 && movingHead1.enabled !== false) {
+    const channel = getFixtureChannelByAlias(movingHead1, 'fecho_lampada');
+    if (channel) startupChannels[channel] = 255;
+  }
+
+  if (movingHead2 && movingHead2.enabled !== false) {
+    const channel = getFixtureChannelByAlias(movingHead2, 'speed');
+    if (channel) startupChannels[channel] = 255;
+  }
+
+  return startupChannels;
+}
+
 /**
  * Atualiza uma cena específica em memória.
  * @param {string|number} pageId   ID da página
@@ -172,4 +221,4 @@ function updateScene(pageId, sceneKey, sceneData) {
   currentShow.pages[pageId].scenes[sceneKey] = sceneData;
 }
 
-module.exports = { loadShow, saveShow, saveShowAs, getShow, updateScene, validateFixtures };
+module.exports = { loadShow, saveShow, saveShowAs, getShow, getStartupChannels, updateScene, validateFixtures };

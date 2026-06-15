@@ -294,6 +294,14 @@ function _advanceMacro(macro) {
   }
 }
 
+// Status da macro ativa para polling da UI: { id, stepIndex, loop } ou null.
+function getActiveMacroStatus() {
+  for (const macro of _macros.values()) {
+    if (macro.active) return { id: macro.id, stepIndex: macro.index, loop: macro.loop };
+  }
+  return null;
+}
+
 module.exports = {
   // config
   setSceneLock, setDisabledChannelsProvider, setMergeMode,
@@ -303,4 +311,5 @@ module.exports = {
   renderFrame,
   // macro (Fase 2)
   createMacro, removeMacro, startMacro, stopMacro, triggerNextStep, stopAllMacros,
+  getActiveMacroStatus,
 };

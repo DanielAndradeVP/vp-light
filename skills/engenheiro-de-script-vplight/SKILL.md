@@ -23,19 +23,15 @@ Nunca use catalogo antigo, fixture removido, id antigo ou canal lembrado de memo
 
 ## Fonte de fixtures atuais
 
-Fixtures ativos documentados no catalogo atual:
+Fixtures ativos documentados no catalogo atual (ids exatos em `references/catalogo-fixtures.md`):
 
-- `ParLed_Deluxe_1` a `ParLed_Deluxe_9`
-- `Moving Head Beam 1`
-- `Moving Head Beam 2`
-- `Ribalta_1`
-- `Ribalta_2`
+- `ParLed_Deluxe_1` a `_5`, `_7`, `_8`, `_9` e `ParLed_Deluxe_9_extra` (atencao: este tem id `..._parled_deluxe_6`)
+- `Moving Head Beam 1`, `Moving Head Beam 2` (pan/tilt)
+- `Moving_Wosh` (CMY)
+- `Ribalta_1`, `Ribalta_2` (com tilt)
+- `ribalta-rgb-static_1` a `_4` (RGB fixas, sem tilt)
 - `Fita_Led`
-- `Mini_Brut_01`
-- `Mini_Brut_02`
-- `Mini_Brut_03`
-- `Mini_Brut_04`
-- `Moving_Wosh`
+- `Mini_Brut_01` a `Mini_Brut_04`
 
 Grupos atuais confirmados quando presentes no show:
 
@@ -44,24 +40,24 @@ Grupos atuais confirmados quando presentes no show:
 - `Ribaltas`
 - `Mini Bruts`
 
-Nao documente nem use como ativos nomes antigos que nao aparecem no catalogo atual.
+Desabilitado (nao usar): `parLed1`. Nao documente nem use como ativos nomes antigos que nao aparecem no catalogo atual.
 
 ## Runtime confirmado
 
-Consulte `references/runtime-e-padroes.md` antes de escrever logica. Resumo:
+Consulte `references/runtime-e-padroes.md` antes de escrever logica. Resumo (motor atual: compositor por camadas):
 
 - Arquivo `.js` executado no main process via `new Function('SetChannel', 'getChannel', 'ctx', code)`.
 - Nao e sandbox rigido, mas scripts gerados nao devem usar `setTimeout`, `setInterval`, `fetch`, `require` ou `import`.
-- APIs injetadas:
-  - `SetChannel(canal, valor)`
-  - `getChannel(fixtureId, alias)`
-- `getChannel` retorna `null` quando nao encontra fixture ou alias.
-- Lifecycle reconhecido: somente `OnStart`, `OnExecute`, `OnTerminate`.
-- Cada `OnExecute` roda a cada 40ms.
-- Engine DMX roda a 25fps.
-- Cenas ativas bloqueiam qualquer canal presente em `activeSceneChannels`, independente do valor.
-- Blackout para scripts antes de zerar o universo.
-- Existem F-key scripts e page scripts; ambos usam o mesmo runtime.
+- APIs injetadas: `SetChannel(canal, valor)` e `getChannel(fixtureId, alias)`.
+- **Cada script ativo e uma CAMADA com buffer proprio `Uint8Array(512)`.** `SetChannel` escreve **no buffer da camada**, nao no universo global. O compositor mistura as camadas (HTP/max) e grava no universo.
+- **Nao existe `setInterval` por script.** O unico relogio e o loop de 40ms do `engine.js`, que chama `compositor.renderFrame()` (roda o `OnExecute` de cada camada) e envia. Engine a 25fps.
+- A cada frame o buffer da camada e zerado antes do `OnExecute`. **O que precisa aparecer no palco e escrito no `OnExecute`, nunca so no `OnStart`** (o `OnStart` so resolve canais e inicia estado).
+- Dois scripts no mesmo canal sao misturados por HTP (max), deterministico. Canal nao tocado por nenhuma camada fica como esta (cena/fader preservados).
+- `getChannel` retorna `null` quando nao encontra fixture, alias, **ou se o fixture estiver desabilitado (`enabled: false`)**.
+- Lifecycle: somente `OnStart` (1x ao ativar), `OnExecute` (cada 40ms), `OnTerminate` (ao parar/blackout/erro).
+- Prioridade: canais presentes em `activeSceneChannels` (cena ativa) nao sao sobrescritos pelos scripts — guard aplicado pelo compositor na mistura, presenca da chave (inclusive valor 0). Canais de fixtures desabilitadas sao ignorados.
+- Blackout para F-key scripts, page scripts **e macros** antes de zerar o universo.
+- Existem F-key scripts e page scripts; ambos usam o mesmo runtime/camada. Um script tambem pode ser passo de uma macro (envelope/crossfade) sem nenhuma mudanca no codigo.
 
 ## Regras de escrita
 

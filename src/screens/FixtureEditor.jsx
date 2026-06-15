@@ -13,7 +13,7 @@ const C = {
 };
 
 export default function FixtureEditor({ fixtureId, draftFixture, onCreate, onClose }) {
-  const { show, updateFixture } = useShow();
+  const { show, updateFixture, saveShow } = useShow();
   const isNewFixture = fixtureId === 'new';
   const original = isNewFixture
     ? draftFixture
@@ -52,7 +52,7 @@ export default function FixtureEditor({ fixtureId, draftFixture, onCreate, onClo
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  function handleConfirm() {
+  async function handleConfirm() {
     const fixtureData = {
       name,
       manufacturer,
@@ -63,11 +63,23 @@ export default function FixtureEditor({ fixtureId, draftFixture, onCreate, onClo
       channelCount: Number(channelCount),
       channels,
     };
+    const nextFixture = { ...(original || {}), ...fixtureData };
+    const nextShow = {
+      ...show,
+      fixtures: isNewFixture
+        ? [...(show.fixtures || []), nextFixture]
+        : (show.fixtures || []).map(f => f.id === fixtureId ? nextFixture : f),
+    };
 
     if (isNewFixture) {
-      onCreate?.({ ...original, ...fixtureData });
+      onCreate?.(nextFixture);
     } else {
       updateFixture(fixtureId, fixtureData);
+    }
+    const result = await saveShow(nextShow);
+    if (result && result.ok === false) {
+      window.alert(result.message || result.error || 'Erro ao salvar aparelho');
+      return;
     }
     onClose();
   }

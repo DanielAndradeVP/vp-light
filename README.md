@@ -46,6 +46,7 @@ vp-light/
 │   ├── main.jsx       ← entry point React
 │   ├── screens/
 │   │   ├── Main.jsx         ← tela principal: mesa de aparelhos, faders, cenas, scripts e páginas
+│   │   ├── PainelOperacao.jsx ← tela ao vivo: macros, scripts rápidos, page-scripts e cenas
 │   │   ├── ChatPanel.jsx    ← aba Chat do painel direito, com menu de skills locais
 │   │   ├── FixturePanel.jsx ← painel de aparelhos: tabela, novo/remover/duplicar
 │   │   └── FixtureEditor.jsx← modal: abas Básico e Descrição
@@ -59,6 +60,7 @@ vp-light/
 │   ├── vp.show.json        ← show padrão carregado na inicialização
 │   └── fixture_template.json ← modelo aberto pelo fluxo "Criar novo aparelho (AI)"
 ├── .agents/           ← skills dos agentes VS Code
+├── .claude/           ← espelhos de skills para Claude/CoWork
 ├── skills/            ← cópias/skills locais para agentes externos
 ├── README_SKILL.md    ← documentação estrutural para agentes
 ├── index.html
@@ -78,9 +80,20 @@ Renderer (React)
             └─ compositor.js [camadas de scripts e macros]
                  └─ engine loop 40ms: renderFrame + Art-Net
                       └─ artnet.sendArtDMX()
-                           └─ UDP broadcast 255.255.255.255:6454
+                           └─ UDP Art-Net: loopback + broadcasts por interface
                                 └─ SL3000 → XLR → Fixtures
 ```
+
+O envio Art-Net mantém um caminho local para `127.0.0.1` e, em paralelo, cria sockets por
+interface IPv4 ativa para enviar broadcast pela rede correta. As interfaces são reavaliadas a cada
+10 segundos, e o main process também expõe esse diagnóstico por IPC (`artnet:getInterfaces`).
+Isso evita depender apenas da rota que o Windows escolheria para `255.255.255.255`.
+
+As pontes `window.vp.*` mantêm o renderer sem acesso direto ao hardware. Entre os contratos mais
+importantes estão `setChannelRange` para escrever vários canais com um valor, `restoreState` para
+reconstruir o universo a partir de um mapa de canais, `setActiveSceneChannels` para travar a
+prioridade das cenas ativas no compositor, e as funções de macro (`createMacro`, `startMacro`,
+`stopMacro`, `nextMacroStep`, `removeMacro`, `macroList`, `macroStatus`).
 
 ---
 
@@ -102,7 +115,12 @@ ficam na barra inferior e executam scripts globais associados a cada F-key.
 ```json
 {
   "version": "1.0",
-  "meta": { "name": "Nome do Show" },
+  "meta": {
+    "name": "Nome do Show",
+    "viewport": {
+      "grid": { "zoom": 1, "panX": 0, "panY": 0 }
+    }
+  },
   "fixtures": [
     {
       "id": "fixture_123",
@@ -118,6 +136,8 @@ ficam na barra inferior e executam scripts globais associados a cada F-key.
       "channels": ["dimmer", "strobo", "", "", "red", "green", "blue", "white"],
       "posX": 10,
       "posY": 10,
+      "panOffset": 0,
+      "tiltOffset": 0,
       "enabled": true
     }
   ],
@@ -146,7 +166,24 @@ ficam na barra inferior e executam scripts globais associados a cada F-key.
       "name": "rgb-loop",
       "file": "C:\\vp-light\\scripts\\rgb-loop.js"
     }
-  }
+  },
+  "macros": [
+    {
+      "id": "macro-louvor",
+      "name": "Macro Louvor",
+      "mergeMode": "htp",
+      "loop": false,
+      "steps": [
+        {
+          "script": "rgb-loop",
+          "durationMs": 2000,
+          "fadeInMs": 400,
+          "fadeOutMs": 400,
+          "overlapMs": 200
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -159,9 +196,17 @@ de `channels`, a faixa `startChannel..startChannel + channelCount - 1` precisa f
 1–512, e duas fixtures não podem ocupar o mesmo canal DMX.
 
 Campos como `manufacturer`, `model`, `fixtureType`, `group`, `universe` e `note` são usados pela
-tabela de configuração, pelo painel de descrição e pelos agentes de normalização. `page_scripts`
-guarda scripts associados às teclas de cena por página; `scripts` guarda scripts globais dos
-botões `F1` a `F12`.
+tabela de configuração, pelo painel de descrição, pelo modo agrupado da mesa e pelos agentes de
+normalização. `fixtureType` também é o discriminador das funções personalizadas por tipo de
+aparelho, como o ALL ON das ribaltas.
+
+`panOffset` e `tiltOffset` são ajustes físicos opcionais para canais com alias `pan` e `tilt`.
+O operador continua vendo valores lógicos de 0 a 255 nos faders e snapshots; o backend soma o
+offset antes de gravar no universo DMX e subtrai esse offset ao retornar o estado para o renderer.
+
+`page_scripts` guarda scripts associados às teclas de cena por página; `scripts` guarda scripts
+globais dos botões `F1` a `F12`; `macros` guarda sequências de scripts com duração, fades, overlap,
+modo de mistura e loop. O bloco `meta.viewport.grid` persiste zoom e deslocamento da mesa.
 
 Quando uma fixture fica com `enabled: false`, ela continua registrada no show, mas seus canais não
 participam do controle ativo enquanto não houver outra fixture habilitada cobrindo os mesmos canais.
@@ -211,7 +256,9 @@ e use clique esquerdo para ativar/desativar. Ao criar ou editar, o arquivo abre 
 Ao criar um script novo, o modal pode incluir um **Banco de conhecimento**. Marcar grupos como
 Par LEDs, Ribaltas, Moving Heads, Bruts ou Fita LED faz o app inserir no topo do arquivo comentários
 vindos de `banco-de-conhecimento/<grupo>.md`. É um atalho para deixar o script nascer com notas de
-canais, valores úteis e cuidados daquele tipo de aparelho.
+canais, valores úteis e cuidados daquele tipo de aparelho. Esses arquivos também documentam
+comportamentos específicos do patch atual, como orientação física dos Moving Heads e canais úteis
+das Ribaltas.
 
 Para scripts de cena: clique direito em uma tecla de cena na barra inferior. Uma tecla pode guardar
 uma cena comum ou um script; ao criar script naquela tecla, a cena existente naquela posição é
@@ -226,7 +273,13 @@ Cada passo pode ter duração, fade-in, fade-out e overlap. Com isso, o composit
 crossfade entre looks: um script vai saindo enquanto o próximo entra. A mistura padrão é HTP, ou
 seja, em cada canal vence o valor mais forte; também existe modo linear para somar valores
 ponderados. Macros rodam no backend por IPC (`createMacro`, `startMacro`, `stopMacro`,
-`nextMacroStep`, `removeMacro`) e ainda não têm uma tela dedicada no app.
+`nextMacroStep`, `removeMacro`, `macroList`, `macroStatus`) e ficam salvas no campo `macros` do
+show.
+
+A tela **Painel de Operação** reúne o uso ao vivo dessas rotinas. A coluna de macros permite criar
+uma sequência, iniciar/parar, avançar manualmente para o próximo passo e remover definições. A área
+de disparo rápido oferece abas para scripts `F1`–`F12`, page-scripts da página atual e cenas da
+página atual, reutilizando a mesma lógica de ativação da mesa principal.
 
 ---
 
@@ -246,10 +299,17 @@ servir como modelo.
 
 Na mesa principal, fixtures podem ser arrastadas na grade. A posição usa snap por quadrado e evita
 sobreposição visual durante o arraste. A seleção por área permite mover múltiplas fixtures juntas.
+O botão `mode` alterna entre o layout manual da grade e um layout agrupado por `group`/tipo de
+fixture; no modo agrupado os aparelhos são reorganizados visualmente para operação e seleção, sem
+reescrever suas posições salvas.
 
 O painel direito da tela principal alterna entre **Chat** e **Descrição**. Em **Descrição**, os
 faders mostram os canais da fixture selecionada e acompanham a prioridade real do universo:
 cenas ativas primeiro, depois scripts em execução, depois zero.
+
+Alguns tipos de fixture podem expor funções personalizadas no painel de faders. Ribaltas usam esse
+mecanismo para o ALL ON: o painel agrupa os canais de LED e envia o mesmo valor em lote por
+`setChannelRange`, inclusive quando várias ribaltas do mesmo tipo estão selecionadas.
 
 ---
 
@@ -260,6 +320,7 @@ Skills ficam em `skills/` (pastas com `SKILL.md`) e servem tarefas específicas.
 - `desenvolvedor-backend-vplight`: backend/engine, Art‑Net, IPC, scripts de efeito.
 - `desenvolvedor-frontend-vplight`: UI, telas, tokens do `src/theme.js` e consistência visual.
 - `gerador-de-prompts-vplight`: gera prompts formatados para o CoWork (geração de mudanças).
+- `criador-de-tarefa-vplight`: registra bugs, melhorias e novas funcionalidades como tarefas no Notion.
 - `fiscal-de-skills-vplight`: audita e valida skills contra o `README_SKILL.md`.
 - `fiscal-do-sistema`: sincroniza `README_SKILL.md` e `README.md` a partir de mudanças no código.
 - `alinhador-de-sistema`: caminho inverso do fiscal; lê a documentação atual e corrige código antigo que divergiu dela, uma área por vez.
@@ -271,8 +332,10 @@ Uso rápido:
 4. Ao alterar equipamentos ou o show, atualize e cole `vp.show.json` antes de usar as skills.
 
 A aba **Chat** dentro do vp-light lista as skills de `.agents/skills/*/SKILL.md` no botão `+` e
-insere a menção no cursor do input. O envio de mensagens depende de um backend exposto em
-`window.vp.sendChat`; sem essa ponte, a própria interface avisa que o chat ainda não está conectado.
+insere a menção no cursor do input. Algumas skills também existem como espelhos em `skills/` e
+`.claude/skills/`, para serem usadas fora do runtime do app. O envio de mensagens depende de um
+backend exposto em `window.vp.sendChat`; sem essa ponte, a própria interface avisa que o chat ainda
+não está conectado.
 
 ---
 
@@ -316,6 +379,10 @@ show para recarregar metadados persistidos.
 - **art-net to dmx.exe** (Freestyler) rodando em segundo plano
 - Firewall do Windows liberado para a porta 6454 (UDP)
 
+O app envia Art-Net para o receptor local em `127.0.0.1` e também tenta broadcast por cada
+interface IPv4 ativa. Isso ajuda quando o computador usa uma interface para internet e outra para a
+rede/hostspot de iluminação.
+
 ---
 
 ## Troubleshooting
@@ -324,6 +391,8 @@ show para recarregar metadados persistidos.
 1. Confirme que o `art-net to dmx.exe` está aberto e mostrando "Enttec open DMX interface selected"
 2. Verifique se a SL3000 está conectada (LED verde aceso)
 3. Confirme que o firewall liberou a porta 6454
+4. Se houver mais de uma placa de rede ativa, confira no console as interfaces Art-Net detectadas
+   pelo backend; elas são reenumeradas periodicamente pelo módulo `artnet.js`.
 
 **Scripts não aparecem ao reiniciar:**
 - Confirme que o campo `scripts` existe no `vp.show.json`

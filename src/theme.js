@@ -30,7 +30,8 @@ export const theme = {
     primaryOverlay: 'rgba(141,184,184,.18)',
     accentOverlay: 'rgba(0,208,0,.16)',
     warnOverlay: 'rgba(255,51,51,.18)',
-    hover: '#5f8588'
+    hover: '#5f8588',
+    scenePalette: ['#000000', '#cc0000', '#00aa00', '#0000cc', '#cccc00', '#00cccc', '#aa00aa', '#cc6600']
   },
   typography: {
     fontFamily: 'Arial, Helvetica, sans-serif',

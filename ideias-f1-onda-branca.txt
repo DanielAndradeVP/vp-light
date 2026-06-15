@@ -1,0 +1,213 @@
+=================================================
+  IDEIAS DE ILUMINAÇÃO — F1: ONDA BRANCA
+  Gerado por vp-light designer de iluminação
+  Show: vp.show.json
+  Fixtures: Moving Head Beam 1, Moving Head Beam 2,
+            Mini_Brut_01, Mini_Brut_02, Mini_Brut_03, Mini_Brut_04,
+            Fita_Led, Ribalta_1, Ribalta_2
+  Data: 2026-06-14
+=================================================
+
+IDEIA A: ONDA BRANCA
+Tipo: Sequência com transição — loop de ~40 segundos com duas texturas alternadas (suave → rápido → suave)
+
+Atmosfera:
+O palco respira. Feixes brancos limpos nascem do fundo, varrem o espaço devagar
+como se estivessem acordando — e de repente tudo acelera. Os Moving Heads cortam
+o ar em contraponto, as ribaltas abrem em cascata de LEDs, os Mini Bruts batem em
+pulso. Depois, tudo desce de volta para o silêncio luminoso. Energia controlada:
+o tipo de luz que prepara o ambiente sem explodir antes da hora.
+
+=================================================
+ESTRUTURA TEMPORAL
+=================================================
+
+[0s–12s]  FASE 1 — RESPIRAÇÃO LENTA
+[12s–25s] FASE 2 — TENSÃO CRESCENTE
+[25s–35s] FASE 3 — IMPULSO RÁPIDO
+[35s–40s] FASE 4 — RESOLUÇÃO / RETORNO
+[loop]
+
+=================================================
+FASE 1 — RESPIRAÇÃO LENTA (0s–12s)
+=================================================
+
+Moving Head Beam 1 (M1) e Beam 2 (M2) — par simétrico em espelho:
+  - Intensidade: 100% (dimmer máximo)
+  - Cor: branco (color_wheel em posição de branco / sem filtro)
+  - Gobo: aberto (sem gobo, feixe limpo)
+  - Posição inicial: ambos nivelados para frente
+      M1: pan=84, tilt=36
+      M2: pan=84, tilt=32
+  - Movimento: varredura de tilt suave e sincronizada — os dois descem lentamente
+    do nivelado para frente até apontar para a ponta do altar:
+      M1: tilt vai de 36 → 78 (~8s de percurso)
+      M2: tilt vai de 32 → 72 (~8s de percurso)
+  - Speed: bem lenta (valor alto no canal speed = movimento lento)
+  - Os dois se movem juntos, espelhados verticalmente — dois feixes "inclinando"
+    em uníssono para o centro do palco
+
+Ribaltas 1 e 2:
+  - Tilt: posição rasante de louvor (tilt=90) — luz abrindo o ambiente pelo fundo
+  - Dimmer: 100%
+  - LEDs 1–8: todos acesos em 100% — branco cheio
+  - Strobo: off
+  - Presença constante, estática — âncora luminosa enquanto os Moving Heads se movem
+
+Mini Brut 01, 02, 03, 04:
+  - Pulse lento e suave — intensidade sobe de ~30% até 100% e desce, ciclo de ~4s cada
+  - Os quatro em desfase progressivo:
+      Mini_Brut_01 começa
+      Mini_Brut_02 entra 1s depois
+      Mini_Brut_03 entra 2s depois
+      Mini_Brut_04 entra 3s depois
+  - Cria onda horizontal passando da esquerda para a direita
+  - Luz halogênica quente pulsando em onda, enquanto os beams brancos frios se movem acima
+
+Fita Led:
+  - Intensidade: ~70%, constante
+  - Presença de preenchimento — luz ambiente de contorno
+
+=================================================
+FASE 2 — TENSÃO CRESCENTE (12s–25s)
+=================================================
+
+Moving Head Beam 1 e Beam 2 — contraponto (fan):
+  - Nessa fase os dois SEPARAM o movimento:
+      M1: pan desce de 84 → 42, tilt=35 (varre para lateral esquerda)
+      M2: pan desce de 84 → 44, tilt=26 (varre para lateral direita)
+  - Velocidade de pan: moderada (~6s para chegar nas laterais)
+  - Efeito visual: os dois feixes abrem em leque/fan a partir do centro,
+    se separando para as paredes opostas
+  - ~18s: ativar prism nos dois — o feixe se multiplica em 3 raios
+
+Ribaltas 1 e 2:
+  - Movimento de tilt: saem do rasante (90) → altar (145), levando ~5s
+  - Speed igual nas duas (par)
+  - Ao chegar em 145: chase suave entre células LED —
+      led_1 a led_4 apagam, led_5 a led_8 ficam acesos por ~1.5s
+      depois invertem (1–4 acesos, 5–8 apagados)
+      pulsação de metade para metade
+  - Strobo: off ainda
+
+Mini Bruts:
+  - A onda acelera — ciclo de pulse cai para ~2.5s
+  - Os quatro ainda em desfase, mas ritmo mais rápido
+
+Fita Led:
+  - Sobe para 100% com fade lento (~3s) — contorno mais brilhante conforme a tensão cresce
+
+=================================================
+FASE 3 — IMPULSO RÁPIDO (25s–35s)
+=================================================
+
+Moving Head Beam 1 e Beam 2 — rotação cruzada:
+  - Speed: baixo (= movimento rápido)
+  - M1: sai da lateral esquerda → varre em pan pelo centro → vai para a direita
+        pan: 42 → 84 → ~120, tilt oscilando rapidamente entre 36 e 78
+  - M2: movimento OPOSTO — sai da lateral direita → varre para a esquerda
+        pan: 44 → 84 → ~50
+  - Os dois SE CRUZAM no centro — feixes se intersectam acima do altar (pico visual)
+  - Strobo: ativar nos dois (~8–10 Hz, strobo médio) durante toda a fase
+  - Gobo: opcional — ativar gobo de textura pontuda para dramatizar o feixe
+
+Ribaltas 1 e 2:
+  - Tilt oscila rapidamente entre 90 e 145 (speed baixo = rápido)
+    duas passagens completas em ~5s
+  - LEDs: todos acesos em 100% branco durante o movimento
+    a luz arranha o palco em arcos rápidos
+  - Strobo leve (strobo=50–60), pulsando junto com os Moving Heads
+
+Mini Bruts:
+  - Bump rápido em padrão xadrez:
+      Mini_Brut_01 + Mini_Brut_03 acesos → Mini_Brut_02 + Mini_Brut_04 apagados
+      alternando a cada ~400ms
+  - Flash rítmico no palco, diagonal/alternado
+
+Fita Led:
+  - Intensidade 100%, sem variação — sustento luminoso de base
+
+=================================================
+FASE 4 — RESOLUÇÃO / RETORNO (35s–40s)
+=================================================
+
+Moving Heads:
+  - Retornam suavemente à posição nivelada para frente:
+      M1: pan=84, tilt=36
+      M2: pan=84, tilt=32
+  - Speed alta (= movimento lento, suave)
+  - Strobo: apaga (canal strobo → 0)
+  - Prism: desliga (canal prism → 0)
+
+Ribaltas:
+  - Retornam ao tilt=90 (rasante)
+  - Strobo: apaga (→ 0)
+  - Todos os LEDs em 100% — branco aberto novamente
+
+Mini Bruts:
+  - Voltam ao pulse lento em onda com desfase (Fase 1)
+
+Fita Led:
+  - Volta a 70% com fade lento
+
+[Loop recomeça na Fase 1]
+
+=================================================
+RESUMO POR FIXTURE
+=================================================
+
+Fixture         | Fase 1              | Fase 2                    | Fase 3                        | Fase 4
+----------------|---------------------|---------------------------|-------------------------------|------------------------
+M1 + M2         | Tilt lento ↓ altar  | Fan pan → laterais opostas| Cruzamento rápido + strobo    | Retorno suave ao neutro
+                | espelhados          | + prism ativa             | tilt oscilatório              |
+Ribaltas 1+2    | Branco rasante 90   | Move → 145, chase LED     | Tilt oscila 90↔145 rápido     | Volta tilt=90
+                | estático            | metade-metade             | + strobo leve                 | branco cheio
+Mini Bruts      | Onda lenta desfasada| Onda mais rápida          | Bump xadrez ~400ms            | Volta onda lenta
+                | esq → dir           | mesmo desfase             | (01+03 vs 02+04)              |
+Fita Led        | 70% constante       | Sobe a 100% com fade      | 100% sustentada               | Volta a 70% com fade
+
+=================================================
+NOTAS PARA O ENGENHEIRO DE SCRIPT
+=================================================
+
+- Tempo total do loop: ~40 segundos — usar Sleep() para controlar cada fase
+
+- Moving Heads / speed:
+    Usar SetChannel(speed) ANTES de cada movimento
+    Speed é invertido: 0 = mais rápido, 255 = mais lento
+    Fase 1 e 4: speed alto (lento)
+    Fase 3: speed baixo (rápido)
+
+- Prism:
+    Ativar canal prism na Fase 2 (~18s)
+    Desativar canal prism na Fase 4
+
+- Strobo Moving Heads:
+    Canal strobo: ativar na Fase 3, zerar na Fase 4
+
+- Strobo Ribaltas:
+    Canal strobo: valor 50–60 na Fase 3, zerar na Fase 4
+
+- Mini Bruts bump xadrez (Fase 3):
+    Loop com Sleep(400ms):
+      Ciclo A: Brut01=255, Brut03=255, Brut02=0, Brut04=0
+      Ciclo B: Brut01=0, Brut03=0, Brut02=255, Brut04=255
+
+- Ribaltas chase LED metade (Fase 2):
+    Loop com Sleep(1500ms):
+      Ciclo A: led_1..led_4=0, led_5..led_8=255
+      Ciclo B: led_1..led_4=255, led_5..led_8=0
+
+- OnTerminate (obrigatório):
+    Zerar dimmer dos Moving Heads (canal 125 e 205 → 0)
+    Zerar strobo dos Moving Heads (124 e 204 → 0)
+    Zerar prism (127 e 207 → 0)
+    Zerar todos os canais das Ribaltas (258–270 e 271–283 → 0)
+    Zerar dimmer dos Mini Bruts (401, 402, 409, 410 → 0)
+    Zerar dimmer da Fita Led (404 → 0)
+
+=================================================
+  PRÓXIMO PASSO
+  Leve este arquivo para a skill engenheiro-de-script-vplight
+  para transformar esta ideia em script DMX real.
+=================================================

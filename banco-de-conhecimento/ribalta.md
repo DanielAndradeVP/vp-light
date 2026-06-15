@@ -6,42 +6,54 @@ Banco de conhecimento das Ribaltas RGB: acender, cores primárias, secundárias 
 
 Fabricante: Light Party. Modelo: Ribalta.
 Barra de LEDs com 8 células independentes, tilt motorizado, dimmer mestre, strobo e função especial.
-Duas unidades no patch: Ribalta_1 (esquerda/B) e Ribalta_2 (direita/A), com tilt de repouso diferente.
+Duas unidades com tilt no patch: Ribalta_1 e Ribalta_2 — par, mesma orientação de tilt.
 Cores obtidas por ativação seletiva das 8 células — cada célula é um canal independente.
 Todos os LEDs em 255 = branco cheio. Combinações produzem cores e efeitos.
 
 Também existem 4 unidades ribalta-rgb-static (estáticas, sem tilt) com 6 canais cada: dimmer, RGB, strobo e special.
 
+## Posição Física (Ribalta_1 e Ribalta_2)
+
+Centro da treliça do fundo do gride, parte traseira do altar, aproximadamente 3 metros de altura.
+As duas formam um par e compartilham a mesma orientação de tilt.
+
+## Orientação de Tilt — valores de referência (canal `tilt`)
+
+> Estes são pontos de orientação para quem programa, não limites rígidos. Outros valores de tilt
+> podem e devem ser usados conforme o efeito; o que está abaixo é o mapa dos pontos mais úteis.
+> **Faixa útil: 90 a 200.** O **145 é o ponto fixo mais importante**. O 255 só faz sentido em movimento.
+
+| Tilt | Posição / efeito | Uso |
+|------|------------------|-----|
+| 90   | Ribalta nivelada na horizontal. Maior impacto visual — luz rasante pelo altar, abre o ambiente, cria profundidade. | Posição principal para **louvor** e momentos de atmosfera. Abaixo de 90 perde ângulo bom — só para explorar movimento, não parar aqui. |
+| 145  | Aponta para a beirada frontal do altar — cai exatamente sobre o púlpito. | **Posição principal de uso estático.** Ilumina ministro / pastor / púlpito. Usar em pregação. |
+| 200  | Apontada reto para baixo (vertical). Efeito de cascata atrás dos guitarristas, no centro do altar. Fica a ~1 palmo do painel de LED — não atrapalha, mas o reflexo no painel deixa visualmente forte. | Cascata / textura no centro. |
+| 255  | Extremo do curso — aponta para a beirada superior do painel de LED. Fica feio parada. | **Sem uso estático.** Só em movimentos que exploram o curso completo do tilt. |
+
+Ribalta_1 e Ribalta_2 usam a mesma orientação. Pequenas diferenças por unidade podem exigir um
+ajuste fino de ~5 DMX no tilt de uma delas para alinhar fisicamente — calibrar no rig.
+
 ## Fixtures no Patch
 
-| Nome                  | Posição   | Start Ch | Canais | DMX Range | Tilt Funcional | Speed Funcional |
-|-----------------------|-----------|----------|--------|-----------|----------------|-----------------|
-| Ribalta_1             | Esquerda  | 258      | 13     | 258–270   | 110            | 90              |
-| Ribalta_2             | Direita   | 271      | 13     | 271–283   | 105            | 90              |
-| ribalta-rgb-static_1  | Static 1  | 284      | 6      | 284–289   | —              | —               |
-| ribalta-rgb-static_2  | Static 2  | 290      | 6      | 290–295   | —              | —               |
-| ribalta-rgb-static_3  | Static 3  | 296      | 6      | 296–301   | —              | —               |
-| ribalta-rgb-static_4  | Static 4  | 302      | 6      | 302–307   | —              | —               |
+| Nome                  | Posição   | Start Ch | Canais | DMX Range | Tilt estático principal |
+|-----------------------|-----------|----------|--------|-----------|-------------------------|
+| Ribalta_1             | Par       | 258      | 13     | 258–270   | 145 (ver Orientação de Tilt) |
+| Ribalta_2             | Par       | 271      | 13     | 271–283   | 145 (ver Orientação de Tilt) |
+| ribalta-rgb-static_1  | Static 1  | 284      | 6      | 284–289   | — (sem tilt)            |
+| ribalta-rgb-static_2  | Static 2  | 290      | 6      | 290–295   | — (sem tilt)            |
+| ribalta-rgb-static_3  | Static 3  | 296      | 6      | 296–301   | — (sem tilt)            |
+| ribalta-rgb-static_4  | Static 4  | 302      | 6      | 302–307   | — (sem tilt)            |
 
 ## Mapa de Canais — Ribalta_1 e Ribalta_2 (13 canais)
 
-Ordem física dos canais (índice 1-based relativo ao startChannel):
-
-| Índice | Alias    | DMX 0               | Valor funcional       | DMX 255            | Observações                            |
-|--------|----------|---------------------|-----------------------|--------------------|----------------------------------------|
-| 1      | tilt     | posição mínima      | R1=110 / R2=105       | posição máxima     | Mover sempre com speed ajustado        |
-| 2      | speed    | máximo rápido       | sugestão: 90          | mínimo lento       | 0=mais rápido, 255=mais lento; ajustar conforme a cena |
-| 3      | dimmer   | apagado             | —                     | 100% intensidade   | Mestre global — afeta todas as células |
-| 4      | led_1    | célula 1 off        | —                     | célula 1 100%      | LED individual                         |
-| 5      | led_2    | célula 2 off        | —                     | célula 2 100%      | LED individual                         |
-| 6      | led_3    | célula 3 off        | —                     | célula 3 100%      | LED individual                         |
-| 7      | led_4    | célula 4 off        | —                     | célula 4 100%      | LED individual                         |
-| 8      | led_5    | célula 5 off        | —                     | célula 5 100%      | LED individual                         |
-| 9      | led_6    | célula 6 off        | —                     | célula 6 100%      | LED individual                         |
-| 10     | led_7    | célula 7 off        | —                     | célula 7 100%      | LED individual                         |
-| 11     | led_8    | célula 8 off        | —                     | célula 8 100%      | LED individual                         |
-| 12     | strobo   | strobo off          | —                     | strobo rápido      | 0=desligado; qualquer valor > 0 ativa  |
-| 13     | function | modo normal (0)     | —                     | programa máximo    | 0=controle DMX manual; evitar >0 ao vivo |
+| Índice | Alias    | DMX 0           | Faixa útil          | DMX 255          | Observações                            |
+|--------|----------|-----------------|---------------------|------------------|----------------------------------------|
+| 1      | tilt     | posição mínima  | 90–200 (145 estático) | posição máxima | Mover sempre com speed ajustado        |
+| 2      | speed    | máximo rápido   | sugestão: 90        | mínimo lento     | 0=mais rápido, 255=mais lento          |
+| 3      | dimmer   | apagado         | —                   | 100% intensidade | Mestre global — afeta todas as células |
+| 4–11   | led_1…led_8 | célula off   | —                   | célula 100%      | LED individual por canal               |
+| 12     | strobo   | strobo off      | 40–80 lento / 180–255 rápido | strobo rápido | 0=desligado                     |
+| 13     | function | modo normal (0) | —                   | programa máximo  | 0=controle DMX manual; evitar >0 ao vivo |
 
 ## Mapa de Canais — ribalta-rgb-static (6 canais)
 
@@ -52,67 +64,34 @@ Ordem física dos canais (índice 1-based relativo ao startChannel):
 | 3      | green   | off        | verde 100%     | Requer dimmer > 0                                |
 | 4      | blue    | off        | azul 100%      | Requer dimmer > 0                                |
 | 5      | strobo  | off        | strobo rápido  | 0=desligado                                      |
-| 6      | special | off (0–5)  | —              | Independente do dimmer; sobrescreve RGB quando ativo |
+| 6      | special | marco 0    | —              | Independente do dimmer; sobrescreve RGB quando ativo |
 
 ## Valores Importantes
 
 ### Ribalta_1 e Ribalta_2
 - **Branco cheio:** dimmer=255, led_1 a led_8 todos=255
 - **Apagar:** todos os 13 canais = 0
-- **Posicionar (sem mover bruscamente):** definir speed antes de alterar tilt
-  - Ribalta_1: speed=?(sugestão: 90), tilt=110
-  - Ribalta_2: speed=?(sugestão: 90), tilt=105
-- **Strobo desligado:** strobo=0
-- **Strobo lento:** strobo=40–80
-- **Strobo rápido:** strobo=180–255
+- **Posicionar (sem mover bruscamente):** definir speed antes de alterar tilt. Speed igual nas duas.
+- **Tilt de louvor (rasante):** tilt=90
+- **Tilt estático principal (púlpito/pregação):** tilt=145
+- **Tilt cascata (vertical no centro):** tilt=200
+- **Strobo lento:** strobo=40–80 — **Strobo rápido:** strobo=180–255 — **off:** strobo=0
 - **Modo DMX manual:** function=0 (sempre manter 0 para controle via script)
 
 ### ribalta-rgb-static
 - **Acender RGB:** dimmer > 0 + pelo menos um canal de cor (red/green/blue) > 0
 - **Branco manual:** dimmer=255, red=255, green=255, blue=255
-- **Vermelho:** dimmer=255, red=255, green=0, blue=0
-- **Verde:** dimmer=255, red=0, green=255, blue=0
-- **Azul:** dimmer=255, red=0, green=0, blue=255
+- **Vermelho:** dimmer=255, red=255 — **Verde:** green=255 — **Azul:** blue=255
 - **Apagar:** todos os 6 canais = 0
 - **Special ativo:** sobrescreve RGB; dimmer não é necessário
 
 ## Canais DMX Absolutos
 
 ### Ribalta_1 (start=258)
-
-| Canal DMX | Alias    |
-|-----------|----------|
-| 258       | tilt     |
-| 259       | speed    |
-| 260       | dimmer   |
-| 261       | led_1    |
-| 262       | led_2    |
-| 263       | led_3    |
-| 264       | led_4    |
-| 265       | led_5    |
-| 266       | led_6    |
-| 267       | led_7    |
-| 268       | led_8    |
-| 269       | strobo   |
-| 270       | function |
+tilt=258, speed=259, dimmer=260, led_1=261, led_2=262, led_3=263, led_4=264, led_5=265, led_6=266, led_7=267, led_8=268, strobo=269, function=270
 
 ### Ribalta_2 (start=271)
-
-| Canal DMX | Alias    |
-|-----------|----------|
-| 271       | tilt     |
-| 272       | speed    |
-| 273       | dimmer   |
-| 274       | led_1    |
-| 275       | led_2    |
-| 276       | led_3    |
-| 277       | led_4    |
-| 278       | led_5    |
-| 279       | led_6    |
-| 280       | led_7    |
-| 281       | led_8    |
-| 282       | strobo   |
-| 283       | function |
+tilt=271, speed=272, dimmer=273, led_1=274, led_2=275, led_3=276, led_4=277, led_5=278, led_6=279, led_7=280, led_8=281, strobo=282, function=283
 
 ### ribalta-rgb-static (6 canais cada)
 
@@ -123,50 +102,53 @@ Ordem física dos canais (índice 1-based relativo ao startChannel):
 | ribalta-rgb-static_3  | 296    | 297 | 298   | 299  | 300    | 301     |
 | ribalta-rgb-static_4  | 302    | 303 | 304   | 305  | 306    | 307     |
 
-## Canal 6 (special) — 21 Marcos
+## Canal 6 (special) — Marcos Zero (ribalta-rgb-static)
 
-Gap 149–159 é reservado/indefinido (não é um marco controlável). Special=0 desativa o canal.
+A ribalta-rgb-static tem 20 LEDs no total. Em scripts e cenas, usar apenas o valor marco zero abaixo; não calcular faixas.
 
-| Valor  | Marco | Comportamento                                                                                   |
-|--------|-------|-------------------------------------------------------------------------------------------------|
-| 0–5    | 1     | Off — sem cor; controle RGB via canais 2-4 ativo                                                |
-| 6–16   | 2     | Vermelho sólido                                                                                 |
-| 17–27  | 3     | Verde sólido                                                                                    |
-| 28–38  | 4     | Azul sólido                                                                                     |
-| 39–49  | 5     | Amarelo sólido                                                                                  |
-| 50–60  | 6     | Roxo sólido                                                                                     |
-| 61–71  | 7     | Azul claro sólido                                                                               |
-| 72–82  | 8     | Branco sólido                                                                                   |
-| 83–93  | 9     | Chase 3 LEDs — 7 cores em sequência: vermelho, verde, azul, amarelo, azul claro, roxo, branco   |
-| 94–104 | 10    | Chase 5 LEDs — mesma sequência de 7 cores                                                       |
-| 105–114| 11    | Chase 10 LEDs — mesma sequência de 7 cores                                                      |
-| 115–126| 12    | Acende 3 LEDs progressivos mantendo anteriores acesos, inverte no azul — 7 cores em sequência   |
-| 127–137| 13    | Encontro de LEDs do centro — 3 do início + 3 do final convergindo — 7 cores em sequência        |
-| 138–148| 14    | Padrão duplo — convergência ao centro + chase linear 3 LEDs — cor branca                        |
-| 160–181| 15    | Base fraca de cor + 3 LEDs fortes em sequência de cores alternadas: vermelho/verde, verde/azul, azul/vermelho, vermelho/azul claro, verde/roxo, azul/amarelo |
-| 182–192| 16    | Pulso vermelho-fogo: vermelho dominante + traço de verde, intensidade sobe e desce              |
-| 193–203| 17    | Pulso verde: intensidade sobe e desce                                                           |
-| 204–214| 18    | Pulso azul escuro: intensidade sobe e desce                                                     |
-| 215–225| 19    | Pulso roxo: intensidade sobe e desce                                                            |
-| 226–236| 20    | Pulso amarelo: intensidade sobe e desce                                                         |
-| 237–255| 21    | Sequência de pulsos — percorre as 5 cores acima em cadeia, transicionando quando a cor atual chega perto do zero |
+| Marco zero | Comportamento                                                                                   |
+|------------|-------------------------------------------------------------------------------------------------|
+| 0          | Sem cor; controle RGB via canais 2-4 ativo                                                      |
+| 6          | Vermelho sólido em todos os LEDs                                                                |
+| 17         | Verde sólido                                                                                    |
+| 28         | Azul sólido                                                                                     |
+| 39         | Amarelo sólido                                                                                  |
+| 50         | Roxo sólido                                                                                     |
+| 61         | Azul claro sólido                                                                               |
+| 72         | Branco sólido                                                                                   |
+| 83         | Chase 3 LEDs percorrendo 7 cores: vermelho, verde, azul, amarelo, azul claro, roxo, branco      |
+| 94         | Chase 5 LEDs, mesma sequência de 7 cores                                                        |
+| 105        | Chase 10 LEDs (metade da ribalta), mesma sequência de 7 cores                                   |
+| 115        | Acende 3 LEDs progressivos mantendo anteriores, inverte direção no azul, 7 cores em sequência   |
+| 127        | Convergência: 3 LEDs do início e 3 do final caminhando ao centro, 7 cores em sequência          |
+| 138        | Padrão duplo: convergência ao centro + chase linear 3 LEDs, cor branca                          |
+| 160        | Base fraca de cor + 3 LEDs fortes percorrendo direção única, pares de cores alternadas          |
+| 182        | Pulso vermelho-fogo: vermelho dominante + traço de verde, intensidade sobe e desce em loop      |
+| 193        | Pulso verde                                                                                     |
+| 204        | Pulso azul escuro                                                                               |
+| 215        | Pulso roxo                                                                                       |
+| 226        | Pulso amarelo                                                                                    |
+| 237        | Sequência de pulsos encadeados percorrendo as 5 cores acima em cadeia contínua                  |
 
 ## Uso em Scripts DMX
 
 ```js
-// Acender Ribalta_1 em branco cheio na posição funcional
-SetChannel(259, 90);  // speed — sugestão; ajustar conforme a cena
-SetChannel(258, 110); // tilt funcional
+// Ribalta_1 e Ribalta_2 — branco cheio no tilt estático principal (145, púlpito)
+SetChannel(259, 90);  // speed (igual nas duas)
+SetChannel(258, 145); // tilt estático principal
 SetChannel(260, 255); // dimmer mestre
-SetChannel(261, 255); SetChannel(262, 255); SetChannel(263, 255); SetChannel(264, 255);
-SetChannel(265, 255); SetChannel(266, 255); SetChannel(267, 255); SetChannel(268, 255);
+for (let ch = 261; ch <= 268; ch++) SetChannel(ch, 255); // led_1..led_8
 
-// Acender Ribalta_2 em branco cheio na posição funcional
-SetChannel(272, 90);  // speed — sugestão; usar o mesmo valor da Ribalta_1
-SetChannel(271, 105); // tilt funcional
-SetChannel(273, 255); // dimmer mestre
-SetChannel(274, 255); SetChannel(275, 255); SetChannel(276, 255); SetChannel(277, 255);
-SetChannel(278, 255); SetChannel(279, 255); SetChannel(280, 255); SetChannel(281, 255);
+SetChannel(272, 90);  // speed Ribalta_2
+SetChannel(271, 145); // tilt
+SetChannel(273, 255); // dimmer
+for (let ch = 274; ch <= 281; ch++) SetChannel(ch, 255); // led_1..led_8
+```
+
+```js
+// Tilt de louvor (rasante, horizontal) — abre o ambiente
+SetChannel(259, 90); SetChannel(258, 90); // Ribalta_1
+SetChannel(272, 90); SetChannel(271, 90); // Ribalta_2
 ```
 
 ```js
@@ -176,38 +158,20 @@ for (let ch = 271; ch <= 283; ch++) SetChannel(ch, 0); // Ribalta_2
 ```
 
 ```js
-// ribalta-rgb-static_1: acender em vermelho via RGB
-SetChannel(284, 255); // dimmer
-SetChannel(285, 255); // red
-SetChannel(286, 0);   // green
-SetChannel(287, 0);   // blue
+// ribalta-rgb-static_1: vermelho via RGB
+SetChannel(284, 255); SetChannel(285, 255); SetChannel(286, 0); SetChannel(287, 0);
 
-// ribalta-rgb-static_1: efeito special (marco 4 — azul sólido, valor 30)
-SetChannel(284, 0);   // dimmer não importa para special
-SetChannel(285, 0); SetChannel(286, 0); SetChannel(287, 0); // RGB zerado
-SetChannel(289, 30);  // special — azul sólido (marco 4, faixa 28-38)
-```
-
-```js
-// Apagar todas as ribalta-rgb-static
-for (let ch = 284; ch <= 307; ch++) SetChannel(ch, 0);
-```
-
-```js
-// Strobo nas ribalta-rgb-static (branco + strobo)
-SetChannel(284, 255); // dimmer R-S1
-SetChannel(285, 255); SetChannel(286, 255); SetChannel(287, 255); // RGB branco
-SetChannel(288, 120); // strobo velocidade média
+// ribalta-rgb-static_1: special marco 28 (azul sólido)
+SetChannel(289, 28);
 ```
 
 ## Comportamentos e Quirks
 
-- **Speed igual nas duas:** são um par — speed diferente faz uma chegar antes da outra e o movimento fica assimétrico. O valor exato fica a critério da cena; sugestão inicial: 90.
-- **Tilt antes de ligar LEDs:** enviar tilt+speed antes de acionar células evita movimento visível durante a cena.
+- **Faixa útil de tilt = 90 a 200.** 145 é o ponto estático principal (púlpito); 90 é louvor (rasante); 255 só em movimento.
+- **Speed igual nas duas:** são um par — speed diferente faz uma chegar antes da outra e o movimento fica assimétrico. Sugestão inicial: 90.
+- **Tilt+speed antes de ligar LEDs:** evita movimento visível durante a cena.
 - **Speed é inverso:** DMX 0 = mais rápido; DMX 255 = mais lento.
 - **Dimmer é mestre nas Ribalta_1/2:** com led_1–8 em 255, se dimmer=0 o fixture fica apagado.
-- **function=0 sempre nas Ribalta_1/2:** valores > 0 ativam modos automáticos que ignoram controle DMX. Nunca enviar > 0 ao vivo.
-- **Special independe do dimmer:** nas ribalta-rgb-static, o canal special funciona mesmo com dimmer=0.
-- **Special sobrescreve RGB:** quando special > 5, os canais red/green/blue são ignorados. Zerar special para retornar ao controle RGB.
-- **Gap 149–159 no canal special:** este intervalo não produz efeito controlável. Evitar.
+- **function=0 sempre nas Ribalta_1/2:** valores > 0 ativam modos automáticos que ignoram o DMX. Nunca enviar > 0 ao vivo.
+- **Special independe do dimmer** (ribalta-rgb-static) e **sobrescreve RGB** quando ≠ 0; zerar special para voltar ao RGB.
 - **Strobo=0 = off:** sempre zerar no OnTerminate para não deixar strobo ativo entre cenas.

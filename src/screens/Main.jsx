@@ -12,7 +12,39 @@ const RIGHT_PANEL_MIN_WIDTH = 260;
 const RIGHT_PANEL_MAX_WIDTH = 640;
 const DESK_MIN_WIDTH = 360;
 const MAX_PAGE = 10;
+const COLOR_PALETTE = theme.colors.scenePalette;
+const DEFAULT_SCRIPT_COLOR = COLOR_PALETTE[0];
 const GRID = 40;          // tamanho do quadradinho da grade — o aparelho ocupa exatamente 1 quadrado
+
+function ColorPaletteField({ value, onChange, label = 'Cor' }) {
+  return (
+    <div>
+      <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, fontWeight:400, color:theme.colors.textSecondary, marginBottom:4 }}>
+        {label}
+      </div>
+      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+        {COLOR_PALETTE.map(color => (
+          <button
+            key={color}
+            type="button"
+            onClick={() => onChange(color)}
+            style={{
+              width:32,
+              height:32,
+              borderRadius:theme.radius.none,
+              background:color,
+              cursor:'pointer',
+              border:value === color ? theme.borders.strong : theme.borders.soft,
+              outline:'none',
+              boxShadow:'none',
+              padding:0,
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function snapGridCoord(value) {
   const number = Number(value);
@@ -127,9 +159,21 @@ function filterDisabledFixtureChannelList(channels, disabledChannels) {
   return (channels || []).filter(channel => !disabledChannels.has(Number(channel)));
 }
 
+const SPEED_OPTIONS = [
+  { value: 0.5, label: '½x' },
+  { value: 1,   label: '1x' },
+  { value: 2,   label: '2x' },
+  { value: 3,   label: '3x' },
+];
+
 const CUSTOM_FUNCTIONS_BY_TYPE = {
   ribalta: [
     { id: 'ribalta_all_on', label: 'ALL ON' },
+    { id: 'speed_multiplier', label: 'SPEED', type: 'speed_selector' },
+  ],
+  moving_head_beam: [
+    { id: 'tilt_invert', label: 'TILT INVERTIDO' },
+    { id: 'speed_multiplier', label: 'SPEED', type: 'speed_selector' },
   ],
 };
 
@@ -141,13 +185,13 @@ const C = {
   sceneActive: theme.colors.selection,
 };
 
-export default function Main({ onOpenFixtures }) {
+export default function Main({ onOpenFixtures, onOpenPainel }) {
   const {
     show, currentPage, setCurrentPage,
     activeScenes, setActiveScenes,
     selectedFixtureId, setSelectedFixtureId,
     selectedFixture, disabledFixtureChannels: storeDisabledFixtureChannels, pages, saveShow, loadShow,
-    updateScene, updateFixture, setShow,
+    updateScene, updateFixture, setShow, toggleScene,
   } = useShow();
 
   const [blackoutActive, setBlackoutActive] = useState(false);
@@ -165,7 +209,7 @@ export default function Main({ onOpenFixtures }) {
   }
 
   async function handleSave() {
-    const result = await saveShow(getShowWithGridView(show, viewRef.current));
+    const result = await saveShow(show);
     showSaveFeedback(result);
     return result;
   }
@@ -174,7 +218,7 @@ export default function Main({ onOpenFixtures }) {
     if (exitSaving) return;
     setExitSaving(true);
     try {
-      const result = await saveShow(getShowWithGridView(show, viewRef.current));
+      const result = await saveShow(show);
       showSaveFeedback(result);
       if (result?.ok) {
         await window.vp.closeApp();
@@ -217,23 +261,7 @@ export default function Main({ onOpenFixtures }) {
   }
 
   function handleActivateScene(key) {
-    const scene = scenes[key];
-    if (!scene?.channels || Object.keys(scene.channels).length === 0) return;
-    setActiveScenes(prev => {
-      if (prev.includes(key)) {
-        // desmarcando — usa resolveUniverseState para decidir restore vs blackout
-        // o display da barra lateral é resolvido pelo orquestrador (resolveSidebarValues)
-        const next = prev.filter(k => k !== key);
-        resolveUniverseState(next, scripts);
-        return next;
-      }
-      if (prev.length >= 3) return prev;
-      if (scene?.channels) {
-        window.vp.activateScene(filterDisabledFixtureChannels(scene.channels, disabledFixtureChannels));
-        // o display da barra lateral é resolvido pelo orquestrador (resolveSidebarValues)
-      }
-      return [...prev, key];
-    });
+    toggleScene(key);
   }
 
   function handleBlackout() {
@@ -258,6 +286,7 @@ export default function Main({ onOpenFixtures }) {
   }
 
   const [liveValues, setLiveValues] = useState({});
+  const [universeSnapshot, setUniverseSnapshot] = useState({}); // snapshot completo do universo — alimenta cores de todos os fixtures na mesa
   const [testPanelOpen, setTestPanelOpen] = useState(false);
   const [testValues, setTestValues] = useState({});
   const [conflicts, setConflicts] = useState([]);
@@ -268,6 +297,7 @@ export default function Main({ onOpenFixtures }) {
   const [rightPanelResize, setRightPanelResize] = useState(null); // { startX, startWidth }
   const [customFunctionMenuFixtureId, setCustomFunctionMenuFixtureId] = useState(null);
   const [activeCustomFunctionByFixture, setActiveCustomFunctionByFixture] = useState({});
+  const [speedMultiplierByFixture, setSpeedMultiplierByFixture] = useState({});
   const [testPanelPos, setTestPanelPos] = useState({ x: null, y: 56 });
   const [testPanelDrag, setTestPanelDrag] = useState(null); // { offsetX, offsetY }
 
@@ -358,14 +388,16 @@ export default function Main({ onOpenFixtures }) {
   }, []);
 
   const [multiSelected, setMultiSelected] = useState([]);
+  const [gridMode, setGridMode] = useState(0); // 0 = normal, 1 = agrupado por grupo/tipo
   const mesaRef = useRef(null);
   const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 }); // zoom/pan da mesa
   const viewRef = useRef(view);
   const restoredGridViewRef = useRef(null);
+  const reEmitOnNextResolveRef = useRef(false); // sinaliza re-emissão de DMX na próxima resolução da barra lateral
 
-  useEffect(() => {
-    viewRef.current = view;
-  }, [view]);
+  // Atualiza viewRef de forma síncrona no corpo do componente (antes de qualquer handler),
+  // garantindo que handleSave sempre leia o zoom correto independente do timing de effects.
+  viewRef.current = view;
 
   function applyGridView(nextView) {
     const normalizedView = normalizeGridView(nextView);
@@ -376,14 +408,24 @@ export default function Main({ onOpenFixtures }) {
     setShow(prev => getShowWithGridView(prev, normalizedView));
   }
 
+  const autoFitDoneRef = useRef(false); // garante auto-fit apenas 1x por sessão
   useEffect(() => {
     const storedView = getStoredGridView(show);
-    if (!storedView) return;
+    if (!storedView) {
+      // Sem viewport salvo: faz ZFit automático UMA vez após o show carregar com fixtures
+      if (!autoFitDoneRef.current && (show.fixtures || []).length > 0 && mesaRef.current) {
+        autoFitDoneRef.current = true;
+        // Adia um tick para garantir que o layout do mesaRef já tem dimensões reais
+        setTimeout(() => handleFitFixtures(), 0);
+      }
+      return;
+    }
     const key = `${storedView.zoom}|${storedView.panX}|${storedView.panY}`;
     if (restoredGridViewRef.current === key) return;
     restoredGridViewRef.current = key;
     viewRef.current = storedView;
     setView(storedView);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show]);
 
   // Zoom com a roda do mouse, seguindo o ponteiro (mantém o ponto sob o cursor fixo).
@@ -395,12 +437,16 @@ export default function Main({ onOpenFixtures }) {
       const rect = el.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      setView(prev => {
-        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-        const zoom = Math.min(4, Math.max(0.3, prev.zoom * factor));
-        const k = zoom / prev.zoom; // razão real após o clamp
-        return { zoom, panX: sx - (sx - prev.panX) * k, panY: sy - (sy - prev.panY) * k };
-      });
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const prev = viewRef.current;
+      const zoom = Math.min(4, Math.max(0.3, prev.zoom * factor));
+      const k = zoom / prev.zoom; // razão real após o clamp
+      const newView = { zoom, panX: sx - (sx - prev.panX) * k, panY: sy - (sy - prev.panY) * k };
+      const newKey = `${newView.zoom}|${newView.panX}|${newView.panY}`;
+      viewRef.current = newView;            // atualiza ref imediatamente (igual ao applyGridView)
+      restoredGridViewRef.current = newKey; // evita que o efeito de restore reverta o scroll
+      setView(newView);
+      setShow(prev => getShowWithGridView(prev, newView)); // sincroniza show.meta.viewport (batched)
     }
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -422,6 +468,7 @@ export default function Main({ onOpenFixtures }) {
   pageScriptsRef.current = pageScripts;
   const [sceneScriptModal, setSceneScriptModal] = useState(null); // { sceneKey }
   const [sceneScriptName, setSceneScriptName] = useState('');
+  const [scriptColor, setScriptColor] = useState(DEFAULT_SCRIPT_COLOR);
 
   const FKEYS = ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
   const FIXTURE_GROUPS = [
@@ -539,15 +586,16 @@ export default function Main({ onOpenFixtures }) {
     const finalGroups = FIXTURE_GROUPS
       .filter(g => selectedGroups.has(g.key) || g.fixtures.some(f => selectedFixtures.has(f)))
       .map(g => g.key);
-    const result = await window.vp.createScript(createModal.fkey, scriptName.trim(), { groups: finalGroups });
+    const result = await window.vp.createScript(createModal.fkey, scriptName.trim(), { groups: finalGroups, color: scriptColor });
     if (result.ok) {
       setScripts(prev => ({
         ...prev,
-        [createModal.fkey]: { name: result.name, file: result.file, running: false }
+        [createModal.fkey]: { name: result.name, file: result.file, color: result.color || scriptColor, running: false }
       }));
     }
     setCreateModal(null);
     setScriptName('');
+    setScriptColor(DEFAULT_SCRIPT_COLOR);
     setSelectedGroups(new Set());
     setSelectedFixtures(new Set());
   }
@@ -596,7 +644,7 @@ export default function Main({ onOpenFixtures }) {
   const [modalName, setModalName] = useState('');
   const [modalColor, setModalColor] = useState('#000000');
 
-  const COLORS = ['#000000','#cc0000','#00aa00','#0000cc','#cccc00','#00cccc','#aa00aa','#cc6600'];
+  const COLORS = COLOR_PALETTE;
 
   function handleSceneRightClick(e, key) {
     e.preventDefault();
@@ -612,18 +660,35 @@ export default function Main({ onOpenFixtures }) {
     setContextMenu(null);
   }
 
-  function handleConfirmSave() {
+  async function handleConfirmSave() {
     if (!saveModal) return;
     const channels = {};
+    let snapshot = null;
+    try { snapshot = await window.vp.getUniverse(); } catch { snapshot = null; }
+
+    Object.entries(snapshot || {}).forEach(([ch, val]) => {
+      if (disabledFixtureChannels.has(Number(ch))) return;
+      const numericValue = Math.max(0, Math.min(255, Math.round(Number(val) || 0)));
+      if (numericValue > 0) channels[Number(ch)] = numericValue;
+    });
+
     Object.entries(liveValues).forEach(([ch, val]) => {
       if (disabledFixtureChannels.has(Number(ch))) return;
-      channels[Number(ch)] = Number(val);
+      const channel = Number(ch);
+      const numericValue = Math.max(0, Math.min(255, Math.round(Number(val) || 0)));
+      if (numericValue > 0) channels[channel] = numericValue;
+      else delete channels[channel];
     });
-    updateScene(currentPageId, saveModal.sceneKey, {
+
+    const result = await updateScene(currentPageId, saveModal.sceneKey, {
       name: modalName,
       color: modalColor,
       channels,
     });
+    if (result?.ok === false) {
+      console.warn('[vp] updateScene falhou:', result?.error);
+      return;
+    }
     setSaveModal(null);
   }
 
@@ -645,6 +710,11 @@ export default function Main({ onOpenFixtures }) {
   // ativo (snapshot ao vivo do universo) → 0. Os labels vêm da descrição do
   // fixture; os valores exibidos vêm deste estado resolvido.
   const resolveSidebarValues = useCallback(async () => {
+    // Sempre busca o snapshot do universo — alimenta as cores de todas as caixinhas na mesa
+    let snapshot = null;
+    try { snapshot = await window.vp.getUniverse(); } catch { snapshot = null; }
+    if (snapshot) setUniverseSnapshot(snapshot);
+
     if (!selectedFixture || !isFixtureEnabled(selectedFixture)) { setLiveValues({}); return; }
 
     const start = selectedFixture.startChannel;
@@ -662,20 +732,31 @@ export default function Main({ onOpenFixtures }) {
       }
     });
 
-    // Snapshot do universo — sempre consultado para refletir valores manuais e scripts
-    let snapshot = null;
-    try { snapshot = await window.vp.getUniverse(); } catch { snapshot = null; }
-
-    // Resolve cada canal do fixture por prioridade
+    // Resolve cada canal do fixture pelo universo real. A cena ativa e os faders
+    // ja foram aplicados no backend; aqui o snapshot e a fonte da verdade.
     const resolved = {};
     for (let i = 0; i < count; i++) {
       const ch = start + i;
-      if (ch in sceneMerged)                       resolved[ch] = sceneMerged[ch];        // cena vence
-      else if (snapshot && snapshot[ch] != null)   resolved[ch] = Number(snapshot[ch]);   // universo real (script ou manual)
+      if (snapshot && snapshot[ch] != null)        resolved[ch] = Number(snapshot[ch]);   // universo real (cena, script ou manual)
+      else if (!snapshot && ch in sceneMerged)     resolved[ch] = sceneMerged[ch];        // fallback se IPC falhar
       else                                         resolved[ch] = 0;
     }
     setLiveValues(resolved);
+    // Re-emite canais ao DMX quando a seleção muda — sem exigir interação com o fader
+    if (reEmitOnNextResolveRef.current) {
+      reEmitOnNextResolveRef.current = false;
+      await Promise.all(
+        Object.entries(resolved)
+          .filter(([ch]) => !disabledFixtureChannels.has(Number(ch)))
+          .map(([ch, val]) => window.vp.setChannel(Number(ch), Number(val)))
+      );
+    }
   }, [selectedFixture, activeScenes, pages, currentPageId, scripts, disabledFixtureChannels]);
+
+  // Marca re-emissão de DMX quando seleção muda — deve vir antes do effect de resolução
+  useEffect(() => {
+    reEmitOnNextResolveRef.current = true;
+  }, [selectedFixtureId, multiSelected]);
 
   // Dispara resolução imediata: muda fixture selecionado, cenas ativas ou scripts
   useEffect(() => { resolveSidebarValues(); }, [resolveSidebarValues]);
@@ -697,7 +778,7 @@ export default function Main({ onOpenFixtures }) {
       if (sceneMoveModal)    { setSceneMoveModal(null); return; }
       if (sceneScriptModal)  { setSceneScriptModal(null); setSceneScriptName(''); return; }
       if (saveModal)         { setSaveModal(null); return; }
-      if (createModal)       { setCreateModal(null); setScriptName(''); return; }
+      if (createModal)       { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); return; }
       if (contextMenu)       { setContextMenu(null); return; }
       if (scriptMenu)        { setScriptMenu(null); return; }
     }
@@ -734,18 +815,37 @@ export default function Main({ onOpenFixtures }) {
 
   async function handleFader(dmxChannel, value) {
     if (disabledFixtureChannels.has(Number(dmxChannel))) return;
-    const val = Number(value);
+    const raw = Number(value);
+    const tiltChs = getFixtureTiltChannels(selectedFixture);
+    const speedChs = getFixtureSpeedChannels(selectedFixture);
+    let val = raw;
+    if (selectedFixture && isTiltInvertActive(selectedFixture) && tiltChs.has(Number(dmxChannel))) {
+      val = 255 - raw;
+    } else if (selectedFixture && speedChs.has(Number(dmxChannel))) {
+      val = Math.min(255, Math.round(raw / getFixtureSpeedMultiplier(selectedFixture)));
+    }
     setLiveValues(prev => ({ ...prev, [dmxChannel]: val }));
+    setUniverseSnapshot(prev => ({ ...prev, [dmxChannel]: val }));
     await window.vp.setChannel(dmxChannel, val);
   }
 
   async function handleGroupedFader(entries, value) {
-    const val = Number(value);
+    const raw = Number(value);
     const updates = {};
-    entries.forEach(({ dmxCh }) => {
-      if (!disabledFixtureChannels.has(Number(dmxCh))) updates[dmxCh] = val;
+    entries.forEach(({ dmxCh, fixture }) => {
+      if (disabledFixtureChannels.has(Number(dmxCh))) return;
+      const tiltChs = getFixtureTiltChannels(fixture);
+      const speedChs = getFixtureSpeedChannels(fixture);
+      let val = raw;
+      if (fixture && isTiltInvertActive(fixture) && tiltChs.has(Number(dmxCh))) {
+        val = 255 - raw;
+      } else if (fixture && speedChs.has(Number(dmxCh))) {
+        val = Math.min(255, Math.round(raw / getFixtureSpeedMultiplier(fixture)));
+      }
+      updates[dmxCh] = val;
     });
     setLiveValues(prev => ({ ...prev, ...updates }));
+    setUniverseSnapshot(prev => ({ ...prev, ...updates }));
     await Promise.all(
       Object.entries(updates).map(([ch, v]) => window.vp.setChannel(Number(ch), v))
     );
@@ -760,6 +860,17 @@ export default function Main({ onOpenFixtures }) {
 
   function getFixtureType(fixture) {
     return String(fixture?.fixtureType || fixture?.type || '').toLowerCase();
+  }
+
+  function getRightPanelChannelLabel(fixture, label) {
+    const rawLabel = String(label || '');
+    const fixtureName = String(fixture?.name || '').toLowerCase();
+    if (fixtureName !== 'moving head beam 1') return rawLabel;
+
+    const normalizedLabel = rawLabel.toLowerCase();
+    if (normalizedLabel === 'strobo_dimmer') return 'dimmer';
+    if (normalizedLabel === 'virtual_speed') return 'speed';
+    return rawLabel;
   }
 
   function getFixtureCustomFunctions(fixture) {
@@ -796,6 +907,49 @@ export default function Main({ onOpenFixtures }) {
       && activeCustomFunctionByFixture[fixture.id] === 'ribalta_all_on';
   }
 
+  function isTiltInvertActive(fixture) {
+    return getFixtureType(fixture) === 'moving_head_beam'
+      && activeCustomFunctionByFixture[fixture.id] === 'tilt_invert';
+  }
+
+  // Retorna o Set de canais DMX absolutos classificados como tilt/tilt_fine no fixture
+  function getFixtureTiltChannels(fixture) {
+    if (!fixture) return new Set();
+    const start = fixture.startChannel || 1;
+    const result = new Set();
+    (fixture.channels || []).forEach((label, i) => {
+      const l = String(label || '').toLowerCase();
+      if (l === 'tilt' || l === 'tilt_fine') result.add(start + i);
+    });
+    return result;
+  }
+
+  // Retorna o multiplier de speed ativo para o fixture (default 1)
+  function getFixtureSpeedMultiplier(fixture) {
+    if (!fixture) return 1;
+    return speedMultiplierByFixture[fixture.id] ?? 1;
+  }
+
+  // Retorna o Set de canais DMX absolutos classificados como 'speed' no fixture
+  function getFixtureSpeedChannels(fixture) {
+    if (!fixture) return new Set();
+    const start = fixture.startChannel || 1;
+    const result = new Set();
+    (fixture.channels || []).forEach((label, i) => {
+      if (String(label || '').toLowerCase() === 'speed') result.add(start + i);
+    });
+    return result;
+  }
+
+  // Define o speed multiplier para um ou mais fixtures (arr)
+  function setSpeedMultiplierForFixtures(fixtureArr, multiplier) {
+    setSpeedMultiplierByFixture(prev => {
+      const next = { ...prev };
+      fixtureArr.forEach(fx => { next[fx.id] = multiplier; });
+      return next;
+    });
+  }
+
   async function handleRibaltaAllOnFader(fixture, value) {
     if (!isRibaltaAllOnActive(fixture)) return;
     const val = Number(value);
@@ -806,7 +960,56 @@ export default function Main({ onOpenFixtures }) {
       channels.forEach(channel => { next[channel] = val; });
       return next;
     });
+    setUniverseSnapshot(prev => {
+      const next = { ...prev };
+      channels.forEach(channel => { next[channel] = val; });
+      return next;
+    });
     await window.vp.setChannelRange(channels, val);
+  }
+
+  async function handleRibaltaAllOnFaderMulti(fixtures, value) {
+    const val = Number(value);
+    const allChannels = fixtures.flatMap(fx =>
+      filterDisabledFixtureChannelList(getRibaltaLedChannels(fx), disabledFixtureChannels)
+    );
+    if (allChannels.length === 0) return;
+    setLiveValues(prev => {
+      const next = { ...prev };
+      allChannels.forEach(channel => { next[channel] = val; });
+      return next;
+    });
+    setUniverseSnapshot(prev => {
+      const next = { ...prev };
+      allChannels.forEach(channel => { next[channel] = val; });
+      return next;
+    });
+    await window.vp.setChannelRange(allChannels, val);
+  }
+
+  const GROUP_TITLE_COLORS = ['#00ccff', '#ffcc00', '#ff5555', '#44dd44', '#ff9944', '#bb66ff', '#ff66bb', '#44ffbb'];
+
+  function computeGroupedLayout() {
+    const groupOrder = [];
+    const groupMap = {};
+    (show.fixtures || []).forEach(f => {
+      const g = String(f.group || f.fixtureType || 'Outros');
+      if (!groupMap[g]) { groupMap[g] = []; groupOrder.push(g); }
+      groupMap[g].push(f);
+    });
+    const positions = {};
+    const titles = [];
+    let y = 0;
+    groupOrder.forEach((name, gi) => {
+      const color = GROUP_TITLE_COLORS[gi % GROUP_TITLE_COLORS.length];
+      titles.push({ name: name.toUpperCase(), x: 0, y, color });
+      y += GRID;
+      groupMap[name].forEach((f, i) => {
+        positions[f.id] = { x: i * GRID * 2, y };
+      });
+      y += GRID * 2;
+    });
+    return { positions, titles };
   }
 
   function handleFitFixtures() {
@@ -817,7 +1020,9 @@ export default function Main({ onOpenFixtures }) {
       return;
     }
 
-    const fixturePositions = fixtures.map(getFixtureGridPosition);
+    const fixturePositions = gridMode === 1
+      ? (() => { const layout = computeGroupedLayout(); return fixtures.map(f => layout.positions[f.id] || { x: 0, y: 0 }); })()
+      : fixtures.map(getFixtureGridPosition);
     const minX = Math.min(...fixturePositions.map(pos => pos.x));
     const minY = Math.min(...fixturePositions.map(pos => pos.y));
     const maxX = Math.max(...fixturePositions.map(pos => pos.x + GRID));
@@ -844,6 +1049,16 @@ export default function Main({ onOpenFixtures }) {
     });
   }
 
+  // Auto-centraliza ao trocar de modo (skipa o mount inicial para não sobrescrever o viewport salvo)
+  const gridModeInitRef = useRef(true);
+  useEffect(() => {
+    if (gridModeInitRef.current) { gridModeInitRef.current = false; return; }
+    handleFitFixtures();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridMode]);
+
+  const groupedLayout = gridMode === 1 ? computeGroupedLayout() : null;
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#1d2b30', color:'#ffffff', fontFamily:'Arial, Helvetica, sans-serif' }}>
       <style>{`
@@ -859,6 +1074,7 @@ export default function Main({ onOpenFixtures }) {
         <TopBtn onClick={handleSave}>Salvar</TopBtn>
         <TopBtn onClick={loadShow}>Abrir</TopBtn>
         <TopBtn onClick={onOpenFixtures}>Aparelhos</TopBtn>
+        <TopBtn onClick={onOpenPainel}>Painel de Operação</TopBtn>
         <TopBtn onClick={() => setTestPanelOpen(true)} disabled={!selectedFixture}>Painel de Teste</TopBtn>
         <div style={{ flex:1 }} />
         {conflicts.length > 0 && !conflictAcknowledged && (
@@ -930,9 +1146,10 @@ export default function Main({ onOpenFixtures }) {
                 const maxX = Math.max(selection.startX, selection.endX);
                 const minY = Math.min(selection.startY, selection.endY);
                 const maxY = Math.max(selection.startY, selection.endY);
+                const layout = gridMode === 1 ? groupedLayout : null;
                 const selected = show.fixtures.filter(f => {
                   if (!isFixtureEnabled(f)) return false;
-                  const { x, y } = getFixtureGridPosition(f);
+                  const { x, y } = layout ? (layout.positions[f.id] || { x: 0, y: 0 }) : getFixtureGridPosition(f);
                   return x + GRID > minX && x < maxX && y + GRID > minY && y < maxY;
                 }).map(f => f.id);
                 setMultiSelected(selected);
@@ -958,16 +1175,52 @@ export default function Main({ onOpenFixtures }) {
 
             {/* MUNDO — recebe o zoom/pan; aparelhos e seleção escalam juntos */}
             <div style={{ position:'absolute', top:0, left:0, width:0, height:0, transformOrigin:'0 0', transform:`translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})` }}>
+              {/* Títulos de grupo (visíveis apenas no modo agrupado) */}
+              {groupedLayout && groupedLayout.titles.map(t => (
+                <div
+                  key={t.name}
+                  style={{
+                    position:'absolute',
+                    left: t.x,
+                    top: t.y,
+                    height: GRID,
+                    minWidth: GRID * 4,
+                    display:'flex',
+                    alignItems:'center',
+                    paddingLeft: 4,
+                    fontFamily:'Arial, Helvetica, sans-serif',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: t.color,
+                    borderBottom: `1px solid ${t.color}`,
+                    opacity: 0.85,
+                    pointerEvents: 'none',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {t.name}
+                </div>
+              ))}
               {show.fixtures.map(f => {
                 const fixtureEnabled = isFixtureEnabled(f);
                 const isSelected = fixtureEnabled && (f.id === selectedFixtureId || multiSelected.includes(f.id));
-                const liveColor = fixtureEnabled ? getFixtureLiveColor(f, liveValues) : null;
+                // Fixture selecionado: mescla snapshot + liveValues para feedback em tempo real do fader.
+                // Fixture não selecionado: usa apenas o snapshot do universo — preserva a cor ao desmarcar.
+                const colorSource = isSelected ? { ...universeSnapshot, ...liveValues } : universeSnapshot;
+                const liveColor = fixtureEnabled ? getFixtureLiveColor(f, colorSource) : null;
+                const fPos = gridMode === 1
+                  ? (groupedLayout?.positions?.[f.id] || { x: 0, y: 0 })
+                  : getFixtureGridPosition(f);
                 return (
                 <div
                   key={f.id}
                   onMouseDown={(e) => {
                     e.stopPropagation();
                     if (!fixtureEnabled) return;
+                    if (gridMode === 1) {
+                      setSelectedFixtureId(f.id);
+                      return;
+                    }
                     const rect = mesaRef.current.getBoundingClientRect();
                     const wx = (e.clientX - rect.left - view.panX) / view.zoom;
                     const wy = (e.clientY - rect.top - view.panY) / view.zoom;
@@ -995,15 +1248,15 @@ export default function Main({ onOpenFixtures }) {
                   }}
                   style={{
                     position:'absolute',
-                    left: getFixtureGridPosition(f).x,
-                    top: getFixtureGridPosition(f).y,
+                    left: fPos.x,
+                    top: fPos.y,
                     width:GRID, height:GRID,
                     boxSizing:'border-box',
                     background: liveColor ?? (fixtureEnabled ? '#233237' : '#1d2b30'),
                     color:'#ffffff',
                     border: fixtureEnabled ? (isSelected ? '2px solid #b7dede' : '1px solid #5f8588') : '1px dashed #6f8588',
                     opacity: fixtureEnabled ? 1 : 0.42,
-                    borderRadius:0, boxShadow:'none', cursor: fixtureEnabled ? (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab') : 'default',
+                    borderRadius:0, boxShadow:'none', cursor: fixtureEnabled ? (gridMode === 1 ? 'pointer' : (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab')) : 'default',
                     display:'flex', flexDirection:'column',
                     alignItems:'center', justifyContent:'center', gap:1,
                     userSelect:'none', overflow:'hidden',
@@ -1135,10 +1388,8 @@ export default function Main({ onOpenFixtures }) {
                 ['ZFit', 70, handleFitFixtures],
                 ['BO', 92],
                 ['freeZe', 78],
-                ['WPT', 26],
-                ['WPTE', 26],
-                ['WSeq', 26],
-              ].map(([label, height, onClick]) => (
+                ['mode', 78, () => setGridMode(m => m === 0 ? 1 : 0), gridMode === 1],
+              ].map(([label, height, onClick, isActive]) => (
                 <button
                   key={label}
                   type="button"
@@ -1146,9 +1397,9 @@ export default function Main({ onOpenFixtures }) {
                   style={{
                     width:'100%',
                     height,
-                    background:'#24343a',
-                    color:'#ffffff',
-                    border:'1px solid #8db8b8',
+                    background: isActive ? theme.colors.selection : '#24343a',
+                    color: isActive ? theme.colors.accent : '#ffffff',
+                    border: isActive ? `1px solid ${theme.colors.borderStrong}` : '1px solid #8db8b8',
                     borderRadius:0,
                     fontFamily:'Arial, Helvetica, sans-serif',
                     fontSize:10,
@@ -1175,16 +1426,36 @@ export default function Main({ onOpenFixtures }) {
                 // Painel agrupado: agrupa canais por label entre os fixtures selecionados.
                 // Canais com mesmo label em 2+ fixtures → fader único que afeta todos.
                 // Label único ou sem label → fader individual do último fixture clicado.
+                // Funções personalizadas (ex: ALL ON) aparecem quando todos os fixtures
+                // selecionados são do mesmo tipo e esse tipo tem funções registradas.
                 const selFixtures = show.fixtures.filter(f => multiSelected.includes(f.id) && isFixtureEnabled(f));
                 const lastFx = selFixtures.find(f => f.id === selectedFixtureId) || selFixtures[selFixtures.length - 1];
                 if (!lastFx) return null;
+
+                // Funções personalizadas compartilhadas — só exibe se todos do mesmo tipo
+                const allSameType = selFixtures.every(f => getFixtureType(f) === getFixtureType(lastFx));
+                const sharedFunctions = allSameType ? getFixtureCustomFunctions(lastFx) : [];
+                const storedMultiFn = sharedFunctions.length > 0 ? activeCustomFunctionByFixture[lastFx.id] : null;
+                const hasActiveSpeedMulti = sharedFunctions.some(fn => fn.type === 'speed_selector') && (speedMultiplierByFixture[lastFx.id] ?? 1) !== 1;
+                const activeMultiFn = sharedFunctions.some(fn => fn.id === storedMultiFn) ? storedMultiFn : (hasActiveSpeedMulti ? 'speed_multiplier' : null);
+                const multiMenuOpen = customFunctionMenuFixtureId === 'multi';
+
+                // ALL ON para multi-seleção
+                const ribaltaAllOnMulti = activeMultiFn === 'ribalta_all_on';
+                const allLedChannels = ribaltaAllOnMulti
+                  ? selFixtures.flatMap(fx => filterDisabledFixtureChannelList(getRibaltaLedChannels(fx), disabledFixtureChannels))
+                  : [];
+                const allOnMasterValueMulti = allLedChannels.length
+                  ? Math.max(...allLedChannels.map(ch => universeSnapshot[ch] ?? 0))
+                  : 0;
 
                 // Mapeia label → [{fixture, dmxCh}] para todos os fixtures selecionados
                 const labelMap = {};
                 selFixtures.forEach(fx => {
                   const count = fx.channelCount ?? (fx.channels || []).length;
                   for (let i = 0; i < count; i++) {
-                    const lbl = (fx.channels && fx.channels[i]) || '';
+                    const rawLbl = (fx.channels && fx.channels[i]) || '';
+                    const lbl = getRightPanelChannelLabel(fx, rawLbl);
                     if (!lbl) continue;
                     if (!labelMap[lbl]) labelMap[lbl] = [];
                     labelMap[lbl].push({ fixture: fx, dmxCh: (fx.startChannel || 1) + i });
@@ -1196,7 +1467,8 @@ export default function Main({ onOpenFixtures }) {
                 const rows = [];
                 const renderedGroupedLabels = new Set();
                 for (let i = 0; i < lastCount; i++) {
-                  const lbl = (lastFx.channels && lastFx.channels[i]) || '';
+                  const rawLbl = (lastFx.channels && lastFx.channels[i]) || '';
+                  const lbl = getRightPanelChannelLabel(lastFx, rawLbl);
                   const dmxCh = (lastFx.startChannel || 1) + i;
                   if (lbl && labelMap[lbl] && labelMap[lbl].length > 1) {
                     if (renderedGroupedLabels.has(lbl)) continue;
@@ -1209,28 +1481,124 @@ export default function Main({ onOpenFixtures }) {
 
                 return (
                   <div style={{ paddingTop: 8 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', marginBottom:8, background:theme.colors.panelDark, borderTop:`1px solid ${theme.colors.borderSoft}`, borderBottom:`1px solid ${theme.colors.borderSoft}` }}>
-                      <span style={{ fontFamily:theme.typography.fontFamily, fontSize:13, fontWeight:700, color:theme.colors.text }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', marginBottom: (sharedFunctions.length > 0 && multiMenuOpen) ? 0 : 8, background:theme.colors.panelDark, borderTop:`1px solid ${theme.colors.borderSoft}`, borderBottom:`1px solid ${theme.colors.borderSoft}` }}>
+                      {sharedFunctions.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomFunctionMenuFixtureId(prev => prev === 'multi' ? null : 'multi')}
+                          style={{
+                            order:2, minWidth:142, maxWidth:142, height:24, padding:'0 8px',
+                            background: activeMultiFn ? '#7c4a00' : theme.colors.bgDarker,
+                            color: theme.colors.text,
+                            border:`1px solid ${activeMultiFn ? '#ff9500' : theme.colors.border}`,
+                            borderRadius:0, boxSizing:'border-box',
+                            fontFamily:theme.typography.fontFamily, fontSize:10, fontWeight:700, lineHeight:1,
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            cursor:'pointer', boxShadow:'none', outline:'none',
+                            whiteSpace:'nowrap', overflow:'hidden', textOverflow:'clip',
+                          }}
+                        >
+                          Funções personalizadas
+                        </button>
+                      )}
+                      <span style={{ order:1, minWidth:0, flex:1, fontFamily:theme.typography.fontFamily, fontSize:13, fontWeight:700, color:theme.colors.text }}>
                         {selFixtures.length} aparelhos selecionados
                       </span>
                     </div>
+
+                    {multiMenuOpen && sharedFunctions.length > 0 && (
+                      <div style={{ margin:'0 8px 8px', border:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.panelDark }}>
+                        {sharedFunctions.map(fn => {
+                          if (fn.type === 'speed_selector') {
+                            const currentMult = speedMultiplierByFixture[lastFx.id] ?? 1;
+                            return (
+                              <div key={fn.id} style={{ borderBottom:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.bgDarker }}>
+                                <div style={{ height:34, display:'flex', alignItems:'center', padding:'0 8px', gap:6 }}>
+                                  <span style={{ fontFamily:theme.typography.fontFamily, fontSize:11, fontWeight:700, color:theme.colors.text, flex:1 }}>SPEED</span>
+                                  <div style={{ display:'flex', gap:3 }}>
+                                    {SPEED_OPTIONS.map(opt => {
+                                      const isActive = currentMult === opt.value;
+                                      return (
+                                        <button
+                                          key={opt.value}
+                                          type="button"
+                                          onClick={() => setSpeedMultiplierForFixtures(selFixtures, opt.value)}
+                                          style={{
+                                            width:34, height:22, padding:0,
+                                            background: isActive ? theme.colors.selection : theme.colors.panel,
+                                            color: theme.colors.text,
+                                            border:`1px solid ${isActive ? theme.colors.borderStrong : theme.colors.border}`,
+                                            borderRadius:0, boxSizing:'border-box',
+                                            fontFamily:theme.typography.fontFamily, fontSize:10, fontWeight:700,
+                                            cursor:'pointer', outline:'none',
+                                          }}
+                                        >
+                                          {opt.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          const active = activeMultiFn === fn.id;
+                          return (
+                            <button
+                              key={fn.id}
+                              type="button"
+                              onClick={() => {
+                                setActiveCustomFunctionByFixture(prev => {
+                                  const next = { ...prev };
+                                  const allActive = selFixtures.every(f => next[f.id] === fn.id);
+                                  selFixtures.forEach(f => { if (allActive) delete next[f.id]; else next[f.id] = fn.id; });
+                                  return next;
+                                });
+                                setCustomFunctionMenuFixtureId(null);
+                              }}
+                              style={{
+                                width:'100%', height:30, padding:'0 8px',
+                                background: active ? theme.colors.selection : theme.colors.bgDarker,
+                                color: theme.colors.text, border:'none',
+                                borderLeft:`3px solid ${active ? theme.colors.borderStrong : theme.colors.bgDarker}`,
+                                borderBottom:`1px solid ${theme.colors.borderSoft}`,
+                                borderRadius:0, boxSizing:'border-box',
+                                fontFamily:theme.typography.fontFamily, fontSize:12, fontWeight:700,
+                                textAlign:'left', cursor:'pointer', outline:'none',
+                                display:'flex', alignItems:'center',
+                              }}
+                            >
+                              {fn.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {rows.map((row, idx) => {
-                      const val = liveValues[row.dmxCh] ?? 0;
+                      const normalizedLbl = String(row.label || '').toLowerCase();
+                      const maskedByAllOn = ribaltaAllOnMulti && /^led_?[2-8]$/.test(normalizedLbl);
+                      if (maskedByAllOn) return null;
+                      const isAllOnMaster = ribaltaAllOnMulti && /^led_?1$/.test(normalizedLbl);
+                      const val = isAllOnMaster ? allOnMasterValueMulti : (universeSnapshot[row.dmxCh] ?? 0);
                       return (
                         <div key={idx} style={{ marginBottom:10, padding:'0 8px' }}>
                           <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
                             <span style={{ display:'flex', gap:4, alignItems:'center', minWidth:0 }}>
-                              {row.grouped && (
+                              {row.grouped && !isAllOnMaster && (
                                 <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:9, color:theme.colors.accent, fontWeight:700, flexShrink:0 }}>×{row.entries.length}</span>
                               )}
-                              <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, color:'#c8dddd', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{row.label}</span>
+                              <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, color:'#c8dddd', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                {isAllOnMaster ? `${row.label} / ALL ON` : row.label}
+                              </span>
                             </span>
                             <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.sliderThumb.fontSize, fontWeight:theme.typography.sliderThumb.fontWeight, color:theme.colors.primary, minWidth:28, textAlign:'right' }}>{val}</span>
                           </div>
                           <input
                             type="range" min={0} max={255} value={val}
                             onChange={e => {
-                              if (row.grouped) handleGroupedFader(row.entries, e.target.value);
+                              if (isAllOnMaster) handleRibaltaAllOnFaderMulti(selFixtures, e.target.value);
+                              else if (row.grouped) handleGroupedFader(row.entries, e.target.value);
                               else handleFader(row.dmxCh, e.target.value);
                             }}
                             style={{ width:'100%', accentColor:theme.colors.primary, cursor:'pointer', height:4 }}
@@ -1245,7 +1613,8 @@ export default function Main({ onOpenFixtures }) {
                 const fixtureChannels = getFixtureDmxChannels(selectedFixture);
                 const fixtureFunctions = getFixtureCustomFunctions(selectedFixture);
                 const storedCustomFunction = activeCustomFunctionByFixture[selectedFixture.id];
-                const activeCustomFunction = fixtureFunctions.some(fn => fn.id === storedCustomFunction) ? storedCustomFunction : null;
+                const hasActiveSpeedSingle = fixtureFunctions.some(fn => fn.type === 'speed_selector') && (speedMultiplierByFixture[selectedFixture.id] ?? 1) !== 1;
+                const activeCustomFunction = fixtureFunctions.some(fn => fn.id === storedCustomFunction) ? storedCustomFunction : (hasActiveSpeedSingle ? 'speed_multiplier' : null);
                 const customFunctionMenuOpen = customFunctionMenuFixtureId === selectedFixture.id;
                 const ribaltaAllOnActive = isRibaltaAllOnActive(selectedFixture);
                 const ribaltaLedChannels = getRibaltaLedChannels(selectedFixture);
@@ -1265,9 +1634,9 @@ export default function Main({ onOpenFixtures }) {
                           maxWidth:142,
                           height:24,
                           padding:'0 8px',
-                          background:activeCustomFunction ? theme.colors.selection : theme.colors.bgDarker,
+                          background:activeCustomFunction ? '#7c4a00' : theme.colors.bgDarker,
                           color:theme.colors.text,
-                          border:`1px solid ${activeCustomFunction ? theme.colors.borderStrong : theme.colors.border}`,
+                          border:`1px solid ${activeCustomFunction ? '#ff9500' : theme.colors.border}`,
                           borderRadius:0,
                           boxSizing:'border-box',
                           fontFamily:theme.typography.fontFamily,
@@ -1300,6 +1669,39 @@ export default function Main({ onOpenFixtures }) {
                           </div>
                         )}
                         {fixtureFunctions.map(fn => {
+                          if (fn.type === 'speed_selector') {
+                            const currentMult = speedMultiplierByFixture[selectedFixture.id] ?? 1;
+                            return (
+                              <div key={fn.id} style={{ borderBottom:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.bgDarker }}>
+                                <div style={{ height:34, display:'flex', alignItems:'center', padding:'0 8px', gap:6 }}>
+                                  <span style={{ fontFamily:theme.typography.fontFamily, fontSize:11, fontWeight:700, color:theme.colors.text, flex:1 }}>SPEED</span>
+                                  <div style={{ display:'flex', gap:3 }}>
+                                    {SPEED_OPTIONS.map(opt => {
+                                      const isActive = currentMult === opt.value;
+                                      return (
+                                        <button
+                                          key={opt.value}
+                                          type="button"
+                                          onClick={() => setSpeedMultiplierForFixtures([selectedFixture], opt.value)}
+                                          style={{
+                                            width:34, height:22, padding:0,
+                                            background: isActive ? theme.colors.selection : theme.colors.panel,
+                                            color: theme.colors.text,
+                                            border:`1px solid ${isActive ? theme.colors.borderStrong : theme.colors.border}`,
+                                            borderRadius:0, boxSizing:'border-box',
+                                            fontFamily:theme.typography.fontFamily, fontSize:10, fontWeight:700,
+                                            cursor:'pointer', outline:'none',
+                                          }}
+                                        >
+                                          {opt.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
                           const active = activeCustomFunction === fn.id;
                           return (
                             <button
@@ -1335,10 +1737,15 @@ export default function Main({ onOpenFixtures }) {
                     )}
 
                     {fixtureChannels.map((dmxCh, i) => {
-                      const chanName = (selectedFixture.channels && selectedFixture.channels[i]) || `Canal ${i+1}`;
+                      const rawChanName = (selectedFixture.channels && selectedFixture.channels[i]) || `Canal ${i+1}`;
+                      const chanName = getRightPanelChannelLabel(selectedFixture, rawChanName);
                       const normalizedChanName = String(chanName || '').toLowerCase();
                       const maskedByAllOn = ribaltaAllOnActive && /^led_?[2-8]$/.test(normalizedChanName);
                       if (maskedByAllOn) return null;
+                      const isHiddenChannel =
+                        (selectedFixture.id === 'fixture_1780805067518_parled_deluxe_1' && i === 0) ||
+                        (/^fixture_1780805067518_parled_deluxe_[2-9]$/.test(selectedFixture.id) && i === 7);
+                      if (isHiddenChannel) return null;
 
                       const allOnMaster = ribaltaAllOnActive && /^led_?1$/.test(normalizedChanName);
                       const val = allOnMaster ? ribaltaAllOnValue : (liveValues[dmxCh] ?? 0);
@@ -1448,7 +1855,7 @@ export default function Main({ onOpenFixtures }) {
                 borderRadius:0,
                 boxSizing:'border-box',
                 cursor:'pointer',
-                background:'#000000',
+                background:script?.color || '#000000',
                 border: isRunning ? '3px solid #b7dede' : `1px solid ${script ? '#8db8b8' : '#ffffff'}`,
                 color:'#ffffff',
                 boxShadow:'none',
@@ -1475,8 +1882,16 @@ export default function Main({ onOpenFixtures }) {
             zIndex:1000, minWidth:140, boxShadow:'0 4px 12px rgba(0,0,0,0.5)',
           }}
         >
-          <div
-            onClick={() => { setCreateModal({ fkey: scriptMenu.fkey }); setCreateModalTab('novo'); setSelectedExisting(null); setScriptName(''); setScriptMenu(null); }}
+            <div
+              onClick={() => {
+                const currentScript = scripts[scriptMenu.fkey];
+                setCreateModal({ fkey: scriptMenu.fkey });
+                setCreateModalTab('novo');
+                setSelectedExisting(currentScript || null);
+                setScriptName('');
+                setScriptColor(currentScript?.color || DEFAULT_SCRIPT_COLOR);
+                setScriptMenu(null);
+              }}
             style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
             onMouseEnter={e => e.currentTarget.style.background='#383838'}
             onMouseLeave={e => e.currentTarget.style.background='transparent'}
@@ -1516,7 +1931,7 @@ export default function Main({ onOpenFixtures }) {
               <span style={{ fontSize:13, fontWeight:600 }}>
                 {scripts[createModal.fkey] ? 'Editar Script' : 'Script'} — {createModal.fkey}
               </span>
-              <button onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
+              <button onClick={() => { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); setSelectedExisting(null); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
 
             {/* Abas */}
@@ -1549,6 +1964,7 @@ export default function Main({ onOpenFixtures }) {
                     style={{ width:'100%', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, color: scripts[createModal.fkey] ? theme.colors.textDisabled : theme.colors.text, background:theme.colors.surface, padding:theme.spacing.inputPadding, border:'none', borderBottom:`1px solid ${theme.colors.textSecondary}`, outline:'none', boxSizing:'border-box' }}
                   />
                 </div>
+                <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
 
                 {/* Banco de conhecimento — só exibe para script novo */}
                 {!scripts[createModal.fkey] && (
@@ -1608,29 +2024,40 @@ export default function Main({ onOpenFixtures }) {
 
             {/* Conteúdo — Scripts Existentes */}
             {createModalTab === 'existentes' && (
-              <div style={{ padding:'10px 14px', maxHeight:220, overflowY:'auto' }}>
+              <div style={{ padding:'10px 14px', maxHeight:276, overflowY:'auto', display:'flex', flexDirection:'column', gap:10 }}>
                 {existingScripts.length === 0
                   ? <div style={{ fontSize:12, color:'#555', padding:'8px 0' }}>Nenhum script encontrado em /scripts/</div>
-                  : existingScripts.map(s => (
-                    <div
-                      key={s.file}
-                      onClick={() => setSelectedExisting(s)}
-                      style={{
-                        padding:'7px 10px', borderRadius:3, marginBottom:4, cursor:'pointer', fontSize:12,
-                        background: selectedExisting?.file === s.file ? '#383838' : '#1e1e1e',
-                        border: `1px solid ${selectedExisting?.file === s.file ? '#555' : '#2a2a2a'}`,
-                        color: selectedExisting?.file === s.file ? '#fff' : '#bbb',
-                      }}
-                    >{s.name}</div>
-                  ))
+                  : (
+                    <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                      {existingScripts.map(s => (
+                        <div
+                          key={s.file}
+                          onClick={() => { setSelectedExisting(s); setScriptColor(s.color || DEFAULT_SCRIPT_COLOR); }}
+                          style={{
+                            padding:'7px 10px', borderRadius:3, cursor:'pointer', fontSize:12,
+                            background: selectedExisting?.file === s.file ? '#383838' : '#1e1e1e',
+                            border: `1px solid ${selectedExisting?.file === s.file ? '#555' : '#2a2a2a'}`,
+                            color: selectedExisting?.file === s.file ? '#fff' : '#bbb',
+                            display:'flex',
+                            alignItems:'center',
+                            gap:8,
+                          }}
+                        >
+                          <span style={{ width:12, height:12, background:s.color || DEFAULT_SCRIPT_COLOR, border:`1px solid ${theme.colors.borderSoft}`, flexShrink:0 }} />
+                          <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{s.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
                 }
+                <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
               </div>
             )}
 
             {/* Footer */}
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
               <button
-                onClick={() => { setCreateModal(null); setScriptName(''); setSelectedExisting(null); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }}
+                onClick={() => { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); setSelectedExisting(null); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }}
                 style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}
               >Cancelar</button>
 
@@ -1638,8 +2065,16 @@ export default function Main({ onOpenFixtures }) {
                 <button
                   onClick={async () => {
                     if (scripts[createModal.fkey]) {
+                      const colorResult = await window.vp.createScript(createModal.fkey, scripts[createModal.fkey].name, { skipOpenEditor: true, color: scriptColor });
+                      if (colorResult?.ok) {
+                        setScripts(prev => ({
+                          ...prev,
+                          [createModal.fkey]: { ...prev[createModal.fkey], color: colorResult.color || scriptColor }
+                        }));
+                      }
                       await window.vp.editScript(createModal.fkey);
                       setCreateModal(null);
+                      setScriptColor(DEFAULT_SCRIPT_COLOR);
                     } else {
                       handleCreateScript();
                     }
@@ -1656,6 +2091,13 @@ export default function Main({ onOpenFixtures }) {
                   <button
                     onClick={async () => {
                       if (!selectedExisting) return;
+                      const metaResult = await window.vp.createScript(createModal.fkey, selectedExisting.name, { skipOpenEditor: true, color: scriptColor });
+                      if (metaResult?.ok) {
+                        setScripts(prev => ({
+                          ...prev,
+                          [createModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, color: metaResult.color || scriptColor, running: false }
+                        }));
+                      }
                       const result = await window.vp.editScript(createModal.fkey, selectedExisting.file);
                       if (!result?.ok) console.warn('[vp] editScript falhou:', result?.error);
                     }}
@@ -1666,14 +2108,15 @@ export default function Main({ onOpenFixtures }) {
                   <button
                     onClick={async () => {
                       if (!selectedExisting) return;
-                      const result = await window.vp.createScript(createModal.fkey, selectedExisting.name);
+                      const result = await window.vp.createScript(createModal.fkey, selectedExisting.name, { skipOpenEditor: true, color: scriptColor });
                       if (result.ok) {
                         setScripts(prev => ({
                           ...prev,
-                          [createModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, running: false }
+                          [createModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, color: result.color || scriptColor, running: false }
                         }));
                       }
                       setCreateModal(null);
+                      setScriptColor(DEFAULT_SCRIPT_COLOR);
                       setSelectedExisting(null);
                     }}
                     disabled={!selectedExisting}
@@ -1985,7 +2428,7 @@ export default function Main({ onOpenFixtures }) {
                         return next;
                       });
                       window.vp.clearScript(moveModal.sourceFkey).then(() =>
-                        window.vp.createScript(fkey, scripts[moveModal.sourceFkey].name, { skipOpenEditor: true })
+                        window.vp.createScript(fkey, scripts[moveModal.sourceFkey].name, { skipOpenEditor: true, color: scripts[moveModal.sourceFkey].color || DEFAULT_SCRIPT_COLOR })
                       );
                       setMoveModal(null);
                     }}
@@ -1994,7 +2437,7 @@ export default function Main({ onOpenFixtures }) {
                       fontFamily:theme.typography.fontFamily,
                       fontSize:theme.typography.button.fontSize,
                       fontWeight:theme.typography.button.fontWeight,
-                      background: disabled ? 'rgba(0,0,0,.12)' : 'transparent',
+                      background: disabled ? 'rgba(0,0,0,.12)' : (scripts[fkey]?.color || 'transparent'),
                       border:'none', boxShadow:'none',
                       color: disabled ? theme.colors.textDisabled : theme.colors.primary,
                       cursor: disabled ? 'default' : 'pointer',

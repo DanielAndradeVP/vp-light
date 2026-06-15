@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('vp', {
    */
   setChannel: (channel, value) => ipcRenderer.invoke('dmx:setChannel', channel, value),
   setChannelRange: (channels, value) => ipcRenderer.invoke('dmx:setChannelRange', channels, value),
+  setFixtureSpeed: (fixtureId, value) => ipcRenderer.invoke('custom:speed', fixtureId, value),
+  setMovingHeadSpeed: (fixtureId, value) => ipcRenderer.invoke('custom:speed', fixtureId, value),
+  setRibaltaSpeed: (fixtureId, value) => ipcRenderer.invoke('custom:speed', fixtureId, value),
 
   /**
    * Zera todos os 512 canais imediatamente.
@@ -106,6 +109,8 @@ contextBridge.exposeInMainWorld('vp', {
   stopMacro:     (id)      => ipcRenderer.invoke('macro:stop', id),
   nextMacroStep: (id)      => ipcRenderer.invoke('macro:next', id),
   removeMacro:   (id)      => ipcRenderer.invoke('macro:remove', id),
+  macroList:     ()        => ipcRenderer.invoke('macro:list'),
+  macroStatus:   ()        => ipcRenderer.invoke('macro:status'),
 
   // ─── FIXTURES ─────────────────────────────────────────────────────────────
   openFixtureTemplate: () => ipcRenderer.invoke('fixture:openTemplate'),

@@ -10,7 +10,8 @@
 
 const { getUniverse } = require('./universe');
 const { sendArtDMX, closeSocket } = require('./artnet');
-const compositor = require('./compositor');
+const compositor    = require('./compositor');
+const interpolator  = require('./interpolator');
 
 const FPS = 25;
 const INTERVAL_MS = Math.round(1000 / FPS); // 40ms
@@ -25,6 +26,7 @@ function start() {
   }
   frameCount = 0;
   intervalId = setInterval(() => {
+    interpolator.tick();           // avança interpolação de pan/tilt (speed virtual)
     compositor.renderFrame();      // relógio único: compõe as camadas no universo
     sendArtDMX(getUniverse());     // e envia o frame
     frameCount++;

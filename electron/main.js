@@ -13,10 +13,12 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 
-const universe   = require('./engine/universe');
-const engine     = require('./engine/engine');
-const compositor = require('./engine/compositor');
-const show       = require('./show');
+const universe     = require('./engine/universe');
+const engine       = require('./engine/engine');
+const compositor   = require('./engine/compositor');
+const artnet       = require('./engine/artnet');
+const show         = require('./show');
+const interpolator = require('./engine/interpolator');
 
 const isDev = !app.isPackaged;
 const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
@@ -180,6 +182,10 @@ ipcMain.handle('engine:stop', () => {
   return { running: false };
 });
 
+// Retorna as interfaces de rede ativas usadas para envio Art-Net.
+// Útil para diagnóstico e seleção manual de interface no renderer.
+ipcMain.handle('artnet:getInterfaces', () => artnet.getActiveInterfaces());
+
 ipcMain.handle('engine:status', () => ({
   running: engine.isRunning(),
   frames: engine.getFrameCount(),
@@ -196,7 +202,15 @@ ipcMain.handle('dmx:activateScene', (_, channels) => {
 
 ipcMain.handle('dmx:setChannel', (_, channel, value) => {
   if (!isDmxChannelEnabled(channel)) return { ok: true, ignored: true };
-  universe.setChannel(channel, value);
+  if (interpolator.isVirtualChannel(channel)) {
+    // Canal de speed virtual — alimenta o interpolador, não vai ao universo DMX
+    interpolator.setSpeed(channel, value);
+  } else if (interpolator.isControlledChannel(channel)) {
+    // Canal pan/tilt controlado — define o alvo; interpolador avança no próximo tick
+    interpolator.setTarget(channel, value);
+  } else {
+    universe.setChannel(channel, value);
+  }
   return { ok: true };
 });
 
@@ -205,8 +219,41 @@ ipcMain.handle('dmx:setChannelRange', (_, channels, value) => {
     return { ok: false, error: 'channels must be an array' };
   }
   const enabledChannels = channels.filter(channel => isDmxChannelEnabled(channel));
-  enabledChannels.forEach((channel) => universe.setChannel(Number(channel), value));
+  enabledChannels.forEach((channel) => {
+    const ch = Number(channel);
+    if (interpolator.isVirtualChannel(ch)) {
+      interpolator.setSpeed(ch, value);
+    } else if (interpolator.isControlledChannel(ch)) {
+      interpolator.setTarget(ch, value);
+    } else {
+      universe.setChannel(ch, value);
+    }
+  });
   return { ok: true, count: enabledChannels.length };
+});
+
+ipcMain.handle('custom:speed', (_, fixtureId, value) => {
+  const fixture = getShowFixture(fixtureId);
+  if (!fixture) return { ok: false, error: 'fixture not found' };
+  if (!isFixtureEnabled(fixture)) return { ok: true, ignored: true };
+
+  const speedValue = clampDmxValue(value);
+  if (isMovingHeadBeamSpeedFixture(fixture)) {
+    const speedChannel = getFixtureChannelByAlias(fixture, 'virtual_speed')
+      || getFixtureChannelByAlias(fixture, 'speed');
+    if (!speedChannel) return { ok: false, error: 'virtual_speed channel not found' };
+    interpolator.setSpeed(speedChannel, speedValue);
+    return { ok: true, mode: 'virtual', fixtureId: fixture.id, channel: speedChannel, value: speedValue };
+  }
+
+  if (isRibaltaSpeedFixture(fixture)) {
+    const speedChannel = getFixtureChannelByAlias(fixture, 'speed');
+    if (!speedChannel) return { ok: false, error: 'speed channel not found' };
+    universe.setChannel(speedChannel, speedValue);
+    return { ok: true, mode: 'dmx', fixtureId: fixture.id, channel: speedChannel, value: speedValue };
+  }
+
+  return { ok: false, error: 'custom speed is only available for Moving Head Beam 1/2 and Ribalta_1/2' };
 });
 
 ipcMain.handle('dmx:blackout', () => {
@@ -262,6 +309,9 @@ ipcMain.handle('show:load', async (_, filePath) => {
 
     const data = show.loadShow(targetPath);
     loadScriptMeta(); loadPageScriptMeta();
+    initializeOffsets();
+    const startupChannels = show.getStartupChannels();
+    Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
     return { ok: true, show: data, path: targetPath };
   } catch (err) {
     console.error('[main] show:load error:', err.message);
@@ -317,12 +367,12 @@ ipcMain.handle('show:save', (_, showData) => {
       }
     }
 
-    const merged = {
+    const merged = normalizeRuntimeFixtureFields({
       ...showData,
       scripts:      mergedScripts,
       pages:        mergedPages,
       page_scripts: mergedPageScripts,
-    };
+    });
 
     // ── LOG 2: o que vai para o disco ────────────────────────────────────────
     console.log('[show:save] gravando no disco:',
@@ -335,6 +385,7 @@ ipcMain.handle('show:save', (_, showData) => {
     );
 
     show.saveShow(merged);
+    initializeOffsets();
 
     // ── LOG 3: confirmação ────────────────────────────────────────────────────
     console.log('[show:save] ✓ salvo com sucesso');
@@ -460,6 +511,7 @@ function saveScriptMeta() {
   current.scripts = {};
   for (const [fkey, meta] of Object.entries(scriptMeta)) {
     current.scripts[fkey] = { name: meta.name, file: meta.file };
+    if (meta.color) current.scripts[fkey].color = meta.color;
   }
   show.saveShow(current);
 }
@@ -472,9 +524,126 @@ function loadScriptMeta() {
     // ignora caminho absoluto salvo no show (portável entre PCs/clones).
     const file = path.join(SCRIPTS_DIR, `${meta.name}.js`);
     if (fs.existsSync(file)) {
-      scriptMeta[fkey] = { name: meta.name, file };
+      scriptMeta[fkey] = { name: meta.name, file, color: meta.color || '#000000' };
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// OFFSETS DE CANAL (panOffset / tiltOffset por fixture)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Constrói mapa { dmxChannel: offsetValue } lendo panOffset/tiltOffset dos fixtures.
+ * Exemplo: Moving Head Beam 1 com panOffset:44, canal pan=132 → { 132: 44 }
+ */
+function normalizeRuntimeFixtureFields(showData) {
+  if (!showData || !Array.isArray(showData.fixtures)) return showData;
+  return {
+    ...showData,
+    fixtures: showData.fixtures.map((fixture) => {
+      const next = { ...fixture };
+      if (isFixtureNamed(next, 'Moving Head Beam 1')) {
+        next.panOffset = 44;
+        if (next.virtualPanTiltSpeed == null) next.virtualPanTiltSpeed = true;
+      }
+      if (isFixtureNamed(next, 'Moving Head Beam 2')) {
+        delete next.panOffset;
+        if (next.virtualPanTiltSpeed == null) next.virtualPanTiltSpeed = true;
+      }
+      return next;
+    }),
+  };
+}
+
+function buildChannelOffsetMap() {
+  const current = show.getShow();
+  const fixtures = current?.fixtures || [];
+  const map = {};
+  const ribalta1 = fixtures.find(fx => isFixtureNamed(fx, 'Ribalta_1'));
+  const ribalta1TiltOffset = Number(ribalta1?.tiltOffset) || 0;
+  for (const fx of fixtures) {
+    if (!isFixtureEnabled(fx)) continue;
+    const panOffset  = getFixturePanOffset(fx);
+    const tiltOffset = isFixtureNamed(fx, 'Ribalta_2')
+      ? ribalta1TiltOffset + 3
+      : Number(fx.tiltOffset) || 0;
+    if (!panOffset && !tiltOffset) continue;
+    const start    = Number(fx.startChannel) || 1;
+    const channels = Array.isArray(fx.channels) ? fx.channels : [];
+    channels.forEach((alias, i) => {
+      const ch   = start + i;
+      const norm = normalizeAlias(alias);
+      if (panOffset  && norm === 'pan')  map[ch] = (map[ch] || 0) + panOffset;
+      if (tiltOffset && norm === 'tilt') map[ch] = (map[ch] || 0) + tiltOffset;
+    });
+  }
+  return map;
+}
+
+function getFixturePanOffset(fixture) {
+  if (isFixtureNamed(fixture, 'Moving Head Beam 1')) return 44;
+  if (isFixtureNamed(fixture, 'Moving Head Beam 2')) return 0;
+  if (fixture?.panOffset == null || fixture?.panOffset === '') {
+    return 0;
+  }
+  const panOffset = Number(fixture?.panOffset);
+  if (Number.isFinite(panOffset)) return panOffset;
+  return 0;
+}
+
+function isFixtureNamed(fixture, name) {
+  return normalizeAlias(fixture?.name) === normalizeAlias(name);
+}
+
+/**
+ * Aplica o mapa de offsets no universe e inicializa cada canal de offset com
+ * valor lógico 0 (o universe grava físico = offset). Chamado após carregar show.
+ * Isso garante que o fader aparece em 0 para o operador desde o início,
+ * mas o fixture já recebe o offset físico correto via DMX.
+ * Também reconfigura o interpolador de speed virtual.
+ */
+function initializeOffsets() {
+  const offsetMap = buildChannelOffsetMap();
+  universe.setChannelOffsets(offsetMap);
+  for (const [ch, offset] of Object.entries(offsetMap)) {
+    if (offset) universe.setChannel(Number(ch), 0); // lógico 0 → físico = offset
+  }
+  interpolator.configure(buildInterpolatorConfig());
+}
+
+/**
+ * Constrói configuração para o interpolador de speed virtual.
+ * Retorna array de { fixtureId, speedChannel, panChannel, tiltChannel }
+ * para cada fixture com virtualPanTiltSpeed: true.
+ */
+function buildInterpolatorConfig() {
+  const current  = show.getShow();
+  const fixtures = current?.fixtures || [];
+  const configs  = [];
+
+  for (const fx of fixtures) {
+    if (!isFixtureEnabled(fx)) continue;
+    if (!fx.virtualPanTiltSpeed) continue;
+
+    const start    = Number(fx.startChannel) || 1;
+    const channels = Array.isArray(fx.channels) ? fx.channels : [];
+    let speedChannel = null, panChannel = null, tiltChannel = null;
+
+    channels.forEach((alias, i) => {
+      const norm = normalizeAlias(alias);
+      const ch   = start + i;
+      if (norm === 'virtual_speed') speedChannel = ch;
+      if (norm === 'pan')           panChannel   = ch;
+      if (norm === 'tilt')          tiltChannel  = ch;
+    });
+
+    if (speedChannel) {
+      configs.push({ fixtureId: fx.id, speedChannel, panChannel, tiltChannel });
+    }
+  }
+
+  return configs;
 }
 
 // Normaliza um rótulo de canal para comparação: minúsculo, sem acento, sem
@@ -544,13 +713,47 @@ function filterDisabledFixtureScenes(scenesMap) {
 // Resolve o canal DMX real (1-based) de um alias dentro de um fixture do show
 // carregado em memória. Ex.: getFixtureChannel("fixture_123", "strobo") → 2.
 // Retorna null se o fixture não existir ou o alias não estiver mapeado.
-function getFixtureChannel(fixtureId, alias) {
+function clampDmxValue(value) {
+  return Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+}
+
+function getShowFixture(fixtureIdOrName) {
   const current = show.getShow();
-  const fixture = current?.fixtures?.find(f => f.id === fixtureId);
-  if (!fixture || !isFixtureEnabled(fixture) || !Array.isArray(fixture.channels)) return null;
+  const target = String(fixtureIdOrName ?? '');
+  const normalizedTarget = normalizeAlias(target);
+  return current?.fixtures?.find(fixture =>
+    fixture.id === target || normalizeAlias(fixture.name) === normalizedTarget
+  ) || null;
+}
+
+function getFixtureType(fixture) {
+  return normalizeAlias(fixture?.fixtureType || fixture?.type);
+}
+
+function isMovingHeadBeamSpeedFixture(fixture) {
+  const name = normalizeAlias(fixture?.name);
+  return getFixtureType(fixture) === 'moving_head_beam'
+    && (name === 'moving head beam 1' || name === 'moving head beam 2');
+}
+
+function isRibaltaSpeedFixture(fixture) {
+  const name = normalizeAlias(fixture?.name);
+  return getFixtureType(fixture) === 'ribalta'
+    && (name === 'ribalta_1' || name === 'ribalta_2');
+}
+
+function getFixtureChannelByAlias(fixture, alias) {
+  if (!fixture || !Array.isArray(fixture.channels)) return null;
   const target = normalizeAlias(alias);
   const index = fixture.channels.findIndex(ch => normalizeAlias(ch) === target);
-  return index === -1 ? null : fixture.startChannel + index;
+  return index === -1 ? null : (Number(fixture.startChannel) || 1) + index;
+}
+
+// Resolve o canal DMX real (1-based) de um alias dentro de um fixture do show.
+function getFixtureChannel(fixtureId, alias) {
+  const fixture = getShowFixture(fixtureId);
+  if (!fixture || !isFixtureEnabled(fixture)) return null;
+  return getFixtureChannelByAlias(fixture, alias);
 }
 
 // Compila um arquivo de script numa CAMADA { buffer, touched, context } pronta para o compositor.
@@ -582,11 +785,13 @@ function compileLayer(filePath) {
 ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
   const file = path.join(SCRIPTS_DIR, `${name}.js`);
   const groups = Array.isArray(options.groups) ? options.groups : [];
-  console.log('[script:create] fkey=%s name=%s groups=%j fileExists=%s', fkey, name, groups, fs.existsSync(file));
+  const color = typeof options.color === 'string' ? options.color : '#000000';
+  const fileAlreadyExists = fs.existsSync(file);
+  console.log('[script:create] fkey=%s name=%s groups=%j fileExists=%s', fkey, name, groups, fileAlreadyExists);
 
   // Sempre (re)escreve quando grupos foram selecionados — garante injeção do banco.
   // Sem grupos: só cria se o arquivo ainda não existe (comportamento original).
-  const shouldWrite = groups.length > 0 || !fs.existsSync(file);
+  const shouldWrite = groups.length > 0 || !fileAlreadyExists;
 
   if (shouldWrite) {
     let knowledgeBlock = '';
@@ -622,10 +827,10 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
       `}`,
     ].join('\n'), 'utf-8');
   }
-  scriptMeta[fkey] = { name, file };
+  scriptMeta[fkey] = { name, file, color };
   saveScriptMeta();
-  if (!options.skipOpenEditor) { await openScriptInVSCode(file); }
-  return { ok: true, name, file };
+  if (!options.skipOpenEditor && !fileAlreadyExists) { await openScriptInVSCode(file); }
+  return { ok: true, name, file, color };
 });
 
 ipcMain.handle('script:edit', async (_, fkey, filePath) => {
@@ -701,9 +906,16 @@ ipcMain.handle('script:toggle', (_, fkey) => {
 
 ipcMain.handle('script:list', () => {
   try {
+    const colorByName = {};
+    for (const meta of Object.values(scriptMeta)) {
+      if (meta?.name && meta?.color) colorByName[meta.name] = meta.color;
+    }
     const files = fs.readdirSync(SCRIPTS_DIR)
       .filter(f => f.endsWith('.js'))
-      .map(f => ({ name: f.replace('.js', ''), file: path.join(SCRIPTS_DIR, f) }));
+      .map(f => {
+        const name = f.replace('.js', '');
+        return { name, file: path.join(SCRIPTS_DIR, f), color: colorByName[name] || '#000000' };
+      });
     return { ok: true, files };
   } catch (e) {
     return { ok: false, files: [] };
@@ -886,28 +1098,69 @@ ipcMain.handle('page_script:getAll', (_, pageId) => {
 const FRAME_MS = 40;
 function msToFrames(ms) { return Math.max(0, Math.round((Number(ms) || 0) / FRAME_MS)); }
 
-// def = {
-//   steps: [ { name, durationMs|null (null/'infinite' = até trigger), fadeInMs, fadeOutMs, overlapMs } ],
-//   mergeMode: 'htp' | 'linear',
-//   loop: bool
-// }
+// Registro de definições de macro (serializável — persistido no show.json em `macros`).
+// def = { id, name, mergeMode: 'htp'|'linear', loop, steps: [ { script, durationMs|null, fadeInMs, fadeOutMs, overlapMs } ] }
+// durationMs null/'infinite' = passo segura até nextMacroStep.
+const macroDefs = {};
+
+function normalizeMacroDef(id, def) {
+  return {
+    id,
+    name: def.name || id,
+    mergeMode: def.mergeMode === 'linear' ? 'linear' : 'htp',
+    loop: !!def.loop,
+    steps: (Array.isArray(def.steps) ? def.steps : []).map(s => ({
+      script: s.script ?? s.name ?? '',
+      durationMs: (s.durationMs == null || s.durationMs === 'infinite') ? null : Number(s.durationMs),
+      fadeInMs: Number(s.fadeInMs) || 0,
+      fadeOutMs: Number(s.fadeOutMs) || 0,
+      overlapMs: Number(s.overlapMs) || 0,
+    })),
+  };
+}
+
+// Recria a macro no compositor a partir da definição (factory compila o script no disparo).
+function instantiateMacro(norm) {
+  const steps = norm.steps.map(s => {
+    const file = path.join(SCRIPTS_DIR, `${s.script}.js`);
+    return {
+      makeLayer: () => compileLayer(file),
+      durationFrames: s.durationMs == null ? Infinity : Math.max(1, msToFrames(s.durationMs)),
+      fadeInFrames: msToFrames(s.fadeInMs),
+      fadeOutFrames: msToFrames(s.fadeOutMs),
+      overlapFrames: msToFrames(s.overlapMs),
+    };
+  });
+  compositor.createMacro(norm.id, steps, { mergeMode: norm.mergeMode, loop: norm.loop });
+}
+
+function saveMacros() {
+  const current = show.getShow();
+  if (!current) return;
+  current.macros = Object.values(macroDefs);
+  show.saveShow(current);
+}
+
+// Carrega as macros do show na inicialização e as recria no compositor (sem disparar).
+function loadMacros() {
+  const current = show.getShow();
+  if (!current || !Array.isArray(current.macros)) return;
+  for (const def of current.macros) {
+    if (!def || !def.id) continue;
+    const norm = normalizeMacroDef(def.id, def);
+    macroDefs[def.id] = norm;
+    try { instantiateMacro(norm); } catch (e) { console.error('[macro] falha ao recriar', def.id, e.message); }
+  }
+}
+
 ipcMain.handle('macro:create', (_, id, def = {}) => {
   try {
     if (!id) return { ok: false, error: 'id da macro obrigatório' };
-    const stepsIn = Array.isArray(def.steps) ? def.steps : [];
-    const steps = stepsIn.map(s => {
-      const file = path.join(SCRIPTS_DIR, `${s.name}.js`);
-      const infinite = s.durationMs == null || s.durationMs === 'infinite';
-      return {
-        makeLayer: () => compileLayer(file),  // compila no momento do disparo (recarrega do disco)
-        durationFrames: infinite ? Infinity : Math.max(1, msToFrames(s.durationMs)),
-        fadeInFrames: msToFrames(s.fadeInMs),
-        fadeOutFrames: msToFrames(s.fadeOutMs),
-        overlapFrames: msToFrames(s.overlapMs),
-      };
-    });
-    compositor.createMacro(id, steps, { mergeMode: def.mergeMode, loop: def.loop });
-    return { ok: true, steps: steps.length };
+    const norm = normalizeMacroDef(id, def);
+    macroDefs[id] = norm;
+    instantiateMacro(norm);
+    saveMacros();
+    return { ok: true, steps: norm.steps.length };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -916,7 +1169,16 @@ ipcMain.handle('macro:create', (_, id, def = {}) => {
 ipcMain.handle('macro:start',  (_, id) => ({ ok: compositor.startMacro(id) }));
 ipcMain.handle('macro:stop',   (_, id) => ({ ok: compositor.stopMacro(id) }));
 ipcMain.handle('macro:next',   (_, id) => ({ ok: compositor.triggerNextStep(id) }));
-ipcMain.handle('macro:remove', (_, id) => ({ ok: compositor.removeMacro(id) }));
+ipcMain.handle('macro:remove', (_, id) => {
+  const ok = compositor.removeMacro(id);
+  delete macroDefs[id];
+  saveMacros();
+  return { ok };
+});
+
+// Lista as macros definidas (para a UI) e o status da macro ativa (para polling).
+ipcMain.handle('macro:list',   () => Object.values(macroDefs));
+ipcMain.handle('macro:status', () => compositor.getActiveMacroStatus());
 
 // ─────────────────────────────────────────────────────────────
 // IPC HANDLERS — FIXTURES
@@ -961,7 +1223,10 @@ app.whenReady().then(() => {
     try {
       show.loadShow(DEFAULT_SHOW);
       console.log('[main] show padrao carregado');
-      loadScriptMeta(); loadPageScriptMeta();
+      loadScriptMeta(); loadPageScriptMeta(); loadMacros();
+      initializeOffsets();
+      const startupChannels = show.getStartupChannels();
+      Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
       console.log('[main] scripts carregados:', Object.keys(scriptMeta));
     } catch (e) {
       console.warn('[main] falha ao carregar show padrao:', e.message);

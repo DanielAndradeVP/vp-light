@@ -156,8 +156,37 @@ export function ShowProvider({ children }) {
     const scene = page?.scenes?.[sceneKey];
     if (!scene) return;
     const disabledChannels = getDisabledFixtureChannelSet(show.fixtures);
-    await window.vp.activateScene(filterDisabledFixtureChannels(scene.channels || {}, disabledChannels));
-    setActiveScenes(prev => prev.includes(sceneKey) ? prev : [...prev, sceneKey]);
+    const channels = filterDisabledFixtureChannels(scene.channels || {}, disabledChannels);
+    const scenesMap = { [sceneKey]: { name: scene.name || sceneKey, channels } };
+    window.vp.setActiveSceneChannels(channels);
+    window.vp.setActiveScenes(scenesMap);
+    await window.vp.restoreState(channels);
+    setActiveScenes(prev => (prev.length === 1 && prev[0] === sceneKey) ? prev : [sceneKey]);
+  }, [show, currentPage]);
+
+  // Cena normal: sempre uma ativa. Clicar na cena atual nao desliga;
+  // clicar em outra troca a cena ativa sem tocar na logica de scripts/page-scripts.
+  const toggleScene = useCallback((sceneKey) => {
+    const page = show?.pages?.[currentPage];
+    const scene = page?.scenes?.[sceneKey];
+    if (!scene?.channels || Object.keys(scene.channels).length === 0) return;
+    const disabledChs = getDisabledFixtureChannelSet(show.fixtures);
+    const channels = filterDisabledFixtureChannels(scene.channels, disabledChs);
+    const scenesMap = { [sceneKey]: { name: scene.name || sceneKey, channels } };
+
+    setActiveScenes(prev => {
+      if (prev.includes(sceneKey)) {
+        if (prev.length === 1) return prev;
+        window.vp.setActiveSceneChannels(channels);
+        window.vp.setActiveScenes(scenesMap);
+        window.vp.restoreState(channels);
+        return [sceneKey];
+      }
+      window.vp.setActiveSceneChannels(channels);
+      window.vp.setActiveScenes(scenesMap);
+      window.vp.restoreState(channels);
+      return [sceneKey];
+    });
   }, [show, currentPage]);
 
   const blackout = useCallback(async () => {
@@ -165,7 +194,7 @@ export function ShowProvider({ children }) {
     setActiveScenes([]);
   }, []);
 
-  const updateScene = useCallback((pageId, sceneKey, sceneData) => {
+  const updateScene = useCallback(async (pageId, sceneKey, sceneData) => {
     setShow(prev => {
       const next = JSON.parse(JSON.stringify(prev));
       if (!next.pages[pageId]) next.pages[pageId] = { name: `Página ${pageId}`, scenes: {} };
@@ -176,7 +205,7 @@ export function ShowProvider({ children }) {
       }
       return next;
     });
-    window.vp.updateScene(pageId, sceneKey, sceneData);
+    return window.vp.updateScene(pageId, sceneKey, sceneData);
   }, []);
 
   const disabledFixtureChannels = useMemo(() => getDisabledFixtureChannelSet(show.fixtures), [show.fixtures]);
@@ -195,7 +224,7 @@ export function ShowProvider({ children }) {
       pages, currentPageData,
       saveShow, loadShow,
       addFixture, updateFixture, removeFixture, duplicateFixture,
-      activateScene, blackout,
+      activateScene, toggleScene, blackout,
       updateScene,
       setShow,
     }}>

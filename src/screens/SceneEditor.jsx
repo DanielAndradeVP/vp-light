@@ -101,12 +101,12 @@ export default function SceneEditor({ pageId, sceneKey, onClose }) {
     handleChange(dmxChannel, value);
   }, [handleChange]);
 
-  // Preview ao vivo: quando abre o editor, aplica o estado atual
+  // Preview ao vivo: quando abre o editor, limpa o universo e reaplica apenas a cena
   useEffect(() => {
     if (existingScene?.channels) {
-      window.vp.activateScene(existingScene.channels);
+      window.vp.restoreState(existingScene.channels);
     }
-  }, []); // eslint-disable-line
+  }, [existingScene?.channels]);
 
   // Blackout ao fechar (sem salvar)
   const handleClose = useCallback(() => {
