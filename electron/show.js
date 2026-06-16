@@ -5,11 +5,40 @@
 
 const fs = require('fs');
 const path = require('path');
+const { normalizeFixtureOffsets } = require('./fixtureOffsets');
 
 // Show carregado em memória
 let currentShow = null;
 let currentShowPath = null;
 const FIXTURE_GRID_SIZE = 40;
+const MAX_PAGE = 10;
+
+function createDefaultPages() {
+  const pages = {};
+  for (let page = 1; page <= MAX_PAGE; page += 1) {
+    pages[String(page)] = { name: `Página ${page}`, scenes: {} };
+  }
+  return pages;
+}
+
+function normalizePages(showData) {
+  if (!showData || typeof showData !== 'object') return showData;
+  const pages = { ...createDefaultPages(), ...(showData.pages || {}) };
+  for (const [pageId, pageData] of Object.entries(pages)) {
+    pages[pageId] = {
+      name: pageData?.name || `Página ${pageId}`,
+      scenes: pageData?.scenes || {},
+    };
+  }
+  return { ...showData, pages };
+}
+
+function isEmptyScene(sceneData) {
+  return !sceneData?.name
+    && !sceneData?.color
+    && Object.keys(sceneData?.channels || {}).length === 0
+    && Object.keys(sceneData?.customFunctions || {}).length === 0;
+}
 
 function snapFixtureGridValue(value) {
   const number = Number(value);
@@ -21,34 +50,12 @@ function normalizeFixturePositions(showData) {
   if (!showData || !Array.isArray(showData.fixtures)) return showData;
   return {
     ...showData,
-    fixtures: showData.fixtures.map(fixture => normalizeFixtureCalibration({
+    fixtures: showData.fixtures.map(fixture => normalizeFixtureOffsets({
       ...fixture,
       posX: snapFixtureGridValue(fixture?.posX),
       posY: snapFixtureGridValue(fixture?.posY),
     })),
   };
-}
-
-function normalizeFixtureCalibration(fixture) {
-  const next = { ...fixture };
-
-  if (isFixtureNamed(next, 'Moving Head Beam 1')) {
-    next.panOffset = 44;
-  }
-
-  if (isFixtureNamed(next, 'Moving Head Beam 2')) {
-    delete next.panOffset;
-  }
-
-  if (isFixtureNamed(next, 'Ribalta_1')) {
-    next.tiltOffset = 23;
-  }
-
-  if (isFixtureNamed(next, 'Ribalta_2')) {
-    delete next.tiltOffset;
-  }
-
-  return next;
 }
 
 /**
@@ -116,7 +123,7 @@ function loadShow(filePath) {
       show.version === undefined) {
     throw new Error(`Arquivo inválido: "${filePath}" não contém version, fixtures e pages obrigatórios`);
   }
-  show = normalizeFixturePositions(show);
+  show = normalizePages(normalizeFixturePositions(show));
   currentShow = show;
   currentShowPath = filePath;
   console.log(`[show] carregado: ${filePath}`);
@@ -131,8 +138,8 @@ function loadShow(filePath) {
  * @returns {boolean} true se salvou com sucesso
  */
 function saveShow(showData) {
-  showData = normalizeFixturePositions(showData);
-  currentShow = normalizeFixturePositions(currentShow);
+  showData = normalizePages(normalizeFixturePositions(showData));
+  currentShow = normalizePages(normalizeFixturePositions(currentShow));
   // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
   validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) {
@@ -158,8 +165,8 @@ function saveShow(showData) {
  * Salva o show em um novo caminho (Salvar Como).
  */
 function saveShowAs(filePath, showData) {
-  showData = normalizeFixturePositions(showData);
-  currentShow = normalizeFixturePositions(currentShow);
+  showData = normalizePages(normalizeFixturePositions(showData));
+  currentShow = normalizePages(normalizeFixturePositions(currentShow));
   // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
   validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) currentShow = showData;
@@ -182,10 +189,6 @@ function getShow() {
 
 function normalizeAlias(label) {
   return String(label ?? '').trim().toLowerCase();
-}
-
-function isFixtureNamed(fixture, name) {
-  return normalizeAlias(fixture?.name) === normalizeAlias(name);
 }
 
 function getFixtureChannelByAlias(fixture, alias) {
@@ -216,10 +219,15 @@ function getStartupChannels() {
  */
 function updateScene(pageId, sceneKey, sceneData) {
   if (!currentShow) throw new Error('Nenhum show carregado');
-  if (!currentShow.pages[pageId]) {
-    currentShow.pages[pageId] = { name: `Página ${pageId}`, scenes: {} };
+  const normalizedPageId = String(Math.max(1, Number.parseInt(pageId, 10) || 1));
+  if (!currentShow.pages[normalizedPageId]) {
+    currentShow.pages[normalizedPageId] = { name: `Página ${normalizedPageId}`, scenes: {} };
   }
-  currentShow.pages[pageId].scenes[sceneKey] = sceneData;
+  if (isEmptyScene(sceneData)) {
+    delete currentShow.pages[normalizedPageId].scenes[sceneKey];
+  } else {
+    currentShow.pages[normalizedPageId].scenes[sceneKey] = sceneData;
+  }
 }
 
 module.exports = { loadShow, saveShow, saveShowAs, getShow, getStartupChannels, updateScene, validateFixtures };

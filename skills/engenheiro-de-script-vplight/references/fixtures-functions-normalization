@@ -1,0 +1,330 @@
+# Fixture Functions Normalization — vp-light
+
+## Objetivo
+
+Este documento define a regra de normalização de funções por fixture no vp-light.
+
+A normalização existe para permitir que o usuário controle aparelhos diferentes usando o mesmo nome lógico de função, mesmo quando cada aparelho exige valores DMX diferentes para produzir o mesmo resultado visual.
+
+Exemplo:
+
+* Moving Head Beam 1:
+
+  * `color_wheel = 40` produz amarelo.
+* Moving Head Beam 2:
+
+  * `color_wheel = 20` produz amarelo.
+
+No sistema, o usuário deve poder pedir `yellow` para os dois aparelhos, e o vp-light deve converter esse valor lógico para o valor DMX correto de cada fixture.
+
+---
+
+## Conceito principal
+
+Uma função normalizada é uma camada de tradução entre:
+
+```txt
+função lógica do usuário → valor DMX real do fixture
+```
+
+Exemplo:
+
+```txt
+yellow → Moving Head Beam 1 → color_wheel = 40
+yellow → Moving Head Beam 2 → color_wheel = 20
+```
+
+A normalização não altera o canal físico do aparelho.
+
+Ela apenas converte o valor lógico para o valor DMX correto dentro da mesma propriedade/canal.
+
+---
+
+## Escopo da normalização
+
+A normalização deve ser aplicada somente em funções explicitamente mapeadas.
+
+Exemplo de funções que podem ser normalizadas:
+
+* `color_wheel`
+* `gobo_wheel`
+* `prism`
+* `frost`
+* `strobo`
+* outras funções com valores diferentes entre aparelhos
+
+Inicialmente, o foco é normalizar a função:
+
+```txt
+color_wheel
+```
+
+para os fixtures:
+
+```txt
+Moving Head Beam 1
+Moving Head Beam 2
+```
+
+---
+
+## Regra de isolamento
+
+A normalização deve ser extremamente isolada.
+
+Ela não deve alterar:
+
+* canais DMX não relacionados
+* aliases globais existentes
+* cenas já salvas sem uso de função normalizada
+* scripts que escrevem valores DMX brutos diretamente
+* compositor
+* Art-Net
+* universe
+* endereçamento DMX dos fixtures
+
+A normalização deve atuar apenas quando o fluxo pedir explicitamente uma função normalizada.
+
+---
+
+## Identificação dos fixtures
+
+A normalização deve usar o `fixtureId` como chave principal, e não apenas o nome visual do aparelho.
+
+Motivo: o nome do fixture pode mudar na interface, mas o `id` deve continuar sendo a referência estável.
+
+Exemplo de fixtures:
+
+```txt
+fixtureId: fixture_moving_head_beam_1
+name: Moving Head Beam 1
+function: color_wheel
+
+fixtureId: fixture_moving_head_beam_2
+name: Moving Head Beam 2
+function: color_wheel
+```
+
+Caso os ids reais sejam diferentes no `vp.show.json`, usar os ids reais definidos no catálogo atual de fixtures.
+
+---
+
+## Estrutura lógica recomendada
+
+A estrutura de normalização deve seguir este formato conceitual:
+
+```txt
+function: color_wheel
+normalizedValue: yellow
+fixtureValues:
+  Moving Head Beam 1 → 40
+  Moving Head Beam 2 → 20
+```
+
+Representação conceitual:
+
+```txt
+color_wheel:
+  yellow:
+    moving_head_beam_1: 40
+    moving_head_beam_2: 20
+```
+
+---
+
+## Exemplo de mapa de normalização
+
+```txt
+function: color_wheel
+
+normalized values:
+
+yellow:
+  Moving Head Beam 1: 40
+  Moving Head Beam 2: 20
+
+green:
+  Moving Head Beam 1: valor a mapear
+  Moving Head Beam 2: valor a mapear
+
+blue:
+  Moving Head Beam 1: valor a mapear
+  Moving Head Beam 2: valor a mapear
+
+white:
+  Moving Head Beam 1: valor a mapear
+  Moving Head Beam 2: valor a mapear
+```
+
+---
+
+## Entrada esperada da função personalizada
+
+A função personalizada deve receber:
+
+```txt
+fixtureId
+functionName
+normalizedValue
+```
+
+Exemplo:
+
+```txt
+fixtureId: Moving Head Beam 2
+functionName: color_wheel
+normalizedValue: yellow
+```
+
+---
+
+## Saída esperada
+
+A função personalizada deve resolver:
+
+```txt
+canal DMX real do fixture
+valor DMX normalizado para aquele fixture
+```
+
+Exemplo:
+
+```txt
+Moving Head Beam 2
+functionName: color_wheel
+normalizedValue: yellow
+
+resultado:
+channel: canal real do color_wheel no Moving Head Beam 2
+value: 20
+```
+
+---
+
+## Exemplo prático
+
+Pedido lógico do usuário:
+
+```txt
+Aplicar yellow nos dois Moving Heads
+```
+
+Resultado esperado:
+
+```txt
+Moving Head Beam 1:
+  color_wheel = 40
+
+Moving Head Beam 2:
+  color_wheel = 20
+```
+
+Visual esperado:
+
+```txt
+Os dois aparelhos devem mostrar amarelo ao mesmo tempo.
+```
+
+---
+
+## Comportamento em execução ao vivo
+
+Durante a execução em tempo real, a normalização deve converter o valor antes de enviar o valor final para o universo DMX.
+
+Fluxo conceitual:
+
+```txt
+usuário escolhe yellow
+↓
+sistema identifica fixtureId
+↓
+sistema identifica função color_wheel
+↓
+sistema consulta o mapa de normalização
+↓
+sistema encontra o valor correto daquele fixture
+↓
+sistema aplica o valor DMX no canal real do fixture
+```
+
+---
+
+## Comportamento quando não houver mapeamento
+
+Se o fixture não tiver mapeamento para a função normalizada solicitada, o sistema não deve inventar valor.
+
+Comportamento seguro recomendado:
+
+```txt
+não aplicar alteração naquele fixture
+registrar aviso no log
+manter o valor atual do canal
+```
+
+Exemplo:
+
+```txt
+Pedido: color_wheel = yellow
+Fixture: Moving Head Beam 3
+Mapeamento inexistente
+
+Resultado:
+não alterar o color_wheel do Moving Head Beam 3
+```
+
+---
+
+## Regras importantes
+
+1. A normalização deve ser por fixture.
+2. A normalização deve ser por função.
+3. A normalização deve ser por valor lógico.
+4. O mesmo valor lógico pode gerar valores DMX diferentes por fixture.
+5. A normalização não deve alterar o endereço DMX.
+6. A normalização não deve alterar o alias do canal.
+7. A normalização não deve mudar scripts antigos que usam valores DMX brutos.
+8. A normalização deve ser usada apenas por fluxos que chamem função personalizada normalizada.
+
+---
+
+## Primeiro caso real confirmado
+
+Função:
+
+```txt
+color_wheel
+```
+
+Valor lógico:
+
+```txt
+yellow
+```
+
+Fixtures:
+
+```txt
+Moving Head Beam 1 → color_wheel = 40
+Moving Head Beam 2 → color_wheel = 20
+```
+
+Resultado visual esperado:
+
+```txt
+Os dois Moving Heads devem exibir amarelo, mesmo usando valores DMX diferentes.
+```
+
+---
+
+## Critério de sucesso
+
+Ao usar a função personalizada de normalização para aplicar `yellow` em Moving Head Beam 1 e Moving Head Beam 2:
+
+```txt
+Moving Head Beam 1 deve receber color_wheel = 40
+Moving Head Beam 2 deve receber color_wheel = 20
+```
+
+Os dois aparelhos devem mostrar amarelo ao mesmo tempo.
+
+A implementação deve continuar permitindo o uso de valores DMX brutos quando o usuário ou script quiser controlar o canal manualmente.

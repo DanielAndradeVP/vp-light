@@ -3,7 +3,7 @@
  * MACRO + Disparo rápido (Scripts F1-F12 / Page-Scripts / Cenas)
  */
 import React, { useState, useEffect } from 'react';
-import { useShow } from '../store/showStore.js';
+import { activeSceneMatches, useShow } from '../store/showStore.js';
 import theme from '../theme.js';
 
 const C = {
@@ -553,7 +553,7 @@ function QuickDispatchPanel({ currentPage }) {
               {SCENE_KEYS.map(key => {
                 const scene  = scenes[key];
                 if (!scene?.name) return null;
-                const isActive = activeScenes.includes(key);
+                const isActive = activeScenes.some(activeRef => activeSceneMatches(activeRef, currentPage, key));
                 return (
                   <button key={key} onClick={() => toggleScene(key)} style={{
                     padding:      `${sp.lg}px ${sp.sm}px`,

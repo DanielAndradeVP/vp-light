@@ -19,6 +19,10 @@ const compositor   = require('./engine/compositor');
 const artnet       = require('./engine/artnet');
 const show         = require('./show');
 const interpolator = require('./engine/interpolator');
+const {
+  buildChannelOffsetMap: buildFixtureChannelOffsetMap,
+  normalizeShowFixtureOffsets,
+} = require('./fixtureOffsets');
 
 const isDev = !app.isPackaged;
 const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
@@ -145,7 +149,7 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    // mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
@@ -336,15 +340,10 @@ ipcMain.handle('show:save', (_, showData) => {
     // Páginas: renderer é fonte da verdade.
     const mergedPages = { ...(currentShow?.pages || {}), ...showData.pages };
 
-    // page_scripts: pageScriptMeta do main vence (fonte de verdade em runtime).
+    // page_scripts: pageScriptMeta do main e a fonte de verdade em runtime.
+    // Nao herdar do renderer/disco aqui: entradas removidas via page_script:clear
+    // nao podem voltar em saves completos posteriores.
     const mergedPageScripts = {};
-    for (const [pgId, pgData] of Object.entries(currentShow?.page_scripts || {})) {
-      mergedPageScripts[pgId] = { ...pgData };
-    }
-    for (const [pgId, pgData] of Object.entries(showData.page_scripts || {})) {
-      if (!mergedPageScripts[pgId]) mergedPageScripts[pgId] = {};
-      Object.assign(mergedPageScripts[pgId], pgData);
-    }
     for (const [pgId, pgData] of Object.entries(pageScriptMeta)) {
       if (!mergedPageScripts[pgId]) mergedPageScripts[pgId] = {};
       for (const [sceneKey, meta] of Object.entries(pgData)) {
@@ -416,9 +415,14 @@ const scriptMeta = {};     // { [fkey]: { name, file } }
 const pageScriptMeta    = {}; // { [pageId]: { [sceneKey]: { name, file } } }
 const runningPageScripts = {}; // flat key `${pageId}:${sceneKey}` → { interval, context }
 
-function psKey(pageId, sceneKey) { return `${pageId}:${sceneKey}`; }
+function normalizePageId(pageId) {
+  return String(Math.max(1, Number.parseInt(pageId, 10) || 1));
+}
+
+function psKey(pageId, sceneKey) { return `${normalizePageId(pageId)}:${sceneKey}`; }
 
 function stopRunningPageScript(pageId, sceneKey, reason) {
+  pageId = normalizePageId(pageId);
   const k = psKey(pageId, sceneKey);
   const running = runningPageScripts[k];
   if (!running) return false;
@@ -433,6 +437,9 @@ function stopRunningPageScript(pageId, sceneKey, reason) {
 }
 
 function loadPageScriptMeta() {
+  for (const pageId of Object.keys(pageScriptMeta)) {
+    delete pageScriptMeta[pageId];
+  }
   const current = show.getShow();
   if (!current?.page_scripts) return;
   for (const [pageId, pageData] of Object.entries(current.page_scripts)) {
@@ -523,71 +530,12 @@ function loadScriptMeta() {
  * Exemplo: Moving Head Beam 1 com panOffset:44, canal pan=132 → { 132: 44 }
  */
 function normalizeRuntimeFixtureFields(showData) {
-  if (!showData || !Array.isArray(showData.fixtures)) return showData;
-  return {
-    ...showData,
-    fixtures: showData.fixtures.map((fixture) => {
-      const next = { ...fixture };
-      if (isFixtureNamed(next, 'Moving Head Beam 1')) {
-        next.panOffset = 44;
-        if (next.virtualPanTiltSpeed == null) next.virtualPanTiltSpeed = true;
-      }
-      if (isFixtureNamed(next, 'Moving Head Beam 2')) {
-        delete next.panOffset;
-        if (next.virtualPanTiltSpeed == null) next.virtualPanTiltSpeed = true;
-      }
-      if (isFixtureNamed(next, 'Ribalta_1')) {
-        next.tiltOffset = 23;
-      }
-      if (isFixtureNamed(next, 'Ribalta_2')) {
-        delete next.tiltOffset;
-      }
-      return next;
-    }),
-  };
+  return normalizeShowFixtureOffsets(showData);
 }
 
 function buildChannelOffsetMap() {
   const current = show.getShow();
-  const fixtures = current?.fixtures || [];
-  const map = {};
-  for (const fx of fixtures) {
-    if (!isFixtureEnabled(fx)) continue;
-    const panOffset  = getFixturePanOffset(fx);
-    const tiltOffset = getFixtureTiltOffset(fx);
-    if (!panOffset && !tiltOffset) continue;
-    const start    = Number(fx.startChannel) || 1;
-    const channels = Array.isArray(fx.channels) ? fx.channels : [];
-    channels.forEach((alias, i) => {
-      const ch   = start + i;
-      const norm = normalizeAlias(alias);
-      if (panOffset  && norm === 'pan')  map[ch] = (map[ch] || 0) + panOffset;
-      if (tiltOffset && norm === 'tilt') map[ch] = (map[ch] || 0) + tiltOffset;
-    });
-  }
-  return map;
-}
-
-function getFixturePanOffset(fixture) {
-  if (isFixtureNamed(fixture, 'Moving Head Beam 1')) return 44;
-  if (isFixtureNamed(fixture, 'Moving Head Beam 2')) return 0;
-  if (fixture?.panOffset == null || fixture?.panOffset === '') {
-    return 0;
-  }
-  const panOffset = Number(fixture?.panOffset);
-  if (Number.isFinite(panOffset)) return panOffset;
-  return 0;
-}
-
-function getFixtureTiltOffset(fixture) {
-  if (isFixtureNamed(fixture, 'Ribalta_1')) return 23;
-  if (isFixtureNamed(fixture, 'Ribalta_2')) return 0;
-  const tiltOffset = Number(fixture?.tiltOffset);
-  return Number.isFinite(tiltOffset) ? tiltOffset : 0;
-}
-
-function isFixtureNamed(fixture, name) {
-  return normalizeAlias(fixture?.name) === normalizeAlias(name);
+  return buildFixtureChannelOffsetMap(current?.fixtures || [], isFixtureEnabled);
 }
 
 /**
@@ -1046,6 +994,7 @@ const SCRIPT_TEMPLATE_BODY = [
 ].join('\n');
 
 ipcMain.handle('page_script:create', async (_, pageId, sceneKey, name) => {
+  pageId = normalizePageId(pageId);
   const file = path.join(SCRIPTS_DIR, `${name}.js`);
   if (!fs.existsSync(file)) {
     fs.writeFileSync(file, SCRIPT_TEMPLATE_BODY, 'utf-8');
@@ -1058,12 +1007,14 @@ ipcMain.handle('page_script:create', async (_, pageId, sceneKey, name) => {
 });
 
 ipcMain.handle('page_script:edit', async (_, pageId, sceneKey) => {
+  pageId = normalizePageId(pageId);
   const meta = pageScriptMeta[pageId]?.[sceneKey];
   if (!meta) return { ok: false, error: 'Nenhum script nesta tecla' };
   return openScriptInVSCode(meta.file);
 });
 
 ipcMain.handle('page_script:clear', (_, pageId, sceneKey) => {
+  pageId = normalizePageId(pageId);
   stopRunningPageScript(pageId, sceneKey, 'limpar');
   if (pageScriptMeta[pageId]) delete pageScriptMeta[pageId][sceneKey];
   savePageScriptMeta();
@@ -1071,6 +1022,7 @@ ipcMain.handle('page_script:clear', (_, pageId, sceneKey) => {
 });
 
 ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
+  pageId = normalizePageId(pageId);
   const k = psKey(pageId, sceneKey);
   if (runningPageScripts[k]) {
     stopRunningPageScript(pageId, sceneKey, 'toggle');
@@ -1111,6 +1063,7 @@ ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
 });
 
 ipcMain.handle('page_script:getAll', (_, pageId) => {
+  pageId = normalizePageId(pageId);
   const pageMeta = pageScriptMeta[pageId] || {};
   const result = {};
   for (const [sceneKey, meta] of Object.entries(pageMeta)) {

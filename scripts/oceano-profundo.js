@@ -10,7 +10,6 @@ const ID_PAR = [
   'fixture_1780805067518_parled_deluxe_1',
   'fixture_1780805067518_parled_deluxe_2',
   'fixture_1780805067518_parled_deluxe_3',
-  'fixture_1780805067518_parled_deluxe_4',
   'fixture_1780805067518_parled_deluxe_5',
   'fixture_1780805067518_parled_deluxe_6',
   'fixture_1780805067518_parled_deluxe_7',

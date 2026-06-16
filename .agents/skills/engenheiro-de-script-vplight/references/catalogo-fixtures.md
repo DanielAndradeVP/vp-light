@@ -311,13 +311,13 @@ Observacoes confirmaveis: cada fixture tem um unico canal `dimmer`, 0 = off e 25
 
 ### Mini_Brut_01
 - id: `fixture_1780805067518_mini_brut_01`
-- startChannel: `409`
+- startChannel: `400`
 - channelCount: `1`
-- faixa DMX: `409-409`
+- faixa DMX: `400-400`
 
 | indice | label | DMX |
 |---:|---|---:|
-| 0 | dimmer | 409 |
+| 0 | dimmer | 400 |
 
 ### Mini_Brut_02
 - id: `fixture_1780805067518_mini_brut_02`
@@ -349,7 +349,7 @@ Observacoes confirmaveis: cada fixture tem um unico canal `dimmer`, 0 = off e 25
 |---:|---|---:|
 | 0 | dimmer | 410 |
 
-Pares e grupos uteis: grupo de impacto/flash dimmer-only. Para chase visual, confirme a ordem fisica; a ordem DMX atual e 401, 402, 409, 410, enquanto os nomes sao 03, 02, 01, 04 se ordenados por canal.
+Pares e grupos uteis: grupo de impacto/flash dimmer-only. Para chase visual, confirme a ordem fisica; a ordem DMX atual e 400, 401, 402, 410, enquanto os nomes sao 01, 02, 03, 04 se ordenados por canal.
 
 ---
 

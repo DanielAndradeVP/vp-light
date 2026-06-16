@@ -3,7 +3,7 @@
  * Mesa de aparelhos + painel direito com faders ao vivo + cenas A-M + páginas
  */
 import React, { useEffect, useCallback, useState, useRef } from 'react';
-import { useShow } from '../store/showStore.js';
+import { activeSceneMatches, parseSceneRef, sceneRefId, useShow } from '../store/showStore.js';
 import theme from '../theme.js';
 import ChatPanel from './ChatPanel.jsx';
 
@@ -89,6 +89,28 @@ function getShowWithGridView(showData, gridView) {
   };
 }
 
+// Funções por modo: Mode 0 usa 'grid', Mode 1 usa 'grid2'
+function getStoredGridViewForMode(showData, mode) {
+  const key = mode === 1 ? 'grid2' : 'grid';
+  const gridView = showData?.meta?.viewport?.[key];
+  if (!gridView || typeof gridView !== 'object') return null;
+  return normalizeGridView(gridView);
+}
+
+function getShowWithGridViewForMode(showData, gridView, mode) {
+  const key = mode === 1 ? 'grid2' : 'grid';
+  return {
+    ...showData,
+    meta: {
+      ...(showData?.meta || {}),
+      viewport: {
+        ...(showData?.meta?.viewport || {}),
+        [key]: normalizeGridView(gridView),
+      },
+    },
+  };
+}
+
 function getFixtureDisplayName(name) {
   return String(name || '').replace(/_/g, ' ');
 }
@@ -166,14 +188,22 @@ const SPEED_OPTIONS = [
   { value: 3,   label: '3x' },
 ];
 
+// Ordem de preferência padrão para cada tipo de fixture no painel lateral
+const DEFAULT_CHANNEL_PREF_ORDER = {
+  moving_head_beam: ['pan', 'tilt', 'fecho_lampada', 'strobo', 'color_wheel', 'gobo_wheel', 'speed', 'frost', 'pan_fine', 'tilt_fine'],
+  ribalta: ['dimmer', 'red', 'green', 'blue', 'led_1', 'speed'],
+};
+
 const CUSTOM_FUNCTIONS_BY_TYPE = {
   ribalta: [
     { id: 'ribalta_all_on', label: 'ALL ON' },
     { id: 'speed_multiplier', label: 'SPEED', type: 'speed_selector' },
+    { id: 'channel_filter', label: 'FILTRO', type: 'filtro_selector' },
   ],
   moving_head_beam: [
     { id: 'tilt_invert', label: 'TILT INVERTIDO' },
     { id: 'speed_multiplier', label: 'SPEED', type: 'speed_selector' },
+    { id: 'channel_filter', label: 'FILTRO', type: 'filtro_selector' },
   ],
 };
 
@@ -209,7 +239,14 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   }
 
   async function handleSave() {
-    const result = await saveShow(show);
+    const showWithMode2 = {
+      ...show,
+      mode2: { positions: mode2Positions, titleOffsets: mode2TitleOffsets, layout: mode2Layout, gridMode, channelOrderMode, channelPrefOrder },
+    };
+    const result = await saveShow(showWithMode2);
+    // Sincroniza o estado React com o que foi salvo, para que show.mode2 exista em memória
+    // e o useEffect de restauração não precise de uma reabertura do app para funcionar.
+    if (result?.ok) setShow(showWithMode2);
     showSaveFeedback(result);
     return result;
   }
@@ -218,7 +255,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     if (exitSaving) return;
     setExitSaving(true);
     try {
-      const result = await saveShow(show);
+      const showWithMode2 = { ...show, mode2: { positions: mode2Positions, titleOffsets: mode2TitleOffsets, layout: mode2Layout, gridMode, channelOrderMode, channelPrefOrder } };
+      const result = await saveShow(showWithMode2);
       showSaveFeedback(result);
       if (result?.ok) {
         await window.vp.closeApp();
@@ -240,8 +278,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   // cenas que continuam ativas. Também sincroniza o mapa de canais bloqueados.
   function resolveUniverseState(nextActiveScenes, nextScripts) {
     const merged = {};
-    nextActiveScenes.forEach(key => {
-      const s = scenes[key];
+    nextActiveScenes.forEach(activeRef => {
+      const { scene: s } = getActiveSceneData(activeRef);
       if (s?.channels) {
         Object.entries(filterDisabledFixtureChannels(s.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
           merged[Number(ch)] = Number(val);
@@ -269,8 +307,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       setBlackoutActive(false);
       if (activeScenes.length > 0) {
         const merged = {};
-        activeScenes.forEach(key => {
-          const scene = scenes[key];
+        activeScenes.forEach(activeRef => {
+          const { scene } = getActiveSceneData(activeRef);
           if (scene?.channels) {
             Object.entries(filterDisabledFixtureChannels(scene.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
               merged[Number(ch)] = Number(val);
@@ -298,6 +336,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   const [customFunctionMenuFixtureId, setCustomFunctionMenuFixtureId] = useState(null);
   const [activeCustomFunctionByFixture, setActiveCustomFunctionByFixture] = useState({});
   const [speedMultiplierByFixture, setSpeedMultiplierByFixture] = useState({});
+  const speedChannelValuesRef = useRef({}); // { [dmxCh]: dmxValue } — preservado entre resolveSidebarValues para canais de speed virtuais
+  const [channelOrderMode, setChannelOrderMode] = useState({}); // { [fixtureType]: 'canal' | 'pref' }
+  const [channelPrefOrder, setChannelPrefOrder] = useState({}); // { [fixtureType]: [labelStr, ...] }
   const [testPanelPos, setTestPanelPos] = useState({ x: null, y: 56 });
   const [testPanelDrag, setTestPanelDrag] = useState(null); // { offsetX, offsetY }
 
@@ -389,15 +430,21 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   const [multiSelected, setMultiSelected] = useState([]);
   const [gridMode, setGridMode] = useState(0); // 0 = normal, 1 = agrupado por grupo/tipo
+  const [layoutAdjustActive, setLayoutAdjustActive] = useState(false); // modo de ajuste de layout no Mode 2
+  const [mode2Positions, setMode2Positions] = useState({}); // { [fixtureId]: {x, y} } — posições customizadas no Mode 2
+  const [mode2TitleOffsets, setMode2TitleOffsets] = useState({}); // { [groupKey]: {dx, dy} } — offset do grupo inteiro
+  const [mode2Layout, setMode2Layout] = useState('padrao'); // 'padrao' | 'grade'
   const mesaRef = useRef(null);
   const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 }); // zoom/pan da mesa
   const viewRef = useRef(view);
+  const gridModeRef = useRef(gridMode);
   const restoredGridViewRef = useRef(null);
   const reEmitOnNextResolveRef = useRef(false); // sinaliza re-emissão de DMX na próxima resolução da barra lateral
 
-  // Atualiza viewRef de forma síncrona no corpo do componente (antes de qualquer handler),
-  // garantindo que handleSave sempre leia o zoom correto independente do timing de effects.
+  // Atualiza refs de forma síncrona no corpo do componente (antes de qualquer handler),
+  // garantindo que handlers assíncronos sempre leiam o valor correto.
   viewRef.current = view;
+  gridModeRef.current = gridMode;
 
   function applyGridView(nextView) {
     const normalizedView = normalizeGridView(nextView);
@@ -405,16 +452,17 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     viewRef.current = normalizedView;
     restoredGridViewRef.current = key;
     setView(normalizedView);
-    setShow(prev => getShowWithGridView(prev, normalizedView));
+    setShow(prev => getShowWithGridViewForMode(prev, normalizedView, gridMode));
   }
 
-  const autoFitDoneRef = useRef(false); // garante auto-fit apenas 1x por sessão
+  const autoFitDoneRef = useRef({}); // garante auto-fit apenas 1x por modo por sessão { 0: bool, 1: bool }
   useEffect(() => {
-    const storedView = getStoredGridView(show);
+    // Viewport independente por modo: Mode 0 → 'grid', Mode 1 → 'grid2'
+    const storedView = getStoredGridViewForMode(show, gridMode);
     if (!storedView) {
-      // Sem viewport salvo: faz ZFit automático UMA vez após o show carregar com fixtures
-      if (!autoFitDoneRef.current && (show.fixtures || []).length > 0 && mesaRef.current) {
-        autoFitDoneRef.current = true;
+      // Sem viewport salvo para este modo: faz ZFit automático UMA vez por modo
+      if (!autoFitDoneRef.current[gridMode] && (show.fixtures || []).length > 0 && mesaRef.current) {
+        autoFitDoneRef.current = { ...autoFitDoneRef.current, [gridMode]: true };
         // Adia um tick para garantir que o layout do mesaRef já tem dimensões reais
         setTimeout(() => handleFitFixtures(), 0);
       }
@@ -426,7 +474,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     viewRef.current = storedView;
     setView(storedView);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [show]);
+  }, [show, gridMode]);
 
   // Zoom com a roda do mouse, seguindo o ponteiro (mantém o ponto sob o cursor fixo).
   useEffect(() => {
@@ -446,7 +494,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       viewRef.current = newView;            // atualiza ref imediatamente (igual ao applyGridView)
       restoredGridViewRef.current = newKey; // evita que o efeito de restore reverta o scroll
       setView(newView);
-      setShow(prev => getShowWithGridView(prev, newView)); // sincroniza show.meta.viewport (batched)
+      setShow(prev => getShowWithGridViewForMode(prev, newView, gridModeRef.current)); // sincroniza show.meta.viewport por modo
     }
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -481,6 +529,12 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   const currentPageNumber = Math.max(1, Number.parseInt(currentPage, 10) || 1);
   const currentPageId = String(currentPageNumber);
 
+  function getActiveSceneData(activeRef) {
+    const { pageId, sceneKey } = parseSceneRef(activeRef, currentPageId);
+    const scene = (pages[pageId] || {}).scenes?.[sceneKey];
+    return { pageId, sceneKey, scene };
+  }
+
   useEffect(() => {
     const load = async () => {
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -504,10 +558,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   // Sincroniza canais bloqueados por cenas com o main process sempre que activeScenes muda
   useEffect(() => {
-    const currentScenes = (pages[currentPageId] || {}).scenes || {};
     const merged = {};
-    activeScenes.forEach(key => {
-      const s = currentScenes[key];
+    activeScenes.forEach(activeRef => {
+      const { scene: s } = getActiveSceneData(activeRef);
       if (s?.channels) {
         Object.entries(filterDisabledFixtureChannels(s.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
           merged[Number(ch)] = Number(val);
@@ -518,15 +571,15 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
     // Envia mapa de cenas ativas para detecção de conflito
     const scenesMap = {};
-    activeScenes.forEach(key => {
-      const s = currentScenes[key];
+    activeScenes.forEach(activeRef => {
+      const { pageId, sceneKey, scene: s } = getActiveSceneData(activeRef);
       if (s?.channels) {
-        scenesMap[key] = { name: s.name || key, channels: filterDisabledFixtureChannels(s.channels, disabledFixtureChannels) };
+        scenesMap[sceneRefId(pageId, sceneKey)] = { name: s.name || sceneKey, channels: filterDisabledFixtureChannels(s.channels, disabledFixtureChannels) };
       }
     });
     window.vp.setActiveScenes(scenesMap);
 
-    const customFunctions = mergeSceneCustomFunctions(activeScenes, currentScenes);
+    const customFunctions = mergeSceneCustomFunctions(activeScenes);
     if (Object.keys(customFunctions).length > 0) {
       setActiveCustomFunctionByFixture(prev => {
         const next = { ...prev };
@@ -634,7 +687,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     // Se a tecla tinha cena ativa, desativa e limpa antes de criar o script
     const key = sceneScriptModal.sceneKey;
     if (scenes[key]) {
-      setActiveScenes(prev => prev.filter(k => k !== key));
+      setActiveScenes(prev => prev.filter(activeRef => !activeSceneMatches(activeRef, currentPageId, key)));
       updateScene(currentPageId, key, { name: '', color: '', channels: {} });
     }
     const result = await window.vp.createPageScript(currentPageId, key, sceneScriptName.trim());
@@ -734,10 +787,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     const count = selectedFixture.channelCount ?? (selectedFixture.channels || []).length;
 
     // Cenas ativas — mescladas na ordem de ativação: a última (mais recente) vence
-    const currentScenes = (pages[currentPageId] || {}).scenes || {};
     const sceneMerged = {};
-    activeScenes.forEach(key => {
-      const s = currentScenes[key];
+    activeScenes.forEach(activeRef => {
+      const { scene: s } = getActiveSceneData(activeRef);
       if (s?.channels) {
         Object.entries(filterDisabledFixtureChannels(s.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
           sceneMerged[Number(ch)] = Number(val);
@@ -754,6 +806,11 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       else if (!snapshot && ch in sceneMerged)     resolved[ch] = sceneMerged[ch];        // fallback se IPC falhar
       else                                         resolved[ch] = 0;
     }
+    // Canais de speed virtuais não ficam no universo DMX — preserva o último valor enviado pelo fader
+    Object.entries(speedChannelValuesRef.current).forEach(([ch, val]) => {
+      const numCh = Number(ch);
+      if (numCh >= start && numCh < start + count) resolved[numCh] = val;
+    });
     setLiveValues(resolved);
     // Re-emite canais ao DMX quando a seleção muda — sem exigir interação com o fader
     if (reEmitOnNextResolveRef.current) {
@@ -770,6 +827,33 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   useEffect(() => {
     reEmitOnNextResolveRef.current = true;
   }, [selectedFixtureId, multiSelected]);
+
+  useEffect(() => {
+    const selectedIds = multiSelected.length >= 2
+      ? multiSelected
+      : (selectedFixtureId ? [selectedFixtureId] : []);
+    if (selectedIds.length === 0) return;
+
+    const selectedIdSet = new Set(selectedIds);
+    const defaults = (show.fixtures || [])
+      .filter(fixture => selectedIdSet.has(fixture.id) && isFixtureEnabled(fixture))
+      .map(fixture => ({ fixture, functionId: getDefaultCustomFunctionForFixture(fixture) }))
+      .filter(item => item.functionId);
+
+    if (defaults.length === 0) return;
+
+    setActiveCustomFunctionByFixture(prev => {
+      let changed = false;
+      const next = { ...prev };
+      defaults.forEach(({ fixture, functionId }) => {
+        if (!next[fixture.id]) {
+          next[fixture.id] = functionId;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [selectedFixtureId, multiSelected, show.fixtures]);
 
   // Dispara resolução imediata: muda fixture selecionado, cenas ativas ou scripts
   useEffect(() => { resolveSidebarValues(); }, [resolveSidebarValues]);
@@ -802,7 +886,23 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   const scenes = (pages[currentPageId] || {}).scenes || {};
 
   const handleKey = useCallback((e) => {
-    if (e.target.tagName === 'INPUT') return;
+    const target = e.target;
+    const tagName = target?.tagName;
+    const isEditableTarget =
+      tagName === 'INPUT' ||
+      tagName === 'TEXTAREA' ||
+      tagName === 'SELECT' ||
+      target?.isContentEditable;
+
+    if (isEditableTarget) return;
+    if (!e.ctrlKey && !e.altKey && !e.metaKey && /^[0-9]$/.test(e.key)) {
+      const pageId = e.key === '0' ? '10' : e.key;
+      if (pageId !== currentPageId && pages[pageId]) {
+        e.preventDefault();
+        setCurrentPage(pageId);
+      }
+      return;
+    }
     const key = e.key.toUpperCase();
     if (SCENE_KEYS.includes(key)) {
       if (pageScriptsRef.current[key]) { handleTogglePageScript(key); }
@@ -811,7 +911,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     }
     if (e.code === 'Space') { e.preventDefault(); handleBlackout(); return; }
     if (FKEYS.includes(key)) { e.preventDefault(); handleToggleScript(key); return; }
-  }, [handleActivateScene, handleBlackout, handleToggleScript]);
+  }, [currentPageId, handleActivateScene, handleBlackout, handleToggleScript, pages, setCurrentPage]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKey);
@@ -839,6 +939,10 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     }
     setLiveValues(prev => ({ ...prev, [dmxChannel]: val }));
     setUniverseSnapshot(prev => ({ ...prev, [dmxChannel]: val }));
+    // Preserva valor de canais de speed — o universo DMX pode não refletir canais virtuais
+    if (speedChs.has(Number(dmxChannel))) {
+      speedChannelValuesRef.current = { ...speedChannelValuesRef.current, [Number(dmxChannel)]: val };
+    }
     await window.vp.setChannel(dmxChannel, val);
   }
 
@@ -907,6 +1011,16 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     return CUSTOM_FUNCTIONS_BY_TYPE[getFixtureType(fixture)] || [];
   }
 
+  function isAutoAllOnRibalta(fixture) {
+    const fixtureName = String(fixture?.name || '').toLowerCase().replace(/\s+/g, '_');
+    return fixtureName === 'ribalta_1' || fixtureName === 'ribalta_2';
+  }
+
+  function getDefaultCustomFunctionForFixture(fixture) {
+    if (isAutoAllOnRibalta(fixture)) return 'ribalta_all_on';
+    return null;
+  }
+
   function toggleCustomFunctionMenu(fixtureId) {
     setCustomFunctionMenuFixtureId(prev => (prev === fixtureId ? null : fixtureId));
   }
@@ -935,10 +1049,11 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     return customFunctions;
   }
 
-  function mergeSceneCustomFunctions(activeKeys, currentScenes) {
+  function mergeSceneCustomFunctions(activeKeys) {
     const merged = {};
-    activeKeys.forEach(key => {
-      const sceneCustom = currentScenes[key]?.customFunctions;
+    activeKeys.forEach(activeRef => {
+      const { scene } = getActiveSceneData(activeRef);
+      const sceneCustom = scene?.customFunctions;
       if (!sceneCustom || typeof sceneCustom !== 'object') return;
       Object.entries(sceneCustom).forEach(([fixtureId, values]) => {
         if (!values || typeof values !== 'object') return;
@@ -991,7 +1106,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     const start = fixture.startChannel || 1;
     const result = new Set();
     (fixture.channels || []).forEach((label, i) => {
-      if (String(label || '').toLowerCase() === 'speed') result.add(start + i);
+      const lbl = String(label || '').toLowerCase();
+      if (lbl === 'speed' || lbl === 'virtual_speed') result.add(start + i);
     });
     return result;
   }
@@ -1002,6 +1118,22 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       const next = { ...prev };
       fixtureArr.forEach(fx => { next[fx.id] = multiplier; });
       return next;
+    });
+  }
+
+  // Move um canal na ordem de preferência (+1 = para baixo, -1 = para cima)
+  function movePrefChannel(fixtureType, label, dir) {
+    setChannelPrefOrder(prev => {
+      const base = prev[fixtureType] || DEFAULT_CHANNEL_PREF_ORDER[fixtureType] || [];
+      const order = [...base];
+      let idx = order.indexOf(label);
+      if (idx === -1) { order.push(label); idx = order.length - 1; }
+      const newIdx = Math.max(0, Math.min(order.length - 1, idx + dir));
+      if (newIdx === idx) return prev;
+      const next = [...order];
+      next.splice(idx, 1);
+      next.splice(newIdx, 0, label);
+      return { ...prev, [fixtureType]: next };
     });
   }
 
@@ -1044,7 +1176,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   const GROUP_TITLE_COLORS = ['#00ccff', '#ffcc00', '#ff5555', '#44dd44', '#ff9944', '#bb66ff', '#ff66bb', '#44ffbb'];
 
-  function computeGroupedLayout() {
+  function computeGroupedLayout(customPositions = {}, customTitleOffsets = {}, layoutType = 'padrao') {
     const groupOrder = [];
     const groupMap = {};
     (show.fixtures || []).forEach(f => {
@@ -1054,16 +1186,50 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     });
     const positions = {};
     const titles = [];
-    let y = 0;
-    groupOrder.forEach((name, gi) => {
-      const color = GROUP_TITLE_COLORS[gi % GROUP_TITLE_COLORS.length];
-      titles.push({ name: name.toUpperCase(), x: 0, y, color });
-      y += GRID;
-      groupMap[name].forEach((f, i) => {
-        positions[f.id] = { x: i * GRID * 2, y };
+
+    if (layoutType === 'grade') {
+      // Layout grade: 2 colunas de grupos lado a lado
+      const maxInGroup = Math.max(...groupOrder.map(name => groupMap[name].length), 1);
+      const colWidth = maxInGroup * GRID * 2 + GRID * 2; // largura de cada coluna
+      const rowHeight = GRID * 3; // título + fixtures + espaço
+      let lyLeft = 0, lyRight = 0;
+      groupOrder.forEach((name, gi) => {
+        const color = GROUP_TITLE_COLORS[gi % GROUP_TITLE_COLORS.length];
+        const isRight = gi % 2 === 1;
+        const baseX = isRight ? colWidth : 0;
+        const baseY = isRight ? lyRight : lyLeft;
+        titles.push({ name: name.toUpperCase(), groupKey: name, x: baseX, y: baseY, color });
+        groupMap[name].forEach((f, i) => {
+          positions[f.id] = { x: baseX + i * GRID * 2, y: baseY + GRID };
+        });
+        if (isRight) lyRight += rowHeight;
+        else lyLeft += rowHeight;
       });
-      y += GRID * 2;
+    } else {
+      // Layout padrão: grupos empilhados verticalmente
+      let y = 0;
+      groupOrder.forEach((name, gi) => {
+        const color = GROUP_TITLE_COLORS[gi % GROUP_TITLE_COLORS.length];
+        titles.push({ name: name.toUpperCase(), groupKey: name, x: 0, y, color });
+        y += GRID;
+        groupMap[name].forEach((f, i) => {
+          positions[f.id] = { x: i * GRID * 2, y };
+        });
+        y += GRID * 2;
+      });
+    }
+
+    // Aplica posições customizadas por fixture (sobrescreve layout)
+    Object.entries(customPositions).forEach(([id, pos]) => {
+      positions[id] = pos;
     });
+
+    // Aplica offsets de grupo nos títulos
+    titles.forEach(t => {
+      const off = customTitleOffsets[t.groupKey];
+      if (off) { t.x += off.dx; t.y += off.dy; }
+    });
+
     return { positions, titles };
   }
 
@@ -1076,7 +1242,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     }
 
     const fixturePositions = gridMode === 1
-      ? (() => { const layout = computeGroupedLayout(); return fixtures.map(f => layout.positions[f.id] || { x: 0, y: 0 }); })()
+      ? (() => { const layout = computeGroupedLayout(mode2Positions, mode2TitleOffsets, mode2Layout); return fixtures.map(f => layout.positions[f.id] || { x: 0, y: 0 }); })()
       : fixtures.map(getFixtureGridPosition);
     const minX = Math.min(...fixturePositions.map(pos => pos.x));
     const minY = Math.min(...fixturePositions.map(pos => pos.y));
@@ -1104,15 +1270,29 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     });
   }
 
-  // Auto-centraliza ao trocar de modo (skipa o mount inicial para não sobrescrever o viewport salvo)
-  const gridModeInitRef = useRef(true);
+  // Restaura configurações do Mode 2 quando o show é carregado do disco
+  const mode2LoadedIdRef = useRef(null);
   useEffect(() => {
-    if (gridModeInitRef.current) { gridModeInitRef.current = false; return; }
-    handleFitFixtures();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!show.mode2) return;
+    const id = JSON.stringify(show.mode2);
+    if (id === mode2LoadedIdRef.current) return;
+    mode2LoadedIdRef.current = id;
+    setMode2Positions(show.mode2.positions || {});
+    setMode2TitleOffsets(show.mode2.titleOffsets || {});
+    if (show.mode2.layout) setMode2Layout(show.mode2.layout);
+    // Restaura o modo ativo (Mode 1 ou Mode 2) salvo no último Salvar
+    if (typeof show.mode2.gridMode === 'number') setGridMode(show.mode2.gridMode);
+    if (show.mode2.channelOrderMode) setChannelOrderMode(show.mode2.channelOrderMode);
+    if (show.mode2.channelPrefOrder) setChannelPrefOrder(show.mode2.channelPrefOrder);
+  }, [show.mode2]);
+
+  // Ao voltar ao Mode 0, desativa o ajuste de layout do Mode 2.
+  // O viewport é restaurado/ajustado pelo efeito [show, gridMode] acima.
+  useEffect(() => {
+    if (gridMode === 0) setLayoutAdjustActive(false);
   }, [gridMode]);
 
-  const groupedLayout = gridMode === 1 ? computeGroupedLayout() : null;
+  const groupedLayout = gridMode === 1 ? computeGroupedLayout(mode2Positions, mode2TitleOffsets, mode2Layout) : null;
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#1d2b30', color:'#ffffff', fontFamily:'Arial, Helvetica, sans-serif' }}>
@@ -1164,6 +1344,31 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               const rect = e.currentTarget.getBoundingClientRect();
               const wx = (e.clientX - rect.left - view.panX) / view.zoom;
               const wy = (e.clientY - rect.top - view.panY) / view.zoom;
+              // Drag de grupo inteiro no Mode 2 (arraste pelo título)
+              if (dragging?.isGroupDrag) {
+                const snapX = Math.round((wx - dragging.offX) / GRID) * GRID;
+                const snapY = Math.round((wy - dragging.offY) / GRID) * GRID;
+                // newDx = offset correto a partir da posição BASE (sem offset anterior)
+                const newDx = snapX - dragging.baseTitleX;
+                const newDy = snapY - dragging.baseTitleY;
+                // moveDx = quanto os fixtures devem mover em relação à posição no início do drag
+                const moveDx = newDx - dragging.prevOffsetDx;
+                const moveDy = newDy - dragging.prevOffsetDy;
+                setMode2TitleOffsets(prev => ({ ...prev, [dragging.groupKey]: { dx: newDx, dy: newDy } }));
+                setMode2Positions(prev => {
+                  const next = { ...prev };
+                  dragging.fixtures.forEach(item => { next[item.id] = { x: item.x + moveDx, y: item.y + moveDy }; });
+                  return next;
+                });
+                return;
+              }
+              // Drag individual de fixture no Mode 2 (ajuste ativo)
+              if (dragging?.isMode2FixtureDrag) {
+                const snapX = Math.round((wx - dragging.offX) / GRID) * GRID;
+                const snapY = Math.round((wy - dragging.offY) / GRID) * GRID;
+                setMode2Positions(prev => ({ ...prev, [dragging.id]: { x: snapX, y: snapY } }));
+                return;
+              }
               if (dragging) {
                 const rawX = wx - dragging.offX;
                 const rawY = wy - dragging.offY;
@@ -1234,6 +1439,39 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               {groupedLayout && groupedLayout.titles.map(t => (
                 <div
                   key={t.name}
+                  onMouseDown={layoutAdjustActive ? (e => {
+                    e.stopPropagation();
+                    const rect = mesaRef.current.getBoundingClientRect();
+                    const wx = (e.clientX - rect.left - view.panX) / view.zoom;
+                    const wy = (e.clientY - rect.top - view.panY) / view.zoom;
+                    const groupFixtures = (show.fixtures || [])
+                      .filter(f => isFixtureEnabled(f) && String(f.group || f.fixtureType || 'Outros') === t.groupKey)
+                      .map(f => ({ id: f.id, ...(groupedLayout.positions[f.id] || { x: 0, y: 0 }) }));
+                    // prevOffset = offset que já estava aplicado quando o drag começou
+                    const prevOff = mode2TitleOffsets[t.groupKey] || { dx: 0, dy: 0 };
+                    setDragging({
+                      isGroupDrag: true,
+                      groupKey: t.groupKey,
+                      // baseTitle = posição sem nenhum offset (para calcular novo offset corretamente)
+                      baseTitleX: t.x - prevOff.dx,
+                      baseTitleY: t.y - prevOff.dy,
+                      prevOffsetDx: prevOff.dx,
+                      prevOffsetDy: prevOff.dy,
+                      fixtures: groupFixtures,
+                      offX: wx - t.x,
+                      offY: wy - t.y,
+                    });
+                  }) : undefined}
+                  onClick={e => {
+                    if (layoutAdjustActive) return; // no adjust mode, click selects only after drag
+                    e.stopPropagation();
+                    const ids = (show.fixtures || [])
+                      .filter(f => isFixtureEnabled(f) && String(f.group || f.fixtureType || 'Outros') === t.groupKey)
+                      .map(f => f.id);
+                    if (ids.length === 0) return;
+                    setMultiSelected(ids);
+                    setSelectedFixtureId(ids[ids.length - 1]);
+                  }}
                   style={{
                     position:'absolute',
                     left: t.x,
@@ -1248,9 +1486,11 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                     fontWeight: 700,
                     color: t.color,
                     borderBottom: `1px solid ${t.color}`,
-                    opacity: 0.85,
-                    pointerEvents: 'none',
+                    opacity: layoutAdjustActive ? 1 : 0.85,
+                    cursor: layoutAdjustActive ? (dragging?.isGroupDrag && dragging?.groupKey === t.groupKey ? 'grabbing' : 'grab') : 'pointer',
                     whiteSpace: 'nowrap',
+                    userSelect: 'none',
+                    boxShadow: layoutAdjustActive ? `0 0 0 1px ${t.color}44` : 'none',
                   }}
                 >
                   {t.name}
@@ -1273,7 +1513,22 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                     e.stopPropagation();
                     if (!fixtureEnabled) return;
                     if (gridMode === 1) {
-                      setSelectedFixtureId(f.id);
+                      if (!layoutAdjustActive) {
+                        setSelectedFixtureId(f.id);
+                        return;
+                      }
+                      // Mode 2 com ajuste ativo: permite arrastar fixture individual
+                      const rect2 = mesaRef.current.getBoundingClientRect();
+                      const wx2 = (e.clientX - rect2.left - view.panX) / view.zoom;
+                      const wy2 = (e.clientY - rect2.top - view.panY) / view.zoom;
+                      const pos2 = mode2Positions[f.id] || fPos;
+                      setDragging({
+                        isMode2FixtureDrag: true,
+                        id: f.id,
+                        ids: [f.id],
+                        offX: wx2 - pos2.x,
+                        offY: wy2 - pos2.y,
+                      });
                       return;
                     }
                     const rect = mesaRef.current.getBoundingClientRect();
@@ -1311,7 +1566,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                     color:'#ffffff',
                     border: fixtureEnabled ? (isSelected ? '2px solid #b7dede' : '1px solid #5f8588') : '1px dashed #6f8588',
                     opacity: fixtureEnabled ? 1 : 0.42,
-                    borderRadius:0, boxShadow:'none', cursor: fixtureEnabled ? (gridMode === 1 ? 'pointer' : (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab')) : 'default',
+                    borderRadius:0, boxShadow:'none', cursor: fixtureEnabled ? (gridMode === 1 ? (layoutAdjustActive ? (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab') : 'pointer') : (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab')) : 'default',
                     display:'flex', flexDirection:'column',
                     alignItems:'center', justifyContent:'center', gap:1,
                     userSelect:'none', overflow:'hidden',
@@ -1443,8 +1698,12 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 ['ZFit', 70, handleFitFixtures],
                 ['BO', 92],
                 ['freeZe', 78],
-                ['mode', 78, () => setGridMode(m => m === 0 ? 1 : 0), gridMode === 1],
-              ].map(([label, height, onClick, isActive]) => (
+                ['mode', 78, () => { setGridMode(m => m === 0 ? 1 : 0); }, gridMode === 1],
+                ...(gridMode === 1 ? [
+                  ['ajuste', 78, () => setLayoutAdjustActive(a => !a), layoutAdjustActive, layoutAdjustActive ? '#ff9500' : undefined],
+                  [mode2Layout === 'grade' ? 'GRADE' : 'PADRÃO', 78, () => setMode2Layout(l => l === 'padrao' ? 'grade' : 'padrao'), mode2Layout === 'grade'],
+                ] : []),
+              ].map(([label, height, onClick, isActive, accentColor]) => (
                 <button
                   key={label}
                   type="button"
@@ -1452,9 +1711,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   style={{
                     width:'100%',
                     height,
-                    background: isActive ? theme.colors.selection : '#24343a',
-                    color: isActive ? theme.colors.accent : '#ffffff',
-                    border: isActive ? `1px solid ${theme.colors.borderStrong}` : '1px solid #8db8b8',
+                    background: isActive ? (accentColor ? accentColor + '33' : theme.colors.selection) : '#24343a',
+                    color: isActive ? (accentColor || theme.colors.accent) : '#ffffff',
+                    border: isActive ? `1px solid ${accentColor || theme.colors.borderStrong}` : '1px solid #8db8b8',
                     borderRadius:0,
                     fontFamily:'Arial, Helvetica, sans-serif',
                     fontSize:10,
@@ -1534,9 +1793,30 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   }
                 }
 
+                // Aplicar ordenação 'pref' também no modo de multi-seleção
+                try {
+                  const fxTypeMultiOrder = getFixtureType(lastFx);
+                  const orderModeMulti = channelOrderMode[fxTypeMultiOrder] ?? 'canal';
+                  if (orderModeMulti === 'pref') {
+                    const prefOrder = channelPrefOrder[fxTypeMultiOrder] || DEFAULT_CHANNEL_PREF_ORDER[fxTypeMultiOrder] || [];
+                    rows.sort((r1, r2) => {
+                      const a = r1.label || '';
+                      const b = r2.label || '';
+                      const ai = prefOrder.indexOf(a);
+                      const bi = prefOrder.indexOf(b);
+                      const va = ai === -1 ? 9999 : ai;
+                      const vb = bi === -1 ? 9999 : bi;
+                      return va - vb;
+                    });
+                  }
+                } catch (e) {
+                  // não bloquear render em caso de erro inesperado
+                }
+
                 return (
                   <div style={{ paddingTop: 8 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', marginBottom: (sharedFunctions.length > 0 && multiMenuOpen) ? 0 : 8, background:theme.colors.panelDark, borderTop:`1px solid ${theme.colors.borderSoft}`, borderBottom:`1px solid ${theme.colors.borderSoft}` }}>
+                    <div style={{ position:'relative' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', marginBottom:8, background:theme.colors.panelDark, borderTop:`1px solid ${theme.colors.borderSoft}`, borderBottom:`1px solid ${theme.colors.borderSoft}` }}>
                       {sharedFunctions.length > 0 && (
                         <button
                           type="button"
@@ -1587,7 +1867,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                     </div>
 
                     {multiMenuOpen && sharedFunctions.length > 0 && (
-                      <div style={{ margin:'0 8px 8px', border:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.panelDark }}>
+                      <div style={{ position:'absolute', top:'100%', left:8, right:8, zIndex:20, border:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.panelDark, boxShadow:'0 4px 12px rgba(0,0,0,0.5)' }}>
                         {sharedFunctions.map(fn => {
                           if (fn.type === 'speed_selector') {
                             const currentMult = speedMultiplierByFixture[lastFx.id] ?? 1;
@@ -1613,6 +1893,29 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                                             cursor:'pointer', outline:'none',
                                           }}
                                         >
+                                          {opt.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          if (fn.type === 'filtro_selector') {
+                            const fxTypeMulti = getFixtureType(lastFx);
+                            const currentModeMulti = channelOrderMode[fxTypeMulti] ?? 'canal';
+                            return (
+                              <div key={fn.id} style={{ borderBottom:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.bgDarker }}>
+                                <div style={{ height:34, display:'flex', alignItems:'center', padding:'0 8px', gap:6 }}>
+                                  <span style={{ fontFamily:theme.typography.fontFamily, fontSize:11, fontWeight:700, color:theme.colors.text, flex:1 }}>FILTRO</span>
+                                  <div style={{ display:'flex', gap:3 }}>
+                                    {[{ value:'canal', label:'CANAL' }, { value:'pref', label:'PREF' }].map(opt => {
+                                      const isActive = currentModeMulti === opt.value;
+                                      return (
+                                        <button key={opt.value} type="button"
+                                          onClick={() => setChannelOrderMode(prev => ({ ...prev, [fxTypeMulti]: opt.value }))}
+                                          style={{ width:46, height:22, padding:0, background: isActive ? theme.colors.selection : theme.colors.panel, color: theme.colors.text, border:`1px solid ${isActive ? theme.colors.borderStrong : theme.colors.border}`, borderRadius:0, boxSizing:'border-box', fontFamily:theme.typography.fontFamily, fontSize:10, fontWeight:700, cursor:'pointer', outline:'none' }}>
                                           {opt.label}
                                         </button>
                                       );
@@ -1654,6 +1957,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                         })}
                       </div>
                     )}
+                    </div>{/* end position:relative wrapper */}
 
                     {rows.map((row, idx) => {
                       const normalizedLbl = String(row.label || '').toLowerCase();
@@ -1703,7 +2007,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   : 0;
                 return (
                   <div style={{ paddingTop:8 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', marginBottom:customFunctionMenuOpen ? 0 : 8, background:theme.colors.panelDark, borderTop:`1px solid ${theme.colors.borderSoft}`, borderBottom:`1px solid ${theme.colors.borderSoft}` }}>
+                    <div style={{ position:'relative' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 8px', marginBottom:8, background:theme.colors.panelDark, borderTop:`1px solid ${theme.colors.borderSoft}`, borderBottom:`1px solid ${theme.colors.borderSoft}` }}>
                       <button
                         type="button"
                         onClick={() => toggleCustomFunctionMenu(selectedFixture.id)}
@@ -1767,7 +2072,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                     </div>
 
                     {customFunctionMenuOpen && (
-                      <div style={{ margin:'0 8px 8px', border:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.panelDark }}>
+                      <div style={{ position:'absolute', top:'100%', left:8, right:8, zIndex:20, border:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.panelDark, boxShadow:'0 4px 12px rgba(0,0,0,0.5)' }}>
                         {fixtureFunctions.length === 0 && (
                           <div style={{ minHeight:28, display:'flex', alignItems:'center', padding:'0 8px', fontFamily:theme.typography.fontFamily, fontSize:11, color:theme.colors.textMuted, background:theme.colors.bgDarker }}>
                             Nenhuma função para este tipo
@@ -1790,6 +2095,40 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                                           onClick={() => setSpeedMultiplierForFixtures([selectedFixture], opt.value)}
                                           style={{
                                             width:34, height:22, padding:0,
+                                            background: isActive ? theme.colors.selection : theme.colors.panel,
+                                            color: theme.colors.text,
+                                            border:`1px solid ${isActive ? theme.colors.borderStrong : theme.colors.border}`,
+                                            borderRadius:0, boxSizing:'border-box',
+                                            fontFamily:theme.typography.fontFamily, fontSize:10, fontWeight:700,
+                                            cursor:'pointer', outline:'none',
+                                          }}
+                                        >
+                                          {opt.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          if (fn.type === 'filtro_selector') {
+                            const fxType = getFixtureType(selectedFixture);
+                            const currentMode = channelOrderMode[fxType] ?? 'canal';
+                            return (
+                              <div key={fn.id} style={{ borderBottom:`1px solid ${theme.colors.borderSoft}`, background:theme.colors.bgDarker }}>
+                                <div style={{ height:34, display:'flex', alignItems:'center', padding:'0 8px', gap:6 }}>
+                                  <span style={{ fontFamily:theme.typography.fontFamily, fontSize:11, fontWeight:700, color:theme.colors.text, flex:1 }}>FILTRO</span>
+                                  <div style={{ display:'flex', gap:3 }}>
+                                    {[{ value:'canal', label:'CANAL' }, { value:'pref', label:'PREF' }].map(opt => {
+                                      const isActive = currentMode === opt.value;
+                                      return (
+                                        <button
+                                          key={opt.value}
+                                          type="button"
+                                          onClick={e => { e.stopPropagation(); setChannelOrderMode(prev => ({ ...prev, [fxType]: opt.value })); }}
+                                          style={{
+                                            width:46, height:22, padding:0,
                                             background: isActive ? theme.colors.selection : theme.colors.panel,
                                             color: theme.colors.text,
                                             border:`1px solid ${isActive ? theme.colors.borderStrong : theme.colors.border}`,
@@ -1840,9 +2179,29 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                         })}
                       </div>
                     )}
+                    </div>{/* end position:relative wrapper */}
 
-                    {fixtureChannels.map((dmxCh, i) => {
-                      const rawChanName = (selectedFixture.channels && selectedFixture.channels[i]) || `Canal ${i+1}`;
+                    {(() => {
+                      // Ordenação de canais: 'canal' (DMX asc) ou 'pref' (preferência do usuário)
+                      const fxType = getFixtureType(selectedFixture);
+                      const orderMode = channelOrderMode[fxType] ?? 'canal';
+                      const speedChsSet = getFixtureSpeedChannels(selectedFixture);
+                      const speedMult = getFixtureSpeedMultiplier(selectedFixture);
+                      const chanLabels = selectedFixture.channels || [];
+                      let orderedIdx = Array.from({ length: fixtureChannels.length }, (_, k) => k);
+                      if (orderMode === 'pref') {
+                        const prefOrder = channelPrefOrder[fxType] || DEFAULT_CHANNEL_PREF_ORDER[fxType] || [];
+                        orderedIdx = [...orderedIdx].sort((a, b) => {
+                          const aLbl = getRightPanelChannelLabel(selectedFixture, chanLabels[a] || '');
+                          const bLbl = getRightPanelChannelLabel(selectedFixture, chanLabels[b] || '');
+                          const ai = prefOrder.indexOf(aLbl);
+                          const bi = prefOrder.indexOf(bLbl);
+                          return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+                        });
+                      }
+                      return orderedIdx.map(i => {
+                      const dmxCh = fixtureChannels[i];
+                      const rawChanName = (chanLabels[i]) || `Canal ${i+1}`;
                       const chanName = getRightPanelChannelLabel(selectedFixture, rawChanName);
                       const normalizedChanName = String(chanName || '').toLowerCase();
                       const maskedByAllOn = ribaltaAllOnActive && /^led_?[2-8]$/.test(normalizedChanName);
@@ -1853,15 +2212,23 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                       if (isHiddenChannel) return null;
 
                       const allOnMaster = ribaltaAllOnActive && /^led_?1$/.test(normalizedChanName);
-                      const val = allOnMaster ? ribaltaAllOnValue : (liveValues[dmxCh] ?? 0);
+                      // Para canais de speed: exibe o valor virtual (DMX × multiplicador) — o fader fica na posição certa
+                      const rawFaderVal = allOnMaster ? ribaltaAllOnValue : (liveValues[dmxCh] ?? 0);
+                      const val = speedChsSet.has(dmxCh) ? Math.min(255, Math.round(rawFaderVal * speedMult)) : rawFaderVal;
                       return (
                         <div key={dmxCh} style={{ marginBottom:10, padding:'0 8px' }}>
-                          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
-                            <span style={{ display:'flex', gap:4, minWidth:0 }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
+                            <span style={{ display:'flex', gap:4, minWidth:0, alignItems:'center', flex:1 }}>
                               <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:11, color:'#9bb4b7', flexShrink:0 }}>{dmxCh}</span>
                               <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, color:'#c8dddd', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{allOnMaster ? `${chanName} / ALL ON` : chanName}</span>
                             </span>
-                            <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.sliderThumb.fontSize, fontWeight:theme.typography.sliderThumb.fontWeight, color:theme.colors.primary, minWidth:28, textAlign:'right' }}>{val}</span>
+                            {orderMode === 'pref' && !maskedByAllOn && (
+                              <span style={{ display:'flex', gap:1, flexShrink:0, marginLeft:4 }}>
+                                <button onClick={() => movePrefChannel(fxType, chanName, -1)} style={{ width:14, height:14, padding:0, background:'transparent', border:'none', color:theme.colors.textMuted, cursor:'pointer', fontSize:9, lineHeight:1, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center' }}>▲</button>
+                                <button onClick={() => movePrefChannel(fxType, chanName, 1)} style={{ width:14, height:14, padding:0, background:'transparent', border:'none', color:theme.colors.textMuted, cursor:'pointer', fontSize:9, lineHeight:1, fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center' }}>▼</button>
+                              </span>
+                            )}
+                            <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.sliderThumb.fontSize, fontWeight:theme.typography.sliderThumb.fontWeight, color:theme.colors.primary, minWidth:28, textAlign:'right', flexShrink:0 }}>{val}</span>
                           </div>
                           <input
                             type="range" min={0} max={255} value={val}
@@ -1873,7 +2240,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                           />
                         </div>
                       );
-                    })}
+                    });
+                    })()}
                   </div>
                 );
               })()}
@@ -1894,7 +2262,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         {SCENE_KEYS.map(key => {
           const scene = scenes[key];
           const ps = pageScripts[key];
-          const isActive = !!scene && activeScenes.includes(key);
+          const isActive = !!scene && activeScenes.some(activeRef => activeSceneMatches(activeRef, currentPageId, key));
           const psRunning = ps?.running;
           // Tecla com script segue a MESMA lógica visual da tecla de cena:
           // rodando = borda forte teal (como cena ativa); presente = borda branca.
@@ -2478,8 +2846,11 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                       updateScene(currentPageId, destKey, { ...sourceScene });
                       updateScene(currentPageId, sceneMoveModal.sourceKey, { name:'', color:'', channels:{} });
                       setActiveScenes(prev => {
-                        const next = prev.filter(k => k !== sceneMoveModal.sourceKey);
-                        if (prev.includes(sceneMoveModal.sourceKey) && !next.includes(destKey)) next.push(destKey);
+                        const wasActive = prev.some(activeRef => activeSceneMatches(activeRef, currentPageId, sceneMoveModal.sourceKey));
+                        const next = prev.filter(activeRef => !activeSceneMatches(activeRef, currentPageId, sceneMoveModal.sourceKey));
+                        if (wasActive && !next.some(activeRef => activeSceneMatches(activeRef, currentPageId, destKey))) {
+                          next.push(sceneRefId(currentPageId, destKey));
+                        }
                         return next;
                       });
                       setSceneMoveModal(null);

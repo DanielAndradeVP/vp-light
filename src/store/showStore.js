@@ -72,12 +72,61 @@ function filterDisabledFixtureChannels(channelMap, disabledChannels) {
   return filtered;
 }
 
+export function normalizePageId(pageId) {
+  const number = Math.max(1, Number.parseInt(pageId, 10) || 1);
+  return String(number);
+}
+
+export function sceneRefId(pageId, sceneKey) {
+  return `${normalizePageId(pageId)}:${String(sceneKey || '').toUpperCase()}`;
+}
+
+export function parseSceneRef(value, fallbackPageId = '1') {
+  if (value && typeof value === 'object') {
+    return {
+      pageId: normalizePageId(value.pageId ?? fallbackPageId),
+      sceneKey: String(value.sceneKey ?? value.key ?? '').toUpperCase(),
+    };
+  }
+  const raw = String(value || '');
+  const separator = raw.indexOf(':');
+  if (separator !== -1) {
+    return {
+      pageId: normalizePageId(raw.slice(0, separator)),
+      sceneKey: raw.slice(separator + 1).toUpperCase(),
+    };
+  }
+  return { pageId: normalizePageId(fallbackPageId), sceneKey: raw.toUpperCase() };
+}
+
+export function activeSceneMatches(value, pageId, sceneKey) {
+  const ref = parseSceneRef(value, pageId);
+  return ref.pageId === normalizePageId(pageId) && ref.sceneKey === String(sceneKey || '').toUpperCase();
+}
+
+function createDefaultPages() {
+  const pages = {};
+  for (let page = 1; page <= 10; page += 1) {
+    pages[String(page)] = { name: `Pagina ${page}`, scenes: {} };
+  }
+  return pages;
+}
+
+function normalizeShowPages(showData) {
+  const pages = { ...createDefaultPages(), ...(showData?.pages || {}) };
+  for (const [pageId, pageData] of Object.entries(pages)) {
+    pages[pageId] = {
+      name: pageData?.name || `Pagina ${pageId}`,
+      scenes: pageData?.scenes || {},
+    };
+  }
+  return { ...showData, pages };
+}
+
 const DEFAULT_SHOW = {
   version: '1.0',
   fixtures: [],
-  pages: {
-    '1': { name: 'Página 1', scenes: {} }
-  }
+  pages: createDefaultPages(),
 };
 
 export function ShowProvider({ children }) {
@@ -91,7 +140,7 @@ export function ShowProvider({ children }) {
     async function init() {
       try {
         const result = await window.vp.getShow();
-        if (result?.show) setShow(normalizeShowFixturePositions(result.show));
+        if (result?.show) setShow(normalizeShowFixturePositions(normalizeShowPages(result.show)));
       } catch (e) {
         console.error('[showStore] init:', e);
       } finally {
@@ -102,14 +151,14 @@ export function ShowProvider({ children }) {
   }, []);
 
   const saveShow = useCallback(async (data) => {
-    const target = normalizeShowFixturePositions(data || show);
+    const target = normalizeShowFixturePositions(normalizeShowPages(data || show));
     return await window.vp.saveShow(target);
   }, [show]);
 
   const loadShow = useCallback(async () => {
     const result = await window.vp.loadShow();
     if (result.ok) {
-      setShow(normalizeShowFixturePositions(result.show));
+      setShow(normalizeShowFixturePositions(normalizeShowPages(result.show)));
       setCurrentPage('1');
       setActiveScenes([]);
     }
@@ -152,40 +201,44 @@ export function ShowProvider({ children }) {
   }, []);
 
   const activateScene = useCallback(async (sceneKey) => {
-    const page = show?.pages?.[currentPage];
+    const pageId = normalizePageId(currentPage);
+    const page = show?.pages?.[pageId];
     const scene = page?.scenes?.[sceneKey];
     if (!scene) return;
     const disabledChannels = getDisabledFixtureChannelSet(show.fixtures);
     const channels = filterDisabledFixtureChannels(scene.channels || {}, disabledChannels);
-    const scenesMap = { [sceneKey]: { name: scene.name || sceneKey, channels } };
+    const activeRef = sceneRefId(pageId, sceneKey);
+    const scenesMap = { [activeRef]: { name: scene.name || sceneKey, channels } };
     window.vp.setActiveSceneChannels(channels);
     window.vp.setActiveScenes(scenesMap);
     await window.vp.restoreState(channels);
-    setActiveScenes(prev => (prev.length === 1 && prev[0] === sceneKey) ? prev : [sceneKey]);
+    setActiveScenes(prev => (prev.length === 1 && prev[0] === activeRef) ? prev : [activeRef]);
   }, [show, currentPage]);
 
   // Cena normal: sempre uma ativa. Clicar na cena atual nao desliga;
   // clicar em outra troca a cena ativa sem tocar na logica de scripts/page-scripts.
   const toggleScene = useCallback((sceneKey) => {
-    const page = show?.pages?.[currentPage];
+    const pageId = normalizePageId(currentPage);
+    const page = show?.pages?.[pageId];
     const scene = page?.scenes?.[sceneKey];
     if (!scene?.channels || Object.keys(scene.channels).length === 0) return;
     const disabledChs = getDisabledFixtureChannelSet(show.fixtures);
     const channels = filterDisabledFixtureChannels(scene.channels, disabledChs);
-    const scenesMap = { [sceneKey]: { name: scene.name || sceneKey, channels } };
+    const activeRef = sceneRefId(pageId, sceneKey);
+    const scenesMap = { [activeRef]: { name: scene.name || sceneKey, channels } };
 
     setActiveScenes(prev => {
-      if (prev.includes(sceneKey)) {
+      if (prev.some(item => item === activeRef || activeSceneMatches(item, pageId, sceneKey))) {
         if (prev.length === 1) return prev;
         window.vp.setActiveSceneChannels(channels);
         window.vp.setActiveScenes(scenesMap);
         window.vp.restoreState(channels);
-        return [sceneKey];
+        return [activeRef];
       }
       window.vp.setActiveSceneChannels(channels);
       window.vp.setActiveScenes(scenesMap);
       window.vp.restoreState(channels);
-      return [sceneKey];
+      return [activeRef];
     });
   }, [show, currentPage]);
 
@@ -195,26 +248,31 @@ export function ShowProvider({ children }) {
   }, []);
 
   const updateScene = useCallback(async (pageId, sceneKey, sceneData) => {
+    const normalizedPageId = normalizePageId(pageId);
+    const shouldDelete = !sceneData.name
+      && !sceneData.color
+      && Object.keys(sceneData.channels || {}).length === 0
+      && Object.keys(sceneData.customFunctions || {}).length === 0;
     setShow(prev => {
       const next = JSON.parse(JSON.stringify(prev));
-      if (!next.pages[pageId]) next.pages[pageId] = { name: `Página ${pageId}`, scenes: {} };
-      if (!sceneData.name
-          && !sceneData.color
-          && Object.keys(sceneData.channels || {}).length === 0
-          && Object.keys(sceneData.customFunctions || {}).length === 0) {
-        delete next.pages[pageId].scenes[sceneKey];
+      if (!next.pages[normalizedPageId]) next.pages[normalizedPageId] = { name: `Pagina ${normalizedPageId}`, scenes: {} };
+      if (shouldDelete) {
+        delete next.pages[normalizedPageId].scenes[sceneKey];
       } else {
-        next.pages[pageId].scenes[sceneKey] = sceneData;
+        next.pages[normalizedPageId].scenes[sceneKey] = sceneData;
       }
       return next;
     });
-    return window.vp.updateScene(pageId, sceneKey, sceneData);
+    if (shouldDelete) {
+      setActiveScenes(prev => prev.filter(item => !activeSceneMatches(item, normalizedPageId, sceneKey)));
+    }
+    return window.vp.updateScene(normalizedPageId, sceneKey, sceneData);
   }, []);
 
   const disabledFixtureChannels = useMemo(() => getDisabledFixtureChannelSet(show.fixtures), [show.fixtures]);
   const selectedFixture = show.fixtures.find(f => f.id === selectedFixtureId && isFixtureEnabled(f)) || null;
   const pages = show.pages || {};
-  const currentPageData = pages[currentPage] || { name: '', scenes: {} };
+  const currentPageData = pages[normalizePageId(currentPage)] || { name: '', scenes: {} };
 
   return (
     <ShowContext.Provider value={{

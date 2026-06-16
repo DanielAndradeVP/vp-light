@@ -203,7 +203,7 @@ NOTAS PARA O ENGENHEIRO DE SCRIPT
     Zerar strobo dos Moving Heads (124 e 204 → 0)
     Zerar prism (127 e 207 → 0)
     Zerar todos os canais das Ribaltas (258–270 e 271–283 → 0)
-    Zerar dimmer dos Mini Bruts (401, 402, 409, 410 → 0)
+    Zerar dimmer dos Mini Bruts (400, 401, 402, 410 → 0)
     Zerar dimmer da Fita Led (404 → 0)
 
 =================================================

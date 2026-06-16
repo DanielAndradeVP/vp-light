@@ -116,14 +116,14 @@
       "startChannel": 33,
       "channelCount": 8,
       "channels": [
+        "macro",
+        "color_wheel",
+        "speed",
         "dimmer",
-        "strobo",
-        "ch-3",
-        "ch-4",
         "red",
         "green",
         "blue",
-        "white"
+        ""
       ],
       "posX": 0,
       "posY": -240,
@@ -132,8 +132,7 @@
       "fixtureType": "par_led",
       "universe": 0,
       "group": "ParLed Deluxe",
-      "note": "trocando os valores de dos atributos para o parled deluxe(os outros nomes estao errados, sao os achatados)",
-      "observation": ""
+      "note": "DMX 33-40. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue."
     },
     {
       "id": "fixture_1780805067518_parled_deluxe_6",
@@ -166,14 +165,14 @@
       "startChannel": 49,
       "channelCount": 8,
       "channels": [
+        "macro",
+        "color_wheel",
+        "speed",
         "dimmer",
-        "strobo",
-        "ch-3",
-        "ch-4",
         "red",
         "green",
         "blue",
-        "white"
+        ""
       ],
       "posX": 80,
       "posY": -240,
@@ -182,7 +181,7 @@
       "fixtureType": "par_led",
       "universe": 0,
       "group": "ParLed Deluxe",
-      "note": "trocando para outro par led igual o par led 5",
+      "note": "DMX 57-64. Canais 1-3 e 8 ainda nao identificados e marcados como pending_label_1, pending_label_2, pending_label_3 e pending_label_8. Canal 4=dimmer, 5=red, 6=green, 7=blue.",
       "observation": ""
     },
     {
@@ -386,7 +385,6 @@
       "universe": 0,
       "group": "Ribaltas",
       "note": "DIREITA (A). DMX 271-283. Tilt funcional=105; Speed=90; LEDs 1-8 em 255 = branco cheio; Strobe=0 desligado; Special=0 modo normal.",
-      "tiltOffset": 3,
       "observation": ""
     },
     {
@@ -879,42 +877,6 @@
           }
         }
       }
-    },
-    "2": {
-      "name": "Página 2",
-      "scenes": {}
-    },
-    "3": {
-      "name": "Página 3",
-      "scenes": {}
-    },
-    "4": {
-      "name": "Página 4",
-      "scenes": {}
-    },
-    "5": {
-      "name": "Página 5",
-      "scenes": {}
-    },
-    "6": {
-      "name": "Página 6",
-      "scenes": {}
-    },
-    "7": {
-      "name": "Página 7",
-      "scenes": {}
-    },
-    "8": {
-      "name": "Página 8",
-      "scenes": {}
-    },
-    "9": {
-      "name": "Página 9",
-      "scenes": {}
-    },
-    "10": {
-      "name": "Página 10",
-      "scenes": {}
     }
   },
   "page_scripts": {
@@ -938,43 +900,12 @@
       "file": "C:\\vp-light\\scripts\\onda-branca.js"
     },
     "F4": {
-      "name": "mini-bruts-pisca-lento",
-      "file": "C:\\vp-light\\scripts\\mini-bruts-pisca-lento.js"
-    }
-  },
-  "mode2": {
-    "positions": {},
-    "titleOffsets": {},
-    "layout": "padrao",
-    "gridMode": 0,
-    "channelOrderMode": {
-      "ribalta": "pref",
-      "moving_head_beam": "pref"
+      "name": "mini-bruts-pisca-medio",
+      "file": "C:\\vp-light\\scripts\\mini-bruts-pisca-medio.js"
     },
-    "channelPrefOrder": {
-      "moving_head_beam": [
-        "pan",
-        "tilt",
-        "frost",
-        "speed",
-        "strobo",
-        "fecho_lampada",
-        "color_wheel",
-        "gobo_wheel",
-        "pan_fine",
-        "tilt_fine"
-      ],
-      "ribalta": [
-        "tilt",
-        "dimmer",
-        "red",
-        "green",
-        "blue",
-        "speed",
-        "led_1",
-        "strobo",
-        "function"
-      ]
+    "F5": {
+      "name": "ribalta-posical-frente",
+      "file": "C:\\vp-light\\scripts\\ribalta-posical-frente.js"
     }
   }
 }

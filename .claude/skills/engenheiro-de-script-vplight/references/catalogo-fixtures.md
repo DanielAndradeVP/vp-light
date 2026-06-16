@@ -164,12 +164,12 @@ Grupo: `Mini Bruts`. Halogenos via hack dimmer DMX. 1 canal `dimmer` cada (0 = o
 
 | Nome | id | start = canal dimmer |
 |---|---|---:|
-| Mini_Brut_01 | `fixture_1780805067518_mini_brut_01` | 409 |
-| Mini_Brut_02 | `fixture_1780805067518_mini_brut_02` | 402 |
-| Mini_Brut_03 | `fixture_1780805067518_mini_brut_03` | 401 |
+| Mini_Brut_01 | `fixture_1780805067518_mini_brut_01` | 400 |
+| Mini_Brut_02 | `fixture_1780805067518_mini_brut_02` | 401 |
+| Mini_Brut_03 | `fixture_1780805067518_mini_brut_03` | 402 |
 | Mini_Brut_04 | `fixture_1780805067518_mini_brut_04` | 410 |
 
-Grupo de impacto/flash. Para chase visual, confirmar ordem fisica (ordem DMX e 401, 402, 409, 410).
+Grupo de impacto/flash. Para chase visual, confirmar ordem fisica (ordem DMX e 400, 401, 402, 410).
 
 ---
 
