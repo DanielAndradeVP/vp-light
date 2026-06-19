@@ -886,8 +886,8 @@ const RIBALTA_CHANNELS = {
 
 const MINI_BRUT_CHANNELS = {
   fixture_1780805067518_mini_brut_01: { dimmer: 400 },
-  fixture_1780805067518_mini_brut_02: { dimmer: 402 },
-  fixture_1780805067518_mini_brut_03: { dimmer: 401 },
+  fixture_1780805067518_mini_brut_02: { dimmer: 401 },
+  fixture_1780805067518_mini_brut_03: { dimmer: 402 },
   fixture_1780805067518_mini_brut_04: { dimmer: 410 },
 };
 

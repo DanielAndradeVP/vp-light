@@ -28,3 +28,4 @@ pnpm-debug.log*
 # Sistema
 .DS_Store
 Thumbs.db
+start-linux.sh

@@ -291,32 +291,41 @@ export function update(group, channels) {
 
   const { emitters, lights, beams } = ensureVisuals(group);
 
-  emitters.forEach((emitter) => {
+  // Canais led_1–led_8 controlam cada LED individualmente.
+  // O dimmer é o master: ledT[i] = (led_i / 255) * dimmerT
+  // Se o canal led_X não estiver mapeado no fixture, assume 255 (ligado).
+  const ledKeys = ['led_1', 'led_2', 'led_3', 'led_4', 'led_5', 'led_6', 'led_7', 'led_8'];
+  const ledT = ledKeys.map((key) => {
+    if (ch[key] == null) return dimmerT; // canal não mapeado → usa só o dimmer
+    const raw = channels[ch[key] - 1] ?? 0;
+    return (Math.max(0, Math.min(255, raw)) / 255) * dimmerT;
+  });
+
+  emitters.forEach((emitter, index) => {
     if (emitter.material && 'emissiveIntensity' in emitter.material) {
-      emitter.material.emissiveIntensity =
-        dimmerT * EMISSIVE_MAX_INTENSITY;
+      emitter.material.emissiveIntensity = ledT[index] * EMISSIVE_MAX_INTENSITY;
     }
   });
 
-  lights.forEach((light) => {
-    light.intensity = dimmerT * LIGHT_MAX_INTENSITY;
+  lights.forEach((light, index) => {
+    light.intensity = ledT[index] * LIGHT_MAX_INTENSITY;
   });
-
-  if (dimmerT <= 0.001) {
-    beams.forEach((beam) => {
-      beam.visible = false;
-      beam.material.opacity = 0;
-    });
-    return;
-  }
 
   const beamLength = getBeamLengthUntilSceneLimits(group);
 
   beams.forEach((beam, index) => {
+    const t = ledT[index];
+
+    if (t <= 0.001) {
+      beam.visible = false;
+      beam.material.opacity = 0;
+      return;
+    }
+
     const x = getLedX(index);
 
     beam.visible = true;
-    beam.material.opacity = BEAM_MAX_OPACITY * dimmerT;
+    beam.material.opacity = BEAM_MAX_OPACITY * t;
 
     beam.scale.set(1, beamLength, 1);
     beam.position.set(x, 0.05, BEAM_START_Z + beamLength / 2);

@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "concurrently \"vite --port 5173\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev:linux": "concurrently \"vite --port 5173\" \"wait-on http://localhost:5173 && electron . --disable-gpu\"",
     "build": "vite build && electron-builder"
   },
   "devDependencies": {

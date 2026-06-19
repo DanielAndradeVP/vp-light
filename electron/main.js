@@ -390,8 +390,26 @@ ipcMain.handle('show:save', (_, showData) => {
       mergedScripts[fkey] = { name: meta.name, file: meta.file };
     }
 
-    // Páginas: renderer é fonte da verdade.
-    const mergedPages = { ...(currentShow?.pages || {}), ...showData.pages };
+    // Páginas: merge profundo por página.
+    // Renderer é a fonte da verdade para intenção do usuário (name + quais cenas existem).
+    // currentShow.pages complementa páginas que o renderer não enviou.
+    // Dentro de cada página, scenes do renderer vencem — garantindo que limpezas e
+    // saves recentes do renderer prevaleçam sobre o que ficou em memória no main.
+    const mergedPages = {};
+    const _allPageIds = new Set([
+      ...Object.keys(currentShow?.pages || {}),
+      ...Object.keys(showData.pages || {}),
+    ]);
+    for (const _pid of _allPageIds) {
+      const _fromMain     = currentShow?.pages?.[_pid]  || {};
+      const _fromRenderer = showData.pages?.[_pid]      || {};
+      mergedPages[_pid] = {
+        name:   _fromRenderer.name   || _fromMain.name   || `Página ${_pid}`,
+        // Cenas: currentShow (atualizado por show:updateScene em tempo real) como base,
+        // renderer sobrescreve — garante que a cena mais recente salva pelo renderer vença.
+        scenes: { ...(_fromMain.scenes || {}), ...(_fromRenderer.scenes || {}) },
+      };
+    }
 
     // page_scripts: pageScriptMeta do main e a fonte de verdade em runtime.
     // Nao herdar do renderer/disco aqui: entradas removidas via page_script:clear
