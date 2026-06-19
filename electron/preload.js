@@ -15,6 +15,19 @@ contextBridge.exposeInMainWorld('vp', {
     return () => ipcRenderer.removeListener('window:close-requested', listener);
   },
 
+  // ─── VISUALIZADOR 3D (janela independente) ─────────────────
+  open3DViewer: () => ipcRenderer.invoke('window:open3DViewer'),
+  onViewer3DClosed: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('viewer3d:closed', listener);
+    return () => ipcRenderer.removeListener('viewer3d:closed', listener);
+  },
+  onDmxUniverse: (callback) => {
+    const listener = (_event, channels) => callback(channels);
+    ipcRenderer.on('dmx-universe', listener);
+    return () => ipcRenderer.removeListener('dmx-universe', listener);
+  },
+
   // ─── ENGINE ───────────────────────────────────────────────
   startEngine: () => ipcRenderer.invoke('engine:start'),
   stopEngine:  () => ipcRenderer.invoke('engine:stop'),

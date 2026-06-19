@@ -225,6 +225,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   } = useShow();
 
   const [blackoutActive, setBlackoutActive] = useState(false);
+  const [viewer3DActive, setViewer3DActive] = useState(false);
   const [toast, setToast] = useState(null); // string | null
   const [exitModalOpen, setExitModalOpen] = useState(false);
   const [exitSaving, setExitSaving] = useState(false);
@@ -322,6 +323,17 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       window.vp.blackout();
     }
   }
+
+  async function handleOpen3DViewer() {
+    await window.vp.open3DViewer();
+    setViewer3DActive(true);
+  }
+
+  useEffect(() => {
+    if (!window.vp?.onViewer3DClosed) return;
+    const unsubscribe = window.vp.onViewer3DClosed(() => setViewer3DActive(false));
+    return unsubscribe;
+  }, []);
 
   const [liveValues, setLiveValues] = useState({});
   const [universeSnapshot, setUniverseSnapshot] = useState({}); // snapshot completo do universo — alimenta cores de todos os fixtures na mesa
@@ -1317,6 +1329,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
             ⚠ {conflicts.length} conflito{conflicts.length !== 1 ? 's' : ''}
           </TopBtn>
         )}
+        <TopBtn onClick={handleOpen3DViewer} active={viewer3DActive}>
+          {viewer3DActive ? '3D (aberto)' : '3D'}
+        </TopBtn>
         <TopBtn onClick={handleBlackout} danger active={blackoutActive}>
           {blackoutActive ? 'BLACKOUT ON' : 'BLACKOUT'}
         </TopBtn>
@@ -3032,7 +3047,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   );
 }
 
-function TopBtn({ onClick, children, danger, disabled, active }) {
+function TopBtn({ onClick, children, danger, disabled, active, accentActive }) {
   return (
     <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
       minHeight:36, padding:'0 16px', borderRadius:4,
@@ -3040,9 +3055,9 @@ function TopBtn({ onClick, children, danger, disabled, active }) {
       fontSize:theme.typography.button.fontSize,
       fontWeight:theme.typography.button.fontWeight,
       cursor: disabled ? 'default' : 'pointer',
-      background: disabled ? 'rgba(0,0,0,.12)' : danger ? theme.colors.warn : 'transparent',
-      color: disabled ? theme.colors.textDisabled : danger ? '#ffffff' : theme.colors.primary,
-      border:'none',
+      background: disabled ? 'rgba(0,0,0,.12)' : danger ? theme.colors.warn : accentActive ? theme.colors.accentOverlay : 'transparent',
+      color: disabled ? theme.colors.textDisabled : danger ? '#ffffff' : accentActive ? theme.colors.accent : theme.colors.primary,
+      border: accentActive ? `1px solid ${theme.colors.accent}` : 'none',
       boxShadow: disabled ? 'none' : danger ? theme.elevation.z2 : 'none',
       animation: active ? 'blink-border 1s step-start infinite' : 'none',
     }}>{children}</button>

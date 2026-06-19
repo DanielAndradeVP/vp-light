@@ -129,6 +129,7 @@ function openScriptInVSCode(filePath) {
 
 let mainWindow = null;
 let allowWindowClose = false;
+let viewer3DWindow = null;
 
 function createWindow() {
   allowWindowClose = false;
@@ -165,6 +166,52 @@ function createWindow() {
   });
 }
 
+// Janela independente do visualizador 3D (Fase 1: apenas fundo preto, sem fixtures).
+// Não tem parent fixo — pode ser movida para outro monitor livremente e fechá-la
+// não afeta a janela principal nem a operação DMX em curso.
+function createViewer3DWindow() {
+  if (viewer3DWindow) {
+    viewer3DWindow.focus();
+    return viewer3DWindow;
+  }
+
+  viewer3DWindow = new BrowserWindow({
+    width: 1280,
+    height: 720,
+    resizable: true,
+    title: 'vp-light 3D — Vida e Paz',
+    backgroundColor: '#000000',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+
+  if (isDev) {
+    viewer3DWindow.loadURL('http://localhost:5173/viewer3d.html');
+  } else {
+    viewer3DWindow.loadFile(path.join(__dirname, '..', 'dist', 'viewer3d.html'));
+  }
+
+  viewer3DWindow.on('closed', () => {
+    viewer3DWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('viewer3d:closed');
+  });
+
+  return viewer3DWindow;
+}
+
+// Envia o universo DMX (512 canais) para a janela 3D a cada frame da engine.
+// Aproveita o ciclo existente de 40ms (engine.onFrame) — nenhum loop novo.
+// Se a janela 3D não estiver aberta, ignora silenciosamente.
+function broadcastDmxUniverseToViewer3D(universeBuffer) {
+  if (!viewer3DWindow || viewer3DWindow.isDestroyed()) return;
+  viewer3DWindow.webContents.send('dmx-universe', Array.from(universeBuffer));
+}
+
+engine.onFrame(broadcastDmxUniverseToViewer3D);
+
 // ─────────────────────────────────────────────────────────────
 // IPC HANDLERS — ENGINE
 // ─────────────────────────────────────────────────────────────
@@ -172,7 +219,13 @@ function createWindow() {
 ipcMain.handle('window:closeApp', () => {
   if (!mainWindow) return { ok: false };
   allowWindowClose = true;
+  if (viewer3DWindow) viewer3DWindow.close();
   mainWindow.close();
+  return { ok: true };
+});
+
+ipcMain.handle('window:open3DViewer', () => {
+  createViewer3DWindow();
   return { ok: true };
 });
 

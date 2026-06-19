@@ -19,6 +19,16 @@ const INTERVAL_MS = Math.round(1000 / FPS); // 40ms
 let intervalId = null;
 let frameCount = 0;
 
+// Listeners externos notificados a cada frame, após o universo final estar
+// montado (mesmo ciclo de 40ms — nenhum loop novo é criado). Usado pela
+// janela do visualizador 3D para receber o universo sem acoplar a engine
+// a nada de Electron/BrowserWindow.
+const frameListeners = [];
+
+function onFrame(callback) {
+  if (typeof callback === 'function') frameListeners.push(callback);
+}
+
 function start() {
   if (intervalId) {
     console.log('[engine] já está rodando');
@@ -29,6 +39,17 @@ function start() {
     interpolator.tick();           // avança interpolação de pan/tilt (speed virtual)
     compositor.renderFrame();      // relógio único: compõe as camadas no universo
     sendArtDMX(getUniverse());     // e envia o frame
+
+    // Universo final já montado neste ponto — notifica listeners (ex.: viewer 3D).
+    const currentUniverse = getUniverse();
+    for (const listener of frameListeners) {
+      try {
+        listener(currentUniverse);
+      } catch (e) {
+        console.error('[engine] erro em frame listener:', e.message);
+      }
+    }
+
     frameCount++;
   }, INTERVAL_MS);
   console.log(`[engine] iniciado @ ${FPS}fps (${INTERVAL_MS}ms/frame)`);
@@ -50,4 +71,4 @@ function getFrameCount() {
   return frameCount;
 }
 
-module.exports = { start, stop, isRunning, getFrameCount };
+module.exports = { start, stop, isRunning, getFrameCount, onFrame };
