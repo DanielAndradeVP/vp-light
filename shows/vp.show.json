@@ -6,9 +6,9 @@
     "notes": "Show base para o Fire. Salvar antes de sair!",
     "viewport": {
       "grid": {
-        "zoom": 1,
-        "panX": 730.5,
-        "panY": 484
+        "zoom": 1.6105100000000008,
+        "panX": 704.886225,
+        "panY": 494.98831500000006
       }
     }
   },
@@ -29,7 +29,7 @@
         "blue"
       ],
       "posX": -240,
-      "posY": -240,
+      "posY": -200,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -54,7 +54,7 @@
         ""
       ],
       "posX": -160,
-      "posY": -240,
+      "posY": -200,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -78,7 +78,7 @@
         ""
       ],
       "posX": -80,
-      "posY": -240,
+      "posY": -200,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -126,7 +126,7 @@
         "white"
       ],
       "posX": 0,
-      "posY": -240,
+      "posY": -280,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -151,7 +151,7 @@
         ""
       ],
       "posX": 320,
-      "posY": -240,
+      "posY": -200,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -176,7 +176,7 @@
         "white"
       ],
       "posX": 80,
-      "posY": -240,
+      "posY": -280,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -201,7 +201,7 @@
         ""
       ],
       "posX": 160,
-      "posY": -240,
+      "posY": -200,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -225,7 +225,7 @@
         ""
       ],
       "posX": 240,
-      "posY": -240,
+      "posY": -200,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -2512,7 +2512,113 @@
     },
     "4": {
       "name": "Página 4",
-      "scenes": {}
+      "scenes": {
+        "S": {
+          "name": "Green_02",
+          "color": "#00aa00",
+          "channels": {
+            "2": 255,
+            "3": 50,
+            "4": 190,
+            "5": 255,
+            "9": 255,
+            "10": 50,
+            "11": 190,
+            "12": 255,
+            "17": 255,
+            "18": 50,
+            "19": 190,
+            "20": 255,
+            "33": 255,
+            "38": 255,
+            "49": 255,
+            "54": 255,
+            "57": 255,
+            "58": 50,
+            "59": 190,
+            "60": 255,
+            "65": 255,
+            "66": 50,
+            "67": 190,
+            "68": 255,
+            "74": 255,
+            "75": 50,
+            "76": 190,
+            "77": 255,
+            "124": 255,
+            "125": 255,
+            "134": 251,
+            "204": 255,
+            "205": 255,
+            "214": 249,
+            "258": 232,
+            "259": 197,
+            "260": 255,
+            "261": 255,
+            "262": 255,
+            "263": 255,
+            "264": 255,
+            "265": 255,
+            "266": 255,
+            "267": 255,
+            "268": 255,
+            "271": 250,
+            "272": 197,
+            "273": 255,
+            "274": 255,
+            "275": 255,
+            "276": 255,
+            "277": 255,
+            "278": 255,
+            "279": 255,
+            "280": 255,
+            "281": 255,
+            "400": 120,
+            "401": 120,
+            "402": 120,
+            "404": 120,
+            "410": 120
+          },
+          "customFunctions": {
+            "fixture_1780805067518_moving_head_beam_1": {
+              "tilt_invert": false
+            },
+            "fixture_1780805067518_moving_head_beam_2": {
+              "tilt_invert": false
+            }
+          }
+        },
+        "A": {
+          "name": "Green_01",
+          "color": "#00aa00",
+          "channels": {
+            "5": 255,
+            "7": 255,
+            "12": 255,
+            "14": 255,
+            "20": 255,
+            "22": 255,
+            "33": 255,
+            "38": 255,
+            "49": 255,
+            "54": 255,
+            "60": 255,
+            "62": 255,
+            "68": 255,
+            "70": 255,
+            "77": 255,
+            "79": 255
+          },
+          "customFunctions": {
+            "fixture_1780805067518_moving_head_beam_1": {
+              "tilt_invert": false
+            },
+            "fixture_1780805067518_moving_head_beam_2": {
+              "tilt_invert": false
+            }
+          }
+        }
+      }
     },
     "5": {
       "name": "Página 5",
@@ -2545,7 +2651,53 @@
   "scripts": {
     "F1": {
       "name": "brut-forte",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-forte.js"
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-forte.js",
+      "color": "#000000"
+    },
+    "F2": {
+      "name": "brut-medio",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-medio.js",
+      "color": "#000000"
+    },
+    "F3": {
+      "name": "brut-baixo",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-baixo.js",
+      "color": "#000000"
+    },
+    "F4": {
+      "name": "mini-bruts-pisca-medio",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mini-bruts-pisca-medio.js",
+      "color": "#000000"
+    },
+    "F5": {
+      "name": "mini-bruts-pisca-lento",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mini-bruts-pisca-lento.js",
+      "color": "#000000"
+    },
+    "F8": {
+      "name": "onda-branca",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/onda-branca.js",
+      "color": "#000000"
+    },
+    "F9": {
+      "name": "onda-branca-2",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/onda-branca-2.js",
+      "color": "#000000"
+    },
+    "F10": {
+      "name": "onda-branca-3",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/onda-branca-3.js",
+      "color": "#000000"
+    },
+    "F11": {
+      "name": "oceano-profundo",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/oceano-profundo.js",
+      "color": "#000000"
+    },
+    "F6": {
+      "name": "noite-roxa",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/noite-roxa.js",
+      "color": "#000000"
     }
   },
   "mode2": {

@@ -56,7 +56,7 @@ contextBridge.exposeInMainWorld('vp', {
    */
   blackout: () => ipcRenderer.invoke('dmx:blackout'),
   restoreState: (channels) => ipcRenderer.invoke('dmx:restoreState', channels),
-  setActiveSceneChannels: (channels) => ipcRenderer.invoke('dmx:setActiveSceneChannels', channels),
+  setActiveSceneChannels: (channels, parLedChs) => ipcRenderer.invoke('dmx:setActiveSceneChannels', channels, parLedChs),
   setActiveScenes: (scenesMap) => ipcRenderer.invoke('dmx:setActiveScenes', scenesMap),
   getConflicts: () => ipcRenderer.invoke('dmx:getConflicts'),
 
@@ -65,6 +65,10 @@ contextBridge.exposeInMainWorld('vp', {
    * @returns {Promise<Object>}  Ex: { "1": 255, "4": 128 }
    */
   getUniverse: () => ipcRenderer.invoke('dmx:getUniverse'),
+
+  // Congela/descongela envio Art-Net para a rede real (palco).
+  // O loopback (viewer 3D) continua ativo independente do estado.
+  setArtNetFrozen: (frozen) => ipcRenderer.invoke('artnet:setFrozen', frozen),
 
   // ─── SHOW ─────────────────────────────────────────────────
   /**

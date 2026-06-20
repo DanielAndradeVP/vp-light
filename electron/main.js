@@ -243,6 +243,14 @@ ipcMain.handle('engine:stop', () => {
 // Útil para diagnóstico e seleção manual de interface no renderer.
 ipcMain.handle('artnet:getInterfaces', () => artnet.getActiveInterfaces());
 
+// Congela/descongela o envio Art-Net para a rede real.
+// Com freeze ativo, o loopback (viewer 3D) continua recebendo frames normalmente;
+// os pacotes de broadcast para o palco são suprimidos até o descongelamento.
+ipcMain.handle('artnet:setFrozen', (_, frozen) => {
+  artnet.setFrozen(frozen);
+  return { ok: true, frozen: artnet.isFrozen() };
+});
+
 ipcMain.handle('engine:status', () => ({
   running: engine.isRunning(),
   frames: engine.getFrameCount(),
@@ -324,10 +332,38 @@ ipcMain.handle('dmx:getConflicts', () => {
 
 // Mapa de canais bloqueados por cenas ativas — atualizado pelo renderer
 let activeSceneChannels = {}; // { [canal]: valor } — scripts não sobrescrevem esses canais
+let parLedChannels = new Set(); // canais DMX de par_led — preenchido via setActiveSceneChannels (RMOP-004/005)
 
-ipcMain.handle('dmx:setActiveSceneChannels', (_, channels) => {
+/**
+ * Recalcula o lock de cena aplicado ao compositor, permitindo a COEXISTÊNCIA
+ * cena + script: enquanto houver script rodando, os canais de par_led saem do
+ * lock (o script controla); a cena segue travando o restante (moving heads,
+ * ribalta, etc.). Sem script rodando, o lock volta a cobrir todos os canais
+ * da cena.
+ *
+ * Reavaliado em dois momentos:
+ *   - mudança de cenas ativas (handler dmx:setActiveSceneChannels)
+ *   - liga/desliga de script (handler script:toggle — RMOP-002)
+ */
+function _applySceneLock() {
+  const anyScriptRunning = Object.keys(runningScripts).length > 0;
+  if (anyScriptRunning && parLedChannels.size > 0) {
+    // Solta os canais de par_led do lock — o script passa a escrevê-los.
+    const lock = {};
+    for (const [ch, val] of Object.entries(activeSceneChannels)) {
+      if (!parLedChannels.has(Number(ch))) lock[ch] = val;
+    }
+    compositor.setSceneLock(lock);
+  } else {
+    // Sem script: a cena trava todos os seus canais (comportamento original).
+    compositor.setSceneLock(activeSceneChannels);
+  }
+}
+
+ipcMain.handle('dmx:setActiveSceneChannels', (_, channels, parLedChs) => {
   activeSceneChannels = filterDisabledFixtureChannels(channels);
-  compositor.setSceneLock(activeSceneChannels); // guard de cena aplicado na composição
+  if (Array.isArray(parLedChs)) parLedChannels = new Set(parLedChs.map(Number));
+  _applySceneLock(); // guard de cena aplicado na composição (condicional a scripts ativos)
   return { ok: true };
 });
 
@@ -945,9 +981,12 @@ ipcMain.handle('script:toggle', (_, fkey) => {
   if (runningScripts[fkey]) {
     // Parar
     stopRunningScript(fkey, 'toggle');
+    _applySceneLock(); // se era o último script, par_leds voltam ao controle da cena
     return { ok: true, running: false };
   }
-  return startScript(fkey);
+  const result = startScript(fkey);
+  _applySceneLock(); // script ligou — solta par_leds do lock para o script controlar
+  return result;
 });
 
 ipcMain.handle('script:list', () => {

@@ -244,12 +244,24 @@ function ensureVisuals(group) {
   return visuals;
 }
 
+// stroboDmx 1–255 → 1Hz a 25Hz
+function strobeGate(stroboDmx) {
+  const hz = THREE.MathUtils.lerp(1, 25, (stroboDmx - 1) / 254);
+  const period = 1000 / hz;
+  return (performance.now() % period) < period * 0.5 ? 1 : 0;
+}
+
 export function update(group, channels) {
   const ch = group.userData.channels;
   if (!ch) return;
 
   const dimmer = channels[ch.dimmer - 1] ?? 0;
-  const dimmerT = Math.max(0, Math.min(255, dimmer)) / 255;
+  let dimmerT = Math.max(0, Math.min(255, dimmer)) / 255;
+
+  const stroboDmx = ch.strobo != null ? (channels[ch.strobo - 1] ?? 0) : 0;
+  if (stroboDmx > 0) {
+    dimmerT *= strobeGate(stroboDmx);
+  }
 
   // Importante:
   // speed é só velocidade de movimento.

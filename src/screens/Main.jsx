@@ -226,6 +226,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   const [blackoutActive, setBlackoutActive] = useState(false);
   const [viewer3DActive, setViewer3DActive] = useState(false);
+  const [artNetFrozen, setArtNetFrozen] = useState(false);
   const [toast, setToast] = useState(null); // string | null
   const [exitModalOpen, setExitModalOpen] = useState(false);
   const [exitSaving, setExitSaving] = useState(false);
@@ -287,15 +288,12 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         });
       }
     });
-    window.vp.setActiveSceneChannels(merged);
-    // Limpa o universo antes de reaplicar — caso contrário os canais da fonte
-    // removida (cena desmarcada ou script desligado) ficariam presos, pois
-    // applyScene é aditivo. Scripts ainda ativos voltam a escrever no tick
-    // seguinte (loop de 40ms via OnExecute).
-    window.vp.blackout();
-    if (Object.keys(merged).length > 0) {
-      window.vp.restoreState(merged);
-    }
+    const parLedChs = [...getParLedChannelSet()];
+    window.vp.setActiveSceneChannels(merged, parLedChs);
+    // restoreState faz universe.blackout() + reaplica canais de cena sem chamar
+    // stopAllRunningScripts — scripts ainda ativos continuam rodando e reescrevem
+    // seus canais no próximo tick do compositor (≤40ms).
+    window.vp.restoreState(merged);
     return merged;
   }
 
@@ -322,6 +320,40 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       setBlackoutActive(true);
       window.vp.blackout();
     }
+  }
+
+  async function handleToggleArtNetFreeze() {
+    const next = !artNetFrozen;
+    // Atualiza a UI primeiro: o botão reflete o estado imediatamente (fica
+    // vermelho), sem depender do retorno do IPC. Se a ponte falhar, revertemos.
+    setArtNetFrozen(next);
+    try {
+      if (!window.vp?.setArtNetFrozen) throw new Error('window.vp.setArtNetFrozen indisponível (reinicie o app após mudar o preload)');
+      const res = await window.vp.setArtNetFrozen(next);
+      // Sincroniza com o estado real do main, caso divirja.
+      if (res && typeof res.frozen === 'boolean' && res.frozen !== next) {
+        setArtNetFrozen(res.frozen);
+      }
+    } catch (err) {
+      console.error('[vp] setArtNetFrozen falhou — revertendo botão:', err);
+      setArtNetFrozen(!next); // reverte para não mentir sobre o estado do palco
+    }
+  }
+
+  function handleDeselectScene() {
+    // Botão/atalho "SEM CENA": desmarca TODAS as cenas ativas sem tocar nos scripts.
+    // Não passa por toggleScene (que tem a regra "sempre uma cena ativa") — chama
+    // setActiveScenes([]) direto, então é possível ficar com zero cenas.
+    //
+    // Ordem importa:
+    //  1. setActiveSceneChannels({}) zera o sceneLock no main → scripts passam a poder
+    //     escrever todos os canais (inclusive os que eram da cena).
+    //  2. restoreState({}) faz universe.blackout() SEM parar scripts: os canais da cena
+    //     vão a 0 (preto) e, no próximo tick (≤40ms), cada script ativo repinta apenas
+    //     os seus próprios canais. Resultado: cena some, script continua rodando.
+    setActiveScenes([]);
+    window.vp.setActiveSceneChannels({});
+    window.vp.restoreState({});
   }
 
   async function handleOpen3DViewer() {
@@ -579,7 +611,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         });
       }
     });
-    window.vp.setActiveSceneChannels(merged);
+    const parLedChs = [...getParLedChannelSet()];
+    window.vp.setActiveSceneChannels(merged, parLedChs);
 
     // Envia mapa de cenas ativas para detecção de conflito
     const scenesMap = {};
@@ -922,8 +955,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       return;
     }
     if (e.code === 'Space') { e.preventDefault(); handleBlackout(); return; }
+    if (key === 'Q') { e.preventDefault(); handleDeselectScene(); return; }
     if (FKEYS.includes(key)) { e.preventDefault(); handleToggleScript(key); return; }
-  }, [currentPageId, handleActivateScene, handleBlackout, handleToggleScript, pages, setCurrentPage]);
+  }, [currentPageId, handleActivateScene, handleBlackout, handleDeselectScene, handleToggleScript, pages, setCurrentPage]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKey);
@@ -1010,6 +1044,19 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   function getFixtureType(fixture) {
     return String(fixture?.fixtureType || fixture?.type || '').toLowerCase();
+  }
+
+  // Conjunto de canais DMX pertencentes a par_leds habilitados. Usado para
+  // liberá-los do lock de cena quando um script está rodando (coexistência
+  // cena + script). Set vazio se não houver par_led no show.
+  function getParLedChannelSet() {
+    const s = new Set();
+    (show.fixtures || []).forEach(f => {
+      if (!isFixtureEnabled(f)) return;
+      if (getFixtureType(f) !== 'par_led') return;
+      getFixtureDmxChannels(f).forEach(ch => s.add(ch));
+    });
+    return s;
   }
 
   function getRightPanelChannelLabel(fixture, label) {
@@ -1331,6 +1378,12 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         )}
         <TopBtn onClick={handleOpen3DViewer} active={viewer3DActive}>
           {viewer3DActive ? '3D (aberto)' : '3D'}
+        </TopBtn>
+        <TopBtn onClick={handleToggleArtNetFreeze} active={artNetFrozen} danger={artNetFrozen} title="Congela o envio Art-Net para o palco. O viewer 3D continua funcionando normalmente.">
+          {artNetFrozen ? '❄ PALCO CONGELADO' : '❄ CONGELAR PALCO'}
+        </TopBtn>
+        <TopBtn onClick={handleDeselectScene} active={activeScenes.length === 0} title="Desmarcar cena (Q)">
+          SEM CENA
         </TopBtn>
         <TopBtn onClick={handleBlackout} danger active={blackoutActive}>
           {blackoutActive ? 'BLACKOUT ON' : 'BLACKOUT'}

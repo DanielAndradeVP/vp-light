@@ -168,6 +168,24 @@ function startIfaceRefresh() {
 // Inicia a gestão de interfaces imediatamente ao carregar o módulo
 startIfaceRefresh();
 
+// ─── Freeze (congela envio de rede, mantém loopback para o viewer 3D) ───────
+
+let _frozen = false;
+
+/**
+ * Quando frozen=true, suprime o envio de pacotes para as interfaces de rede
+ * reais (broadcast dirigido e fallback global), mas mantém o loopback ativo
+ * para que o viewer 3D continue recebendo frames normalmente.
+ * @param {boolean} frozen
+ */
+function setFrozen(frozen) {
+  _frozen = !!frozen;
+}
+
+function isFrozen() {
+  return _frozen;
+}
+
 // ─── Envio ──────────────────────────────────────────────────────────────────
 
 /**
@@ -179,7 +197,7 @@ function sendArtDMX(universeData) {
   // Copia os 512 bytes de DMX para o buffer (header permanece intacto)
   Buffer.from(universeData).copy(packet, 18);
 
-  // 1) Loopback — receptor local; health check do socket principal
+  // 1) Loopback — receptor local (viewer 3D); sempre ativo, mesmo com freeze.
   const ls = getLoopbackSocket();
   if (ls) {
     ls.send(packet, 0, packet.length, ARTNET_PORT, LOOPBACK_IP, (err) => {
@@ -197,6 +215,9 @@ function sendArtDMX(universeData) {
       }
     });
   }
+
+  // Freeze ativo: não envia para a rede real — palco fica congelado no último frame.
+  if (_frozen) return;
 
   // 2) Broadcast por interface — cada socket está vinculado ao IP da interface,
   //    forçando a saída por ela. Usa 255.255.255.255 (não directed broadcast) porque:
@@ -254,4 +275,4 @@ function closeSocket() {
   console.log('[artnet] sockets fechados');
 }
 
-module.exports = { sendArtDMX, closeSocket, getActiveInterfaces };
+module.exports = { sendArtDMX, closeSocket, getActiveInterfaces, setFrozen, isFrozen };

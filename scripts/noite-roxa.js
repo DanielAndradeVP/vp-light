@@ -1,9 +1,8 @@
-// CENA A: OCEANO PROFUNDO
-// PARs em mosaico azul/verde frio com fade in de 2s.
+// CENA: NOITE ROXA
+// PARs fixos em roxo profundo (R=160, G=0, B=220).
 // Ribaltas em respiração sincronizada (tilt 0→255→0, sobem e descem juntas).
 // Moving Heads em farol lento ping-pong, espelhados, MH2 atrasado 2s.
 // Mini Bruts com pulsos aleatórios independentes (faíscas elétricas).
-// Destino: page script (Cena A).
 
 // ─── IDs de fixture ───────────────────────────────────────────────────────────
 const ID_PAR = [
@@ -38,8 +37,11 @@ let brutDimmer = [];
 // ─── Estado global ────────────────────────────────────────────────────────────
 let tick = 0;
 
-// PARs: fade in 2s = 50 ticks. Ímpares = azul profundo, pares = verde oceano.
-const PAR_FADE_TICKS = 50;
+// PARs: cor fixa roxo profundo — sem animação de dimmer.
+const PAR_DIM   = 210;  // ~82% de brilho
+const PAR_RED   = 160;
+const PAR_GREEN = 0;
+const PAR_BLUE  = 220;
 
 // Ribaltas: dimmer sobe 153 (60%) → 217 (85%) em 300 ticks (~12s).
 const RIB_DIM_START  = 153;
@@ -52,23 +54,23 @@ const RIB_HOLD1  = 50;
 const RIB_FALL   = 100;
 // Rib2 sem offset → sincronizadas, sobem e descem juntas.
 const RIB2_OFFSET    = 0;
-const RIB_TILT_MAX   = 255; // extremo total da ribalta
+const RIB_TILT_MAX   = 255;
 // Speed funcional do catálogo (não altere sem reconfirmar no palco).
 const RIB1_SPEED_VAL = 190;
-const RIB2_SPEED_VAL = 90;
+const RIB2_SPEED_VAL = 190;
 
 // Moving Heads: pan center→right (MH1) / center→left (MH2); tilt floor→back.
 const MH_PAN_CENTER  = 128;
-const MH_PAN_OFFSET  = 102; // ~40% de 255
-const MH_TILT_FLOOR  = 170; // operacional mínimo (aponta para o chão)
-const MH_TILT_BACK   = 210; // levantado em direção ao fundo
+const MH_PAN_OFFSET  = 102;
+const MH_TILT_FLOOR  = 170;
+const MH_TILT_BACK   = 210;
 // Ciclo: 250 sai + 87 pausa + 250 volta + 50 repouso = 637 ticks.
 const MH_MOVE_TICKS = 250;
 const MH_HOLD_TICKS = 87;
 const MH_REST_TICKS = 50;
 const MH_CYCLE = MH_MOVE_TICKS * 2 + MH_HOLD_TICKS + MH_REST_TICKS; // 637
 // MH2 começa 50 ticks (2s) depois do MH1.
-const MH2_PHASE_OFFSET = MH_CYCLE - 50; // 587 — equivale a adiar 50 ticks
+const MH2_PHASE_OFFSET = MH_CYCLE - 50; // 587
 
 // Mini Bruts: base 30% (76), pulso ~82% (210). Intervalos aleatórios por unidade.
 const BRUT_BASE = 76;
@@ -139,7 +141,6 @@ function OnStart() {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Retorna o valor de tilt da ribalta dado o phase no ciclo.
 function ribTiltForPhase(phase) {
   if (phase < RIB_RISE) {
     return Math.round((phase / RIB_RISE) * RIB_TILT_MAX);
@@ -149,11 +150,10 @@ function ribTiltForPhase(phase) {
     const ft = phase - RIB_RISE - RIB_HOLD1;
     return Math.round((1 - ft / RIB_FALL) * RIB_TILT_MAX);
   } else {
-    return 0; // pausa em zero
+    return 0;
   }
 }
 
-// Retorna { panOffset, tilt } para o MH dado phase no ciclo.
 function mhStateForPhase(phase) {
   if (phase < MH_MOVE_TICKS) {
     const pct = phase / MH_MOVE_TICKS;
@@ -179,24 +179,13 @@ function mhStateForPhase(phase) {
 function OnExecute() {
   tick++;
 
-  // ── PAR LED Deluxe ──────────────────────────────────────────────────────────
-  const parFadePct = tick <= PAR_FADE_TICKS ? tick / PAR_FADE_TICKS : 1.0;
+  // ── PAR LED Deluxe — roxo fixo ──────────────────────────────────────────────
   for (let i = 0; i < 9; i++) {
     if (parDimmer[i] === null) continue;
-    const isOdd = ((i + 1) % 2) !== 0; // fixture 1,3,5,7,9 = ímpares
-    const targetDim = isOdd ? 204 : 196; // 80% / 77%
-    SetChannel(parDimmer[i], Math.round(parFadePct * targetDim));
-    if (isOdd) {
-      // AZUL PROFUNDO: blue alto, green baixo, sem red
-      if (parRed[i]   !== null) SetChannel(parRed[i],   0);
-      if (parGreen[i] !== null) SetChannel(parGreen[i], 30);
-      if (parBlue[i]  !== null) SetChannel(parBlue[i],  230);
-    } else {
-      // VERDE OCEANO: green alto, blue médio, sem red
-      if (parRed[i]   !== null) SetChannel(parRed[i],   0);
-      if (parGreen[i] !== null) SetChannel(parGreen[i], 230);
-      if (parBlue[i]  !== null) SetChannel(parBlue[i],  120);
-    }
+    SetChannel(parDimmer[i], PAR_DIM);
+    if (parRed[i]   !== null) SetChannel(parRed[i],   PAR_RED);
+    if (parGreen[i] !== null) SetChannel(parGreen[i], PAR_GREEN);
+    if (parBlue[i]  !== null) SetChannel(parBlue[i],  PAR_BLUE);
   }
 
   // ── Ribaltas ────────────────────────────────────────────────────────────────
@@ -227,12 +216,12 @@ function OnExecute() {
 
   // MH1 → pan para a direita
   if (mh1Fecho      !== null) SetChannel(mh1Fecho,      255);
-  if (mh1Strobo     !== null) SetChannel(mh1Strobo,     255); // aberto
-  if (mh1ColorWheel !== null) SetChannel(mh1ColorWheel, 0);   // branco
+  if (mh1Strobo     !== null) SetChannel(mh1Strobo,     255);
+  if (mh1ColorWheel !== null) SetChannel(mh1ColorWheel, 0);
   if (mh1Pan        !== null) SetChannel(mh1Pan,        MH_PAN_CENTER + mh1State.panOffset);
   if (mh1PanFine    !== null) SetChannel(mh1PanFine,    0);
   if (mh1Tilt       !== null) SetChannel(mh1Tilt,       mh1State.tilt);
-  if (mh1Speed      !== null) SetChannel(mh1Speed,      30); // motor lento
+  if (mh1Speed      !== null) SetChannel(mh1Speed,      30);
 
   // MH2 → pan para a esquerda (espelho)
   if (mh2Fecho      !== null) SetChannel(mh2Fecho,      255);
@@ -247,16 +236,12 @@ function OnExecute() {
   for (let i = 0; i < 4; i++) {
     if (brutDimmer[i] === null) continue;
     if (tick < brutPulseEnd[i]) {
-      // Pulso ativo
       SetChannel(brutDimmer[i], BRUT_PEAK);
     } else {
-      // Fora do pulso
       SetChannel(brutDimmer[i], BRUT_BASE);
       if (tick >= brutNextPulse[i]) {
-        // Dispara novo pulso: 0.28–0.48s de duração
         const pulseDur = randomBetween(7, 12);
         brutPulseEnd[i]  = tick + pulseDur;
-        // Próximo pulso em 2–7s após o fim deste
         brutNextPulse[i] = brutPulseEnd[i] + randomBetween(50, 175);
       }
     }

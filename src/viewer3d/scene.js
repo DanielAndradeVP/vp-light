@@ -852,15 +852,15 @@ function addLineArraySpeaker(parent, name, x, y, z, side = 1) {
 // uniformes entre instâncias — por isso o mapa é por fixtureId, nunca um
 // offset fixo.
 const PARLED_CHANNELS = {
-  1: { dimmer: 5, red: 6, green: 7, blue: 8 },
-  2: { dimmer: 12, red: 13, green: 14, blue: 15 },
-  3: { dimmer: 20, red: 21, green: 22, blue: 23 },
-  4: { dimmer: 28, red: 29, green: 30, blue: 31 },
-  5: { dimmer: 33, red: 37, green: 38, blue: 39 },
-  6: { dimmer: 77, red: 78, green: 79, blue: 80 },
-  7: { dimmer: 49, red: 53, green: 54, blue: 55 },
-  8: { dimmer: 60, red: 61, green: 62, blue: 63 },
-  9: { dimmer: 68, red: 69, green: 70, blue: 71 },
+  1: { macro: 2,  color_wheel: 3,  speed: 4,  dimmer: 5,  red: 6,  green: 7,  blue: 8  },
+  2: { macro: 9,  color_wheel: 10, speed: 11, dimmer: 12, red: 13, green: 14, blue: 15 },
+  3: { macro: 17, color_wheel: 18, speed: 19, dimmer: 20, red: 21, green: 22, blue: 23 },
+  4: { macro: 25, color_wheel: 26, speed: 27, dimmer: 28, red: 29, green: 30, blue: 31 },
+  5: { macro: 30, color_wheel: 31, speed: 32, dimmer: 33, red: 37, green: 38, blue: 39 },
+  6: { macro: 74, color_wheel: 75, speed: 76, dimmer: 77, red: 78, green: 79, blue: 80 },
+  7: { macro: 49, color_wheel: 50, speed: 51, dimmer: 49, red: 53, green: 54, blue: 55 },
+  8: { macro: 57, color_wheel: 58, speed: 59, dimmer: 60, red: 61, green: 62, blue: 63 },
+  9: { macro: 65, color_wheel: 66, speed: 67, dimmer: 68, red: 69, green: 70, blue: 71 },
 };
 
 const MOVING_HEAD_BEAM_CHANNELS = {
@@ -873,14 +873,18 @@ const RIBALTA_CHANNELS = {
     tilt: 258,
     speed: 259,
     dimmer: 260,
-    speed: 269,
+    led_1: 261, led_2: 262, led_3: 263, led_4: 264,
+    led_5: 265, led_6: 266, led_7: 267, led_8: 268,
+    strobo: 269,
   },
 
   fixture_1780805067518_ribalta_2: {
     tilt: 271,
     speed: 272,
     dimmer: 273,
-    speed: 282,
+    led_1: 274, led_2: 275, led_3: 276, led_4: 277,
+    led_5: 278, led_6: 279, led_7: 280, led_8: 281,
+    strobo: 282,
   },
 };
 
