@@ -2698,6 +2698,11 @@
       "name": "noite-roxa",
       "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/noite-roxa.js",
       "color": "#000000"
+    },
+    "F7": {
+      "name": "tempestade-roxa",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/tempestade-roxa.js",
+      "color": "#000000"
     }
   },
   "mode2": {
