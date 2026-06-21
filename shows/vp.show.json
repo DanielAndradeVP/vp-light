@@ -1502,45 +1502,30 @@
     "1": {}
   },
   "scripts": {
-    "F8": {
-      "name": "oceano-profundo",
-      "file": "C:\\vp-light\\scripts\\oceano-profundo.js"
-    },
-    "F5": {
-      "name": "noite-roxa",
-      "file": "C:\\vp-light\\scripts\\noite-roxa.js"
-    },
-    "F6": {
-      "name": "tempestade-roxa",
-      "file": "C:\\vp-light\\scripts\\tempestade-roxa.js"
-    },
     "F9": {
       "name": "explosao-dourada",
-      "file": "C:\\vp-light\\scripts\\explosao-dourada.js"
+      "file": "C:\\vp-light\\scripts\\explosao-dourada.js",
+      "color": "#000000"
     },
     "F10": {
       "name": "brut-forte",
-      "file": "C:\\vp-light\\scripts\\brut-forte.js"
-    },
-    "F12": {
-      "name": "brut-medio",
-      "file": "C:\\vp-light\\scripts\\brut-medio.js"
-    },
-    "F11": {
-      "name": "mini-bruts-pisca-medio",
-      "file": "C:\\vp-light\\scripts\\mini-bruts-pisca-medio.js"
+      "file": "C:\\vp-light\\scripts\\brut-forte.js",
+      "color": "#000000"
     },
     "F1": {
       "name": "madrugada-azul",
-      "file": "C:\\vp-light\\scripts\\madrugada-azul.js"
+      "file": "C:\\vp-light\\scripts\\madrugada-azul.js",
+      "color": "#000000"
     },
     "F2": {
       "name": "noite-rosa",
-      "file": "C:\\vp-light\\scripts\\noite-rosa.js"
+      "file": "C:\\vp-light\\scripts\\noite-rosa.js",
+      "color": "#000000"
     },
     "F7": {
       "name": "aurora-vermelha",
-      "file": "C:\\vp-light\\scripts\\aurora-vermelha.js"
+      "file": "C:\\vp-light\\scripts\\aurora-vermelha.js",
+      "color": "#000000"
     }
   },
   "mode2": {

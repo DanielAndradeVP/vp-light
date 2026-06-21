@@ -320,16 +320,6 @@ Observacoes confirmaveis: cada fixture tem um unico canal `dimmer`, 0 = off e 25
 | 0 | dimmer | 400 |
 
 ### Mini_Brut_02
-- id: `fixture_1780805067518_mini_brut_02`
-- startChannel: `402`
-- channelCount: `1`
-- faixa DMX: `402-402`
-
-| indice | label | DMX |
-|---:|---|---:|
-| 0 | dimmer | 402 |
-
-### Mini_Brut_03
 - id: `fixture_1780805067518_mini_brut_03`
 - startChannel: `401`
 - channelCount: `1`
@@ -338,6 +328,16 @@ Observacoes confirmaveis: cada fixture tem um unico canal `dimmer`, 0 = off e 25
 | indice | label | DMX |
 |---:|---|---:|
 | 0 | dimmer | 401 |
+
+### Mini_Brut_03
+- id: `fixture_1780805067518_mini_brut_02`
+- startChannel: `402`
+- channelCount: `1`
+- faixa DMX: `402-402`
+
+| indice | label | DMX |
+|---:|---|---:|
+| 0 | dimmer | 402 |
 
 ### Mini_Brut_04
 - id: `fixture_1780805067518_mini_brut_04`
