@@ -9,11 +9,12 @@
 const FIXTURE_OFFSET_RULES = {};
 
 // === TESTE MANUAL DE CALIBRACAO ===
-// Enquanto true, NENHUM offset e aplicado ao palco (fisico = logico), nao importa
+// Quando true, NENHUM offset e aplicado ao palco (fisico = logico), nao importa
 // o que esteja no show.json. Serve para o Dan medir o desalinhamento fisico real
-// das ribaltas e dos movs sem nada influenciando. Voltar para false depois de
-// calibrar para reativar a leitura de offset do show.json.
-const TESTE_ZERO_OFFSET = true;
+// sem nada influenciando.
+// false = aplica os offsets do show.json (fonte unica). Movings calibrados
+// (Beam 1 panOffset=40 / Beam 2 = 0); ribaltas zeradas no show.json ate calibrar.
+const TESTE_ZERO_OFFSET = false;
 
 function normalizeAlias(label) {
   return String(label ?? '')

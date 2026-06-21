@@ -619,10 +619,16 @@ function loadScriptMeta() {
   const current = show.getShow();
   if (!current?.scripts) return;
   for (const [fkey, meta] of Object.entries(current.scripts)) {
-    // Resolve o arquivo pelo nome, relativo ao SCRIPTS_DIR desta máquina —
-    // ignora caminho absoluto salvo no show (portável entre PCs/clones).
-    const file = path.join(SCRIPTS_DIR, `${meta.name}.js`);
-    if (fs.existsSync(file)) {
+    // Tenta o caminho absoluto salvo no show primeiro (suporta subpastas).
+    // Fallback: <name>.js relativo a SCRIPTS_DIR (portabilidade entre PCs).
+    let file = null;
+    if (meta.file && fs.existsSync(meta.file)) {
+      file = meta.file;
+    } else {
+      const fallback = path.join(SCRIPTS_DIR, `${meta.name}.js`);
+      if (fs.existsSync(fallback)) file = fallback;
+    }
+    if (file) {
       scriptMeta[fkey] = { name: meta.name, file, color: meta.color || '#000000' };
     }
   }
@@ -911,6 +917,7 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
   }
   scriptMeta[fkey] = { name, file, color };
   saveScriptMeta();
+  emitScriptsChanged(); // avisa o renderer na hora — nao depende do fs.watch (que nao dispara se o .js ja existia)
   if (!options.skipOpenEditor && !fileAlreadyExists) { await openScriptInVSCode(file); }
   return { ok: true, name, file, color };
 });
@@ -995,12 +1002,22 @@ ipcMain.handle('script:list', () => {
     for (const meta of Object.values(scriptMeta)) {
       if (meta?.name && meta?.color) colorByName[meta.name] = meta.color;
     }
-    const files = fs.readdirSync(SCRIPTS_DIR)
-      .filter(f => f.endsWith('.js'))
-      .map(f => {
-        const name = f.replace('.js', '');
-        return { name, file: path.join(SCRIPTS_DIR, f), color: colorByName[name] || '#000000' };
-      });
+    function collectScripts(dir, relBase) {
+      const results = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const sub = relBase ? `${relBase}/${entry.name}` : entry.name;
+          results.push(...collectScripts(path.join(dir, entry.name), sub));
+        } else if (entry.name.endsWith('.js')) {
+          const baseName = entry.name.replace('.js', '');
+          const relName  = relBase ? `${relBase}/${baseName}` : baseName;
+          const file     = path.join(dir, entry.name);
+          results.push({ name: relName, file, color: colorByName[relName] || colorByName[baseName] || '#000000' });
+        }
+      }
+      return results;
+    }
+    const files = collectScripts(SCRIPTS_DIR, '');
     return { ok: true, files };
   } catch (e) {
     return { ok: false, files: [] };
@@ -1032,6 +1049,7 @@ const scriptWatchTimers = {};
 
 function handleScriptFileEvent(filename) {
   if (!filename || !filename.endsWith('.js')) return;
+  // filename pode incluir subdiretório (ex: casamento\explosao-dourada.js) quando recursive=true
   const file = path.join(SCRIPTS_DIR, filename);
   const exists = fs.existsSync(file);
 
@@ -1039,7 +1057,7 @@ function handleScriptFileEvent(filename) {
     // REMOÇÃO: para o script se estiver rodando e limpa do scriptMeta.
     let changed = false;
     for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (path.basename(meta.file) === filename) {
+      if (meta.file === file) {
         stopRunningScript(fkey, 'arquivo removido');
         delete scriptMeta[fkey];
         changed = true;
@@ -1053,7 +1071,7 @@ function handleScriptFileEvent(filename) {
   // MODIFICAÇÃO: se algum F-key que aponta para o arquivo está rodando,
   // para, recarrega do disco e reinicia automaticamente.
   for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    if (path.basename(meta.file) === filename && runningScripts[fkey]) {
+    if (meta.file === file && runningScripts[fkey]) {
       stopRunningScript(fkey, 'arquivo modificado');
       startScript(fkey);
     }
@@ -1067,7 +1085,7 @@ function handleScriptFileEvent(filename) {
 function startScriptsWatch() {
   if (scriptsWatcher) return;
   try {
-    scriptsWatcher = fs.watch(SCRIPTS_DIR, (_eventType, filename) => {
+    scriptsWatcher = fs.watch(SCRIPTS_DIR, { recursive: true }, (_eventType, filename) => {
       if (!filename) return;
       const key = String(filename);
       // debounce: fs.watch dispara múltiplos eventos por alteração
