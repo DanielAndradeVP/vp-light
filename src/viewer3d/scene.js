@@ -864,8 +864,8 @@ const PARLED_CHANNELS = {
 };
 
 const MOVING_HEAD_BEAM_CHANNELS = {
-  fixture_1780805067518_moving_head_beam_1: { fechoLampada: 125, pan: 132, tilt: 134 },
-  fixture_1780805067518_moving_head_beam_2: { fechoLampada: 205, pan: 212, tilt: 214 },
+  fixture_1780805067518_moving_head_beam_1: { colorWheel: 123, fechoLampada: 125, pan: 132, tilt: 134 },
+  fixture_1780805067518_moving_head_beam_2: { colorWheel: 203, fechoLampada: 205, pan: 212, tilt: 214 },
 };
 
 const RIBALTA_CHANNELS = {

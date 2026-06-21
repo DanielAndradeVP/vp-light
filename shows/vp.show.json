@@ -603,41 +603,35 @@
           "channels": {
             "5": 255,
             "6": 255,
-            "7": 0,
             "8": 255,
             "12": 255,
             "13": 255,
-            "14": 0,
             "15": 255,
             "20": 255,
             "21": 255,
-            "22": 0,
             "23": 255,
             "33": 255,
             "37": 255,
-            "38": 0,
             "39": 255,
             "49": 255,
             "53": 255,
-            "54": 0,
             "55": 255,
             "60": 255,
             "61": 255,
-            "62": 0,
             "63": 255,
             "68": 255,
             "69": 255,
-            "70": 0,
             "71": 255,
             "77": 255,
             "78": 255,
-            "79": 0,
             "80": 255,
             "124": 255,
             "125": 255,
+            "132": 84,
             "134": 251,
             "204": 255,
             "205": 255,
+            "212": 84,
             "214": 249,
             "258": 232,
             "259": 197,
@@ -661,11 +655,11 @@
             "279": 255,
             "280": 255,
             "281": 255,
-            "400": 120,
-            "401": 120,
-            "402": 120,
-            "404": 120,
-            "410": 120
+            "400": 0,
+            "401": 0,
+            "402": 0,
+            "404": 0,
+            "410": 0
           },
           "customFunctions": {
             "fixture_1780805067518_moving_head_beam_1": {
@@ -2655,53 +2649,38 @@
       "color": "#000000"
     },
     "F2": {
-      "name": "brut-medio",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-medio.js",
+      "name": "brut-padrao-01",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-padrao-01.js",
       "color": "#000000"
     },
     "F3": {
-      "name": "brut-baixo",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-baixo.js",
+      "name": "brut-padrao-02",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-padrao-02.js",
       "color": "#000000"
     },
     "F4": {
-      "name": "mini-bruts-pisca-medio",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mini-bruts-pisca-medio.js",
-      "color": "#000000"
-    },
-    "F5": {
-      "name": "mini-bruts-pisca-lento",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mini-bruts-pisca-lento.js",
-      "color": "#000000"
-    },
-    "F8": {
-      "name": "onda-branca",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/onda-branca.js",
-      "color": "#000000"
-    },
-    "F9": {
-      "name": "onda-branca-2",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/onda-branca-2.js",
-      "color": "#000000"
-    },
-    "F10": {
-      "name": "onda-branca-3",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/onda-branca-3.js",
-      "color": "#000000"
-    },
-    "F11": {
-      "name": "oceano-profundo",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/oceano-profundo.js",
+      "name": "brut-padrao-03",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/brut-padrao-03.js",
       "color": "#000000"
     },
     "F6": {
-      "name": "noite-roxa",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/noite-roxa.js",
+      "name": "mov-padrao-01",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mov-padrao-01.js",
       "color": "#000000"
     },
     "F7": {
-      "name": "tempestade-roxa",
-      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/tempestade-roxa.js",
+      "name": "mov-padrao-02",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mov-padrao-02.js",
+      "color": "#000000"
+    },
+    "F8": {
+      "name": "mov-padrao-03",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mov-padrao-03.js",
+      "color": "#000000"
+    },
+    "F9": {
+      "name": "mov-padrao-04",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mov-padrao-04.js",
       "color": "#000000"
     }
   },

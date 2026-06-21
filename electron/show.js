@@ -148,6 +148,22 @@ function saveShow(showData) {
     if (currentShow?.scripts && showData.scripts == null) {
       showData = { ...showData, scripts: currentShow.scripts };
     }
+    // Preserva a cor dos scripts mantida em memória (fonte da verdade: scriptMeta via
+    // saveScriptMeta). O renderer envia um snapshot de scripts que pode estar defasado e
+    // não carregar a cor escolhida nos botões F1–F12 — sem isso, um save de show completo
+    // apagaria a cor recém-definida. Só preenche quando a entrada recebida não traz color.
+    else if (currentShow?.scripts && showData.scripts && typeof showData.scripts === 'object') {
+      const mergedScripts = {};
+      for (const [fkey, entry] of Object.entries(showData.scripts)) {
+        const prev = currentShow.scripts[fkey];
+        if (entry && entry.color == null && prev && prev.color != null) {
+          mergedScripts[fkey] = { ...entry, color: prev.color };
+        } else {
+          mergedScripts[fkey] = entry;
+        }
+      }
+      showData = { ...showData, scripts: mergedScripts };
+    }
     currentShow = showData;
   }
   if (!currentShow || !currentShowPath) {

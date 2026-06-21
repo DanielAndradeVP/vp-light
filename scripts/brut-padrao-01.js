@@ -1,18 +1,19 @@
-// mini-bruts-pisca-esquerda-direita - Mini Bruts alternando dois da esquerda e dois da direita. Destino: sem F-key definida.
+// mini-bruts-pisca-cruzado - Mini Bruts alternando 1+4 e depois 2+3. Destino: sem F-key definida.
+
 const LEFT_BRUTS = [
   'fixture_1780805067518_mini_brut_01',
-  'fixture_1780805067518_mini_brut_02',
-];
-
-const RIGHT_BRUTS = [
-  'fixture_1780805067518_mini_brut_03',
   'fixture_1780805067518_mini_brut_04',
 ];
 
-const FLASH_VALUE = 150;
+const RIGHT_BRUTS = [
+  'fixture_1780805067518_mini_brut_02',
+  'fixture_1780805067518_mini_brut_03',
+];
+
+const FLASH_VALUE = 200;
 const OFF_VALUE = 0;
-const FLASH_TICKS = 5; // 200ms em 25fps
-const GAP_TICKS = 2;   // 80ms de respiro entre lados
+const FLASH_TICKS = 3; // 120ms em 25fps
+const GAP_TICKS = 1;   // 40ms de respiro entre grupos
 
 let leftDimmers = [];
 let rightDimmers = [];
@@ -48,13 +49,13 @@ function OnExecute() {
   const phase = tick % cycle;
 
   if (phase < FLASH_TICKS) {
-    setChannels(leftDimmers, FLASH_VALUE);
+    setChannels(leftDimmers, FLASH_VALUE);   // acende bruts 1 e 4
     setChannels(rightDimmers, OFF_VALUE);
   } else if (phase < segment) {
     blackoutBruts();
   } else if (phase < segment + FLASH_TICKS) {
     setChannels(leftDimmers, OFF_VALUE);
-    setChannels(rightDimmers, FLASH_VALUE);
+    setChannels(rightDimmers, FLASH_VALUE);  // acende bruts 2 e 3
   } else {
     blackoutBruts();
   }

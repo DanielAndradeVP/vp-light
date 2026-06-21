@@ -33,6 +33,26 @@ const TILT_SPEED_DEG_PER_SEC = 200;
 
 const LAMP_OPEN_VALUE = 255;
 
+// color_wheel: 0=branco, 10=vermelho, 20=verde, 30=azul claro, 40=amarelo,
+//              50=roxo, 60=azul escuro, 70=rosa, 80=laranja, 90=azul ciano claro
+const COLOR_WHEEL_MAP = [
+  0xffffff, // 0–9:   branco
+  0xff2020, // 10–19: vermelho
+  0x00cc44, // 20–29: verde
+  0x66ccff, // 30–39: azul claro
+  0xffee00, // 40–49: amarelo
+  0x9900cc, // 50–59: roxo
+  0x0033cc, // 60–69: azul escuro
+  0xff66aa, // 70–79: rosa
+  0xff6600, // 80–89: laranja
+  0x44ddff, // 90+:   azul ciano claro
+];
+
+function colorWheelToHex(value) {
+  const index = Math.min(Math.floor(value / 10), COLOR_WHEEL_MAP.length - 1);
+  return COLOR_WHEEL_MAP[index];
+}
+
 const SPOT_INTENSITY = 8;
 
 // Opacidade do raio visual
@@ -180,6 +200,7 @@ export function update(group, channels) {
   const headPivot = group.getObjectByName('headPivot');
   if (!headPivot) return;
 
+  const colorWheelValue = channels[ch.colorWheel - 1] ?? 0;
   const fechoLampada = channels[ch.fechoLampada - 1] ?? 0;
   const pan = channels[ch.pan - 1] ?? 0;
   const tilt = channels[ch.tilt - 1] ?? 0;
@@ -237,6 +258,10 @@ export function update(group, channels) {
   }
 
   const beamLength = getBeamLengthUntilSceneLimits(headPivot);
+
+  const beamColor = colorWheelToHex(colorWheelValue);
+  light.color.setHex(beamColor);
+  beam.material.color.setHex(beamColor);
 
   // Atualiza luz real do SpotLight
   light.intensity = SPOT_INTENSITY;

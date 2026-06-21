@@ -1,58 +1,98 @@
-// onda-branca — Cena de movimento suave em branco com Moving Heads. Destino: F1.
+// onda-branca — Cena de movimento suave em branco com Moving Heads + Ribaltas sincronizadas. Destino: F1.
 
 // ── IDs de fixture ──────────────────────────────────────────────────────────
+
 const ID_M1   = 'fixture_1780805067518_moving_head_beam_1';
 const ID_M2   = 'fixture_1780805067518_moving_head_beam_2';
+
 const ID_R1   = 'fixture_1780805067518_ribalta_1';
 const ID_R2   = 'fixture_1780805067518_ribalta_2';
+
 const ID_FITA = 'fixture_1780805067518_fita_led';
+
 const ID_B01  = 'fixture_1780805067518_mini_brut_01';
 const ID_B02  = 'fixture_1780805067518_mini_brut_02';
 const ID_B03  = 'fixture_1780805067518_mini_brut_03';
 const ID_B04  = 'fixture_1780805067518_mini_brut_04';
 
+
 // ── Canais resolvidos ───────────────────────────────────────────────────────
+
 let m1_cw, m1_strobo, m1_fecho, m1_prism, m1_pan, m1_tilt, m1_speed;
 let m2_cw, m2_strobo, m2_fecho, m2_prism, m2_pan, m2_tilt, m2_speed;
+
 let r1_tilt, r1_speed, r1_dimmer, r1_strobo, r1_function;
 let r2_tilt, r2_speed, r2_dimmer, r2_strobo, r2_function;
-let r1_leds = null, r2_leds = null;
+
+let r1_leds = null;
+let r2_leds = null;
+
 let fita, b01, b02, b03, b04;
 
+
 // ── Estado ──────────────────────────────────────────────────────────────────
+
 let tick = 0;
 
+
 // ── Timing: 25fps, 40ms/tick ────────────────────────────────────────────────
+
 const LOOP = 300;
 const F2   = 300;
 
-// ── Posições de referência (banco de conhecimento / medidas no rig) ─────────
-// Moving Head Beam — posições medidas
-// PAN_C=centro simétrico, TILT_F=nivelado frente, TILT_A=ponta altar, PAN_L/R=laterais, TILT_L=tilt lateral
-const M1_PAN_C = 84, M1_TILT_F = 36, M1_TILT_A = 78,  M1_PAN_L = 42, M1_TILT_L = 35;
-const M2_PAN_C = 84, M2_TILT_F = 32, M2_TILT_A = 72,  M2_PAN_R = 44, M2_TILT_L = 26;
 
-// Ribaltas — catalog: R1 tilt funcional=110 speed=190; R2 tilt funcional=105 speed=90
-// TL=tilt louvor, TA=tilt altar, SS=speed lenta, SF=speed rápida
-const R1_TL = 110, R1_SS = 190, R1_SF = 20;
-const R2_TL = 105, R2_SS = 90,  R2_SF = 20;
-const TA    = 145; // tilt altar (ambas)
+// ── Posições de referência dos Movings ──────────────────────────────────────
+// Moving Head Beam — posições medidas
+// PAN_C=centro simétrico, TILT_F=nivelado frente, TILT_A=ponta altar
+
+const M1_PAN_C  = 84;
+const M1_TILT_F = 36;
+const M1_TILT_A = 78;
+
+const M2_PAN_C  = 84;
+const M2_TILT_F = 32;
+const M2_TILT_A = 72;
+
+
+// ── Posições de referência das Ribaltas ─────────────────────────────────────
+// As ribaltas seguem o mesmo progresso dos movings:
+// começa em 100, desce até o limite e volta para 100 quando o ciclo reinicia.
+
+const RIBALTA_TILT_START = 100;
+const RIBALTA_TILT_LIMIT = 190;
+
+// Speed das ribaltas.
+// Mantive os valores diferentes porque no seu catálogo elas parecem responder diferente.
+// R1 tilt funcional=110 speed=190
+// R2 tilt funcional=105 speed=90
+
+const R1_SPEED_SYNC = 190;
+const R2_SPEED_SYNC = 90;
+
 
 // ── Utilitários ─────────────────────────────────────────────────────────────
+
 function ch(c, v) {
   if (c !== null && c !== undefined) {
     SetChannel(c, Math.max(0, Math.min(255, Math.round(v))));
   }
 }
-function lerp(a, b, t) { return a + (b - a) * t; }
-function clamp01(v)     { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
-// Pulso senoidal contínuo entre min e max com período em ticks
-// Em t=0+offset: retorna midpoint; at sin=1: max; at sin=-1: min
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function clamp01(v) {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+// Pulso senoidal contínuo entre min e max com período em ticks.
 function spulse(t, min, max, period) {
   return min + ((max - min) / 2) * (1 + Math.sin(2 * Math.PI * t / period));
 }
 
+
+// ── Start ───────────────────────────────────────────────────────────────────
 
 function OnStart() {
   tick = 0;
@@ -81,8 +121,11 @@ function OnStart() {
   r1_dimmer   = getChannel(ID_R1, 'dimmer');
   r1_strobo   = getChannel(ID_R1, 'strobo');
   r1_function = getChannel(ID_R1, 'function');
+
   r1_leds = [];
-  for (let i = 1; i <= 8; i++) r1_leds.push(getChannel(ID_R1, 'led_' + i));
+  for (let i = 1; i <= 8; i++) {
+    r1_leds.push(getChannel(ID_R1, 'led_' + i));
+  }
 
   // Ribalta 2
   r2_tilt     = getChannel(ID_R2, 'tilt');
@@ -90,62 +133,95 @@ function OnStart() {
   r2_dimmer   = getChannel(ID_R2, 'dimmer');
   r2_strobo   = getChannel(ID_R2, 'strobo');
   r2_function = getChannel(ID_R2, 'function');
-  r2_leds = [];
-  for (let i = 1; i <= 8; i++) r2_leds.push(getChannel(ID_R2, 'led_' + i));
 
-  // Garante modo DMX manual nas ribaltas (function=0)
+  r2_leds = [];
+  for (let i = 1; i <= 8; i++) {
+    r2_leds.push(getChannel(ID_R2, 'led_' + i));
+  }
+
+  // Garante modo DMX manual nas ribaltas.
   ch(r1_function, 0);
   ch(r2_function, 0);
 
+  // Garante que as ribaltas iniciem em tilt 100.
+  ch(r1_speed, R1_SPEED_SYNC);
+  ch(r2_speed, R2_SPEED_SYNC);
+  ch(r1_tilt, RIBALTA_TILT_START);
+  ch(r2_tilt, RIBALTA_TILT_START);
+
   // Fita e Mini Bruts
   fita = getChannel(ID_FITA, 'dimmer');
-  b01  = getChannel(ID_B01,  'dimmer');
-  b02  = getChannel(ID_B02,  'dimmer');
-  b03  = getChannel(ID_B03,  'dimmer');
-  b04  = getChannel(ID_B04,  'dimmer');
+
+  b01 = getChannel(ID_B01, 'dimmer');
+  b02 = getChannel(ID_B02, 'dimmer');
+  b03 = getChannel(ID_B03, 'dimmer');
+  b04 = getChannel(ID_B04, 'dimmer');
 }
 
 
+// ── Loop ────────────────────────────────────────────────────────────────────
+
 function OnExecute() {
   tick++;
+
   const t = tick % LOOP;
   const p = clamp01(t / (F2 - 1));
 
-  // MOVING HEADS: tilt em espelho com luz branca e velocidade lenta
+  // MOVING HEADS — branco, centralizados, descendo aos poucos.
   ch(m1_cw, 0);
   ch(m2_cw, 0);
+
   ch(m1_speed, 210);
   ch(m2_speed, 210);
+
   ch(m1_pan, M1_PAN_C);
   ch(m2_pan, M2_PAN_C);
+
   ch(m1_tilt, lerp(M1_TILT_F, M1_TILT_A, p));
   ch(m2_tilt, lerp(M2_TILT_F, M2_TILT_A, p));
+
   ch(m1_fecho, 255);
   ch(m2_fecho, 255);
+
   ch(m1_strobo, 255);
   ch(m2_strobo, 255);
+
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  // RIBALTAS — fase 1: branco cheio, tilt louvor estático
-  ch(r1_dimmer, 255); ch(r2_dimmer, 255);
-  ch(r1_speed, R1_SS); ch(r2_speed, R2_SS);
-  ch(r1_tilt, R1_TL); ch(r2_tilt, R2_TL);
-  ch(r1_strobo, 0); ch(r2_strobo, 0);
+  // RIBALTAS — branco cheio, descendo junto com os movings.
+  // Quando t volta para 0, o tilt volta para 100 e o padrão reinicia.
+  const ribaltaTilt = lerp(RIBALTA_TILT_START, RIBALTA_TILT_LIMIT, p);
+
+  ch(r1_dimmer, 255);
+  ch(r2_dimmer, 255);
+
+  ch(r1_speed, R1_SPEED_SYNC);
+  ch(r2_speed, R2_SPEED_SYNC);
+
+  ch(r1_tilt, ribaltaTilt);
+  ch(r2_tilt, ribaltaTilt);
+
+  ch(r1_strobo, 0);
+  ch(r2_strobo, 0);
+
   for (let i = 0; i < 8; i++) {
     ch(r1_leds[i], 255);
     ch(r2_leds[i], 255);
   }
 
-  // MINI BRUTS — fase 1: onda suave em 4 canais
+  // MINI BRUTS — onda suave em 4 canais.
   ch(b01, spulse(t, 76, 255, 100));
   ch(b02, spulse(t + 25, 76, 255, 100));
   ch(b03, spulse(t + 50, 76, 255, 100));
   ch(b04, spulse(t + 75, 76, 255, 100));
 
-  // FITA LED — fase 1: 70% constante
+  // FITA LED — 70% constante.
   ch(fita, 178);
 }
+
+
+// ── Terminate ────────────────────────────────────────────────────────────────
 
 function OnTerminate() {
   ch(m1_cw, 0);
@@ -164,11 +240,34 @@ function OnTerminate() {
   ch(m2_tilt, 0);
   ch(m2_speed, 0);
 
-  ch(r1_dimmer, 0); ch(r2_dimmer, 0);
-  ch(r1_strobo, 0); ch(r2_strobo, 0);
-  if (r1_leds) { for (let i = 0; i < 8; i++) ch(r1_leds[i], 0); }
-  if (r2_leds) { for (let i = 0; i < 8; i++) ch(r2_leds[i], 0); }
+  ch(r1_dimmer, 0);
+  ch(r2_dimmer, 0);
+
+  ch(r1_strobo, 0);
+  ch(r2_strobo, 0);
+
+  ch(r1_tilt, 0);
+  ch(r2_tilt, 0);
+
+  ch(r1_speed, 0);
+  ch(r2_speed, 0);
+
+  if (r1_leds) {
+    for (let i = 0; i < 8; i++) {
+      ch(r1_leds[i], 0);
+    }
+  }
+
+  if (r2_leds) {
+    for (let i = 0; i < 8; i++) {
+      ch(r2_leds[i], 0);
+    }
+  }
 
   ch(fita, 0);
-  ch(b01, 0); ch(b02, 0); ch(b03, 0); ch(b04, 0);
+
+  ch(b01, 0);
+  ch(b02, 0);
+  ch(b03, 0);
+  ch(b04, 0);
 }
