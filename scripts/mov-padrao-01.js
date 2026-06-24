@@ -32,9 +32,9 @@ const F2   = 300;
 const M1_PAN_C = 84, M1_TILT_F = 36, M1_TILT_A = 78,  M1_PAN_L = 42, M1_TILT_L = 35;
 const M2_PAN_C = 84, M2_TILT_F = 32, M2_TILT_A = 72,  M2_PAN_R = 44, M2_TILT_L = 26;
 
-// Ribaltas — catalog: R1 tilt funcional=110 speed=190; R2 tilt funcional=105 speed=90
+// Ribaltas — catalog: R1 tilt funcional=175 (R2+70) speed=190; R2 tilt funcional=105 speed=90
 // TL=tilt louvor, TA=tilt altar, SS=speed lenta, SF=speed rápida
-const R1_TL = 110, R1_SS = 190, R1_SF = 20;
+const R1_TL = 105, R1_SS = 190, R1_SF = 20; // tilt igual ao R2; alinhamento da esquerda resolvido pelo offset do sistema
 const R2_TL = 105, R2_SS = 90,  R2_SF = 20;
 const TA    = 145; // tilt altar (ambas)
 

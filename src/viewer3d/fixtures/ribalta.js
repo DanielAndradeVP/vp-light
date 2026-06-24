@@ -37,8 +37,6 @@ const TILT_SPEED_CHANNEL_INVERTED = true;
 const TILT_SPEED_MIN_MULTIPLIER = 0.20;
 const TILT_SPEED_MAX_MULTIPLIER = 2.00;
 
-const DEFAULT_TILT_OFFSET_DEG = 0;
-
 const LED_COLOR = 0xffffff;
 
 const BEAM_RADIUS = 0.018;
@@ -277,14 +275,10 @@ export function update(group, channels) {
 
     group.userData.lastTiltUpdateMs = now;
 
-    const tiltOffsetDeg =
-      group.userData.tiltOffsetDeg ?? DEFAULT_TILT_OFFSET_DEG;
-
     const tiltDirection = group.userData.tiltDirection ?? 1;
 
     const targetTiltDeg =
-      dmxToDeg(tilt, TILT_MIN_DEG, TILT_MAX_DEG) * tiltDirection +
-      tiltOffsetDeg;
+      dmxToDeg(tilt, TILT_MIN_DEG, TILT_MAX_DEG) * tiltDirection;
 
     if (group.userData.currentTiltDeg === undefined) {
       group.userData.currentTiltDeg = THREE.MathUtils.radToDeg(group.rotation.x);

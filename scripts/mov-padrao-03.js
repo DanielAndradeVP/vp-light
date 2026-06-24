@@ -230,7 +230,7 @@ function OnExecute() {
   if (mh2Tilt       !== null) SetChannel(mh2Tilt,       mh.tilt);
   if (mh2Speed      !== null) SetChannel(mh2Speed,      mh.spd);
 
-  // ── Ribaltas — em par, mesmo tilt e speed ────────────────────────────────────
+  // ── Ribaltas — em par, mesmo tilt (alinhamento resolvido pelo offset do sistema) ──
   const ribPhase = tick % RIB_CYCLE;
   const rib = ribStateForPhase(ribPhase);
 

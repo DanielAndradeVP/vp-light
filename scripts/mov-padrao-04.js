@@ -175,7 +175,7 @@ function OnStart() {
   ch(r1_speed, R1_SPEED_SYNC);
   ch(r2_speed, R2_SPEED_SYNC);
 
-  ch(r1_tilt, RIBALTA_TILT_START);
+  ch(r1_tilt, RIBALTA_TILT_START + 70);
   ch(r2_tilt, RIBALTA_TILT_START);
 
   blackoutRibaltas();
@@ -233,7 +233,7 @@ function OnExecute() {
     // RIBALTAS — acesas e descendo junto
     const ribaltaTilt = lerp(RIBALTA_TILT_START, RIBALTA_TILT_LIMIT, p);
 
-    ch(r1_tilt, ribaltaTilt);
+    ch(r1_tilt, ribaltaTilt + 70);
     ch(r2_tilt, ribaltaTilt);
 
     ch(r1_dimmer, 255);
@@ -248,7 +248,7 @@ function OnExecute() {
     // Aqui a ribalta apaga, volta para tilt 100, e ninguém vê ela subindo.
     blackoutRibaltas();
 
-    ch(r1_tilt, RIBALTA_TILT_START);
+    ch(r1_tilt, RIBALTA_TILT_START + 70);
     ch(r2_tilt, RIBALTA_TILT_START);
 
     // Também fecho os movings durante o reset para esconder o retorno deles.

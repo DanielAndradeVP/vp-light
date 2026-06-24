@@ -398,7 +398,7 @@ function buildStage() {
   backWall.position.set(0, wallHeight / 2, -PLATFORM.depth / 2 - 0.3);
   stage.add(backWall);
 
-  const ledWidth = wallWidth * 0.75;
+  const ledWidth = wallWidth * 0.90;
   const ledHeight = wallHeight * 0.52;
 
   const ledGeo = new THREE.PlaneGeometry(ledWidth, ledHeight);

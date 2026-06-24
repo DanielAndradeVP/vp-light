@@ -63,7 +63,7 @@ const RIBALTA_TILT_LIMIT = 190;
 
 // Speed das ribaltas.
 // Mantive os valores diferentes porque no seu catálogo elas parecem responder diferente.
-// R1 tilt funcional=110 speed=190
+// R1 tilt funcional=R2+70 speed=190
 // R2 tilt funcional=105 speed=90
 
 const R1_SPEED_SYNC = 190;
@@ -146,7 +146,7 @@ function OnStart() {
   // Garante que as ribaltas iniciem em tilt 100.
   ch(r1_speed, R1_SPEED_SYNC);
   ch(r2_speed, R2_SPEED_SYNC);
-  ch(r1_tilt, RIBALTA_TILT_START);
+  ch(r1_tilt, RIBALTA_TILT_START + 70);
   ch(r2_tilt, RIBALTA_TILT_START);
 
   // Fita e Mini Bruts
@@ -199,7 +199,7 @@ function OnExecute() {
   ch(r1_speed, R1_SPEED_SYNC);
   ch(r2_speed, R2_SPEED_SYNC);
 
-  ch(r1_tilt, ribaltaTilt);
+  ch(r1_tilt, ribaltaTilt + 70);
   ch(r2_tilt, ribaltaTilt);
 
   ch(r1_strobo, 0);
