@@ -305,20 +305,25 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     if (blackoutActive) {
       setBlackoutActive(false);
       if (activeScenes.length > 0) {
-        const merged = {};
-        activeScenes.forEach(activeRef => {
-          const { scene } = getActiveSceneData(activeRef);
-          if (scene?.channels) {
-            Object.entries(filterDisabledFixtureChannels(scene.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
-              merged[Number(ch)] = Number(val);
-            });
-          }
-        });
-        window.vp.restoreState(merged);
+        resolveUniverseState(activeScenes, scriptsRef.current);
       }
     } else {
       setBlackoutActive(true);
       window.vp.blackout();
+      setScripts(prev => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (next[key]?.running) next[key] = { ...next[key], running: false };
+        }
+        return next;
+      });
+      setPageScripts(prev => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (next[key]?.running) next[key] = { ...next[key], running: false };
+        }
+        return next;
+      });
     }
   }
 
@@ -600,6 +605,14 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     window.vp.getAllPageScripts(currentPageId).then(result => setPageScripts(result || {}));
   }, [currentPageId]);
 
+  // Ao trocar de página, cenas ativas de outras páginas deixam de valer no DMX.
+  const prevPageIdRef = useRef(currentPageId);
+  useEffect(() => {
+    if (prevPageIdRef.current === currentPageId) return;
+    prevPageIdRef.current = currentPageId;
+    setActiveScenes(prev => prev.filter(ref => parseSceneRef(ref, currentPageId).pageId === currentPageId));
+  }, [currentPageId]);
+
   // Sincroniza canais bloqueados por cenas com o main process sempre que activeScenes muda
   useEffect(() => {
     const merged = {};
@@ -613,6 +626,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     });
     const parLedChs = [...getParLedChannelSet()];
     window.vp.setActiveSceneChannels(merged, parLedChs);
+    window.vp.restoreState(merged);
 
     // Envia mapa de cenas ativas para detecção de conflito
     const scenesMap = {};

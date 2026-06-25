@@ -75,6 +75,45 @@ function hasLayer(id)    { return _layers.has(id); }
 function clearLayers()   { _layers.clear(); }
 function layerCount()    { return _layers.size; }
 
+/** Escreve um valor no universo respeitando guards (desabilitado, scene lock, interpolador). */
+function _writeChannelToUniverse(ch, value) {
+  const disabled = _getDisabledChannels();
+  if (disabled.has(ch)) return;
+  if (ch in _sceneLock) return;
+  const v = Math.max(0, Math.min(255, Math.round(Number(value))));
+  if (interpolator.isVirtualChannel(ch)) {
+    interpolator.setSpeed(ch, v);
+    return;
+  }
+  if (interpolator.isControlledChannel(ch)) {
+    interpolator.setTarget(ch, v);
+    return;
+  }
+  universe.setChannel(ch, v);
+}
+
+/**
+ * Aplica o buffer da camada ao universo (weight=1) nos canais tocados.
+ * Usado após OnTerminate para que a limpeza do script chegue ao DMX real.
+ */
+function _flushLayerToUniverse(layer) {
+  if (!layer?.buffer || !layer?.touched) return;
+  for (let i = 0; i < 512; i++) {
+    if (!layer.touched[i]) continue;
+    _writeChannelToUniverse(i + 1, layer.buffer[i]);
+  }
+}
+
+/**
+ * Para uma camada: OnTerminate → flush no universo → remove do mapa.
+ */
+function stopLayer(id) {
+  const layer = _layers.get(id);
+  if (!layer) return false;
+  _removeLayerInternal(layer, 'stop');
+  return true;
+}
+
 /**
  * Inicia o fade-out de uma camada. Ao zerar o weight, a camada é removida no renderFrame.
  */
@@ -90,10 +129,11 @@ function releaseLayer(id, fadeOutFrames) {
 
 function _removeLayerInternal(layer, reason) {
   if (!_layers.has(layer._id)) return;
-  _layers.delete(layer._id);
   if (layer.context && typeof layer.context.OnTerminate === 'function') {
     try { layer.context.OnTerminate(); } catch (e) {}
   }
+  _flushLayerToUniverse(layer);
+  _layers.delete(layer._id);
   if (typeof layer.onDone === 'function') { try { layer.onDone(reason); } catch (_) {} }
 }
 
@@ -150,22 +190,13 @@ function renderFrame() {
       const v = layer.buffer[i] * layer.weight;
       if (linear) sum += v; else if (v > htp) htp = v;
     }
-    if (!any) continue;                 // canal intocado por todas as camadas → mantém universo
+    if (!any) continue;
     const ch = i + 1;
-    if (disabled.has(ch)) continue;     // fixture desabilitado
-    if (ch in _sceneLock) continue;     // canal travado por cena ativa
+    if (disabled.has(ch)) continue;
+    if (ch in _sceneLock) continue;
     let out = linear ? sum : htp;
     if (out > 255) out = 255;
-    const value = Math.round(out);
-    if (interpolator.isVirtualChannel(ch)) {
-      interpolator.setSpeed(ch, value);
-      continue;
-    }
-    if (interpolator.isControlledChannel(ch)) {
-      interpolator.setTarget(ch, value);
-      continue;
-    }
-    universe.setChannel(ch, value);
+    _writeChannelToUniverse(ch, Math.round(out));
   }
 
   // 4. remove camadas que terminaram o fade-out neste frame
@@ -316,7 +347,7 @@ module.exports = {
   // config
   setSceneLock, setDisabledChannelsProvider, setMergeMode,
   // camadas (Fase 1 — usado por F-keys e page-scripts)
-  addLayer, removeLayer, hasLayer, clearLayers, layerCount, releaseLayer,
+  addLayer, removeLayer, stopLayer, hasLayer, clearLayers, layerCount, releaseLayer,
   // frame
   renderFrame,
   // macro (Fase 2)

@@ -1,4 +1,5 @@
-// onda-branca — Cena de movimento suave em branco com Moving Heads + Ribaltas sincronizadas. Destino: F1.
+// mov-padrao-02 — Moving Heads + Ribaltas descendo sincronizadas. Destino: F1.
+// Preset compartilhado: scripts/mov-padrao-preset.js (cor ParLed + pan/tilt)
 
 // ── IDs de fixture ──────────────────────────────────────────────────────────
 
@@ -39,35 +40,6 @@ let tick = 0;
 
 const LOOP = 300;
 const F2   = 300;
-
-
-// ── Posições de referência dos Movings ──────────────────────────────────────
-// Moving Head Beam — posições medidas
-// PAN_C=centro simétrico, TILT_F=nivelado frente, TILT_A=ponta altar
-
-const M1_PAN_C  = 84;
-const M1_TILT_F = 36;
-const M1_TILT_A = 78;
-
-const M2_PAN_C  = 84;
-const M2_TILT_F = 32;
-const M2_TILT_A = 72;
-
-
-// ── Posições de referência das Ribaltas ─────────────────────────────────────
-// As ribaltas seguem o mesmo progresso dos movings:
-// começa em 100, desce até o limite e volta para 100 quando o ciclo reinicia.
-
-const RIBALTA_TILT_START = 100;
-const RIBALTA_TILT_LIMIT = 190;
-
-// Speed das ribaltas.
-// Mantive os valores diferentes porque no seu catálogo elas parecem responder diferente.
-// R1 tilt funcional=110 speed=190
-// R2 tilt funcional=105 speed=90
-
-const R1_SPEED_SYNC = 190;
-const R2_SPEED_SYNC = 90;
 
 
 // ── Utilitários ─────────────────────────────────────────────────────────────
@@ -144,10 +116,10 @@ function OnStart() {
   ch(r2_function, 0);
 
   // Garante que as ribaltas iniciem em tilt 100.
-  ch(r1_speed, R1_SPEED_SYNC);
-  ch(r2_speed, R2_SPEED_SYNC);
-  ch(r1_tilt, RIBALTA_TILT_START);
-  ch(r2_tilt, RIBALTA_TILT_START);
+  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
+  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
+  ch(r1_tilt, MP_RIB.TILT_LOW);
+  ch(r2_tilt, MP_RIB.TILT_LOW);
 
   // Fita e Mini Bruts
   fita = getChannel(ID_FITA, 'dimmer');
@@ -156,6 +128,8 @@ function OnStart() {
   b02 = getChannel(ID_B02, 'dimmer');
   b03 = getChannel(ID_B03, 'dimmer');
   b04 = getChannel(ID_B04, 'dimmer');
+
+  mp_resolveParLeds();
 }
 
 
@@ -167,18 +141,20 @@ function OnExecute() {
   const t = tick % LOOP;
   const p = clamp01(t / (F2 - 1));
 
+  mp_applyParLeds();
+
   // MOVING HEADS — branco, centralizados, descendo aos poucos.
   ch(m1_cw, 0);
   ch(m2_cw, 0);
 
-  ch(m1_speed, 210);
-  ch(m2_speed, 210);
+  ch(m1_speed, MP_MH_SPEED_SLOW);
+  ch(m2_speed, MP_MH_SPEED_SLOW);
 
-  ch(m1_pan, M1_PAN_C);
-  ch(m2_pan, M2_PAN_C);
+  ch(m1_pan, MP_M1.PAN_C);
+  ch(m2_pan, MP_M2.PAN_C);
 
-  ch(m1_tilt, lerp(M1_TILT_F, M1_TILT_A, p));
-  ch(m2_tilt, lerp(M2_TILT_F, M2_TILT_A, p));
+  ch(m1_tilt, lerp(MP_M1.TILT_F, MP_M1.TILT_A, p));
+  ch(m2_tilt, lerp(MP_M2.TILT_F, MP_M2.TILT_A, p));
 
   ch(m1_fecho, 255);
   ch(m2_fecho, 255);
@@ -191,13 +167,13 @@ function OnExecute() {
 
   // RIBALTAS — branco cheio, descendo junto com os movings.
   // Quando t volta para 0, o tilt volta para 100 e o padrão reinicia.
-  const ribaltaTilt = lerp(RIBALTA_TILT_START, RIBALTA_TILT_LIMIT, p);
+  const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, p);
 
   ch(r1_dimmer, 255);
   ch(r2_dimmer, 255);
 
-  ch(r1_speed, R1_SPEED_SYNC);
-  ch(r2_speed, R2_SPEED_SYNC);
+  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
+  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
 
   ch(r1_tilt, ribaltaTilt);
   ch(r2_tilt, ribaltaTilt);
@@ -270,4 +246,6 @@ function OnTerminate() {
   ch(b02, 0);
   ch(b03, 0);
   ch(b04, 0);
+
+  mp_zeroParLeds();
 }

@@ -105,6 +105,7 @@ contextBridge.exposeInMainWorld('vp', {
   clearScript:   (fkey)       => ipcRenderer.invoke('script:clear', fkey),
   toggleScript:  (fkey)       => ipcRenderer.invoke('script:toggle', fkey),
   getAllScripts:  ()           => ipcRenderer.invoke('script:getAll'),
+  stopAllScripts: ()           => ipcRenderer.invoke('script:stopAll'),
   // Watch em tempo real: o main avisa quando um .js muda no disco.
   // Retorna uma função para remover o listener.
   onScriptsChanged: (callback) => {
@@ -122,6 +123,7 @@ contextBridge.exposeInMainWorld('vp', {
 
   // ─── MACROS (sequenciador + crossfade — backend Fase 2; UI a fazer) ─────────
   createMacro:   (id, def) => ipcRenderer.invoke('macro:create', id, def),
+  updateMacro:   (id, def) => ipcRenderer.invoke('macro:update', id, def),
   startMacro:    (id)      => ipcRenderer.invoke('macro:start', id),
   stopMacro:     (id)      => ipcRenderer.invoke('macro:stop', id),
   nextMacroStep: (id)      => ipcRenderer.invoke('macro:next', id),
