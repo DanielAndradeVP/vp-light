@@ -1,4 +1,5 @@
-// onda-branca — Cena de movimento suave em branco com Moving Heads. Destino: F1.
+// mov-padrao-01 — Cena de movimento suave em branco com Moving Heads. Destino: F1.
+// Preset compartilhado: scripts/mov-padrao-preset.js (cor ParLed + pan/tilt)
 
 // ── IDs de fixture ──────────────────────────────────────────────────────────
 const ID_M1   = 'fixture_1780805067518_moving_head_beam_1';
@@ -103,6 +104,8 @@ function OnStart() {
   b02  = getChannel(ID_B02,  'dimmer');
   b03  = getChannel(ID_B03,  'dimmer');
   b04  = getChannel(ID_B04,  'dimmer');
+
+  mp_resolveParLeds();
 }
 
 
@@ -111,15 +114,17 @@ function OnExecute() {
   const t = tick % LOOP;
   const p = clamp01(t / (F2 - 1));
 
+  mp_applyParLeds();
+
   // MOVING HEADS: tilt em espelho com luz branca e velocidade lenta
   ch(m1_cw, 0);
   ch(m2_cw, 0);
-  ch(m1_speed, 210);
-  ch(m2_speed, 210);
-  ch(m1_pan, M1_PAN_C);
-  ch(m2_pan, M2_PAN_C);
-  ch(m1_tilt, lerp(M1_TILT_F, M1_TILT_A, p));
-  ch(m2_tilt, lerp(M2_TILT_F, M2_TILT_A, p));
+  ch(m1_speed, MP_MH_SPEED_SLOW);
+  ch(m2_speed, MP_MH_SPEED_SLOW);
+  ch(m1_pan, MP_M1.PAN_C);
+  ch(m2_pan, MP_M2.PAN_C);
+  ch(m1_tilt, lerp(MP_M1.TILT_F, MP_M1.TILT_A, p));
+  ch(m2_tilt, lerp(MP_M2.TILT_F, MP_M2.TILT_A, p));
   ch(m1_fecho, 255);
   ch(m2_fecho, 255);
   ch(m1_strobo, 255);
@@ -129,8 +134,8 @@ function OnExecute() {
 
   // RIBALTAS — fase 1: branco cheio, tilt louvor estático
   ch(r1_dimmer, 255); ch(r2_dimmer, 255);
-  ch(r1_speed, R1_SS); ch(r2_speed, R2_SS);
-  ch(r1_tilt, R1_TL); ch(r2_tilt, R2_TL);
+  ch(r1_speed, MP_RIB.R1_SPEED_SLOW); ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
+  ch(r1_tilt, MP_RIB.TILT_LOUVOR_1); ch(r2_tilt, MP_RIB.TILT_LOUVOR_2);
   ch(r1_strobo, 0); ch(r2_strobo, 0);
   for (let i = 0; i < 8; i++) {
     ch(r1_leds[i], 255);
@@ -171,4 +176,6 @@ function OnTerminate() {
 
   ch(fita, 0);
   ch(b01, 0); ch(b02, 0); ch(b03, 0); ch(b04, 0);
+
+  mp_zeroParLeds();
 }

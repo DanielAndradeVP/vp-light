@@ -1,9 +1,5 @@
-// CENA: MOVINGS E RIBALTAS
-// Moving Heads: 8 fases sincronizadas na mesma direção, speed variável por fase,
-//   combinações intensas de pan + tilt — abertura lenta, varridas, paradas,
-//   dramático no chão, subida e final rápido.
-// Ribaltas: 7 fases em par, paradas marcantes em tilt=100 e tilt=190,
-//   alternância entre subidas lentas, descidas rápidas e pausas estratégicas.
+// mov-padrao-03 — Movings 8 fases + Ribaltas 7 fases sincronizadas. Destino: F1.
+// Preset compartilhado: scripts/mov-padrao-preset.js (cor ParLed + pan/tilt)
 
 // ─── IDs de fixture ───────────────────────────────────────────────────────────
 const ID_MH1  = 'fixture_1780805067518_moving_head_beam_1';
@@ -18,15 +14,6 @@ let rib1Tilt, rib1Speed, rib1Dimmer, rib1Leds = [];
 let rib2Tilt, rib2Speed, rib2Dimmer, rib2Leds = [];
 
 let tick = 0;
-
-// ─── Moving Heads ─────────────────────────────────────────────────────────────
-const MH_PAN_LEFT   = 55;    // limite esquerdo (abertura máxima)
-const MH_PAN_CENTER = 128;   // centro do palco
-const MH_PAN_RIGHT  = 200;   // limite direito (abertura máxima)
-const MH_TILT_FLOOR = 130;   // posição muito baixa/dramática
-const MH_TILT_MID   = 185;   // posição intermediária
-const MH_TILT_HIGH  = 215;   // posição alta
-const MH_GAP        = 8;     // separação de pan entre MH1 e MH2
 
 // Ciclo de 8 fases — 720 ticks (~28.8s)
 // F0: lento     — pan abrindo L→R, tilt desce HIGH→FLOOR        (150t, spd=20)
@@ -54,11 +41,6 @@ const MH_S5 = MH_S4 + MH_D4;
 const MH_S6 = MH_S5 + MH_D5;
 const MH_S7 = MH_S6 + MH_D6;
 const MH_CYCLE = MH_S7 + MH_D7; // 720
-
-// ─── Ribaltas ─────────────────────────────────────────────────────────────────
-const RIB_TILT_LOW  = 100;  // posição baixa  — parada forte
-const RIB_TILT_HIGH = 190;  // posição alta   — parada forte
-const RIB_DIM_ON    = 220;
 
 // Ciclo de 7 fases — 500 ticks (~20s)
 // FA: subida lenta   100→190                                     (100t, spd=70)
@@ -123,6 +105,8 @@ function OnStart() {
 
   if (mh1ColorWheel !== null) { SetChannel(mh1ColorWheel, 1); SetChannel(mh1ColorWheel, 0); }
   if (mh2ColorWheel !== null) { SetChannel(mh2ColorWheel, 1); SetChannel(mh2ColorWheel, 0); }
+
+  mp_resolveParLeds();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -133,82 +117,84 @@ function lerp(a, b, t) {
 // Retorna { pan, tilt, spd } para os dois MHs (posição-base compartilhada).
 // No OnExecute: MH1 recebe pan-GAP e MH2 recebe pan+GAP — mesma direção, separação fixa.
 function mhStateForPhase(phase) {
-  // F0: lento — pan L→R abrindo, tilt desce HIGH→FLOOR (150t, spd=20)
+  // F0: lento — pan L→R abrindo, tilt desce altar→chão (150t, spd=20)
   if (phase < MH_S1) {
     const t = phase / MH_D0;
-    return { pan: lerp(MH_PAN_LEFT, MH_PAN_RIGHT, t), tilt: lerp(MH_TILT_HIGH, MH_TILT_FLOOR, t), spd: 20 };
+    return { pan: lerp(MP_M1.PAN_L, MP_M1.PAN_R, t), tilt: lerp(MP_M1.TILT_A, MP_M1.TILT_FLOOR, t), spd: 20 };
   }
-  // F1: médio — varrida R→L, tilt sobe FLOOR→MID (130t, spd=55)
+  // F1: médio — varrida R→L, tilt sobe chão→mid (130t, spd=55)
   if (phase < MH_S2) {
     const t = (phase - MH_S1) / MH_D1;
-    return { pan: lerp(MH_PAN_RIGHT, MH_PAN_LEFT, t), tilt: lerp(MH_TILT_FLOOR, MH_TILT_MID, t), spd: 55 };
+    return { pan: lerp(MP_M1.PAN_R, MP_M1.PAN_L, t), tilt: lerp(MP_M1.TILT_FLOOR, MP_M1.TILT_MID, t), spd: 55 };
   }
   // F2: rápido — pan L→CENTER, tilt MID→FLOOR (60t, spd=130)
   if (phase < MH_S3) {
     const t = (phase - MH_S2) / MH_D2;
-    return { pan: lerp(MH_PAN_LEFT, MH_PAN_CENTER, t), tilt: lerp(MH_TILT_MID, MH_TILT_FLOOR, t), spd: 130 };
+    return { pan: lerp(MP_M1.PAN_L, MP_M1.PAN_C, t), tilt: lerp(MP_M1.TILT_MID, MP_M1.TILT_FLOOR, t), spd: 130 };
   }
   // F3: rápido — pan CENTER→R, tilt FLOOR→MID (80t, spd=130)
   if (phase < MH_S4) {
     const t = (phase - MH_S3) / MH_D3;
-    return { pan: lerp(MH_PAN_CENTER, MH_PAN_RIGHT, t), tilt: lerp(MH_TILT_FLOOR, MH_TILT_MID, t), spd: 130 };
+    return { pan: lerp(MP_M1.PAN_C, MP_M1.PAN_R, t), tilt: lerp(MP_M1.TILT_FLOOR, MP_M1.TILT_MID, t), spd: 130 };
   }
   // F4: parada em ponto forte — pan=R, tilt=MID (50t, spd=25)
   if (phase < MH_S5) {
-    return { pan: MH_PAN_RIGHT, tilt: MH_TILT_MID, spd: 25 };
+    return { pan: MP_M1.PAN_R, tilt: MP_M1.TILT_MID, spd: 25 };
   }
   // F5: dramático — pan R→L lento, tilt=FLOOR (120t, spd=30)
   if (phase < MH_S6) {
     const t = (phase - MH_S5) / MH_D5;
-    return { pan: lerp(MH_PAN_RIGHT, MH_PAN_LEFT, t), tilt: MH_TILT_FLOOR, spd: 30 };
+    return { pan: lerp(MP_M1.PAN_R, MP_M1.PAN_L, t), tilt: MP_M1.TILT_FLOOR, spd: 30 };
   }
-  // F6: subida — pan L→CENTER, tilt sobe FLOOR→HIGH (80t, spd=45)
+  // F6: subida — pan L→CENTER, tilt sobe FLOOR→altar (80t, spd=45)
   if (phase < MH_S7) {
     const t = (phase - MH_S6) / MH_D6;
-    return { pan: lerp(MH_PAN_LEFT, MH_PAN_CENTER, t), tilt: lerp(MH_TILT_FLOOR, MH_TILT_HIGH, t), spd: 45 };
+    return { pan: lerp(MP_M1.PAN_L, MP_M1.PAN_C, t), tilt: lerp(MP_M1.TILT_FLOOR, MP_M1.TILT_A, t), spd: 45 };
   }
-  // F7: final rápido — pan CENTER→R, tilt=HIGH (50t, spd=120)
+  // F7: final rápido — pan CENTER→R, tilt=altar (50t, spd=120)
   const t = (phase - MH_S7) / MH_D7;
-  return { pan: lerp(MH_PAN_CENTER, MH_PAN_RIGHT, t), tilt: MH_TILT_HIGH, spd: 120 };
+  return { pan: lerp(MP_M1.PAN_C, MP_M1.PAN_R, t), tilt: MP_M1.TILT_A, spd: 120 };
 }
 
 // Retorna { tilt, spd } para as ribaltas (as duas usam a mesma posição e speed).
 function ribStateForPhase(phase) {
-  // FA: subida lenta 100→190 (100t, spd=70)
+  // FA: subida lenta LOW→HIGH (100t, spd=70)
   if (phase < RIB_SB) {
     const t = phase / RIB_DA;
-    return { tilt: lerp(RIB_TILT_LOW, RIB_TILT_HIGH, t), spd: RIB_SPD_SLOW };
+    return { tilt: lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, t), spd: RIB_SPD_SLOW };
   }
-  // FB: pausa em 190 (50t, spd=70)
+  // FB: pausa em HIGH (50t, spd=70)
   if (phase < RIB_SC) {
-    return { tilt: RIB_TILT_HIGH, spd: RIB_SPD_SLOW };
+    return { tilt: MP_RIB.TILT_HIGH, spd: RIB_SPD_SLOW };
   }
-  // FC: descida rápida 190→100 (70t, spd=200)
+  // FC: descida rápida HIGH→LOW (70t, spd=200)
   if (phase < RIB_SD) {
     const t = (phase - RIB_SC) / RIB_DC;
-    return { tilt: lerp(RIB_TILT_HIGH, RIB_TILT_LOW, t), spd: RIB_SPD_FAST };
+    return { tilt: lerp(MP_RIB.TILT_HIGH, MP_RIB.TILT_LOW, t), spd: RIB_SPD_FAST };
   }
-  // FD: pausa em 100 (50t, spd=200)
+  // FD: pausa em LOW (50t, spd=200)
   if (phase < RIB_SE) {
-    return { tilt: RIB_TILT_LOW, spd: RIB_SPD_FAST };
+    return { tilt: MP_RIB.TILT_LOW, spd: RIB_SPD_FAST };
   }
-  // FE: subida média 100→190 (100t, spd=130)
+  // FE: subida média LOW→HIGH (100t, spd=130)
   if (phase < RIB_SF) {
     const t = (phase - RIB_SE) / RIB_DE;
-    return { tilt: lerp(RIB_TILT_LOW, RIB_TILT_HIGH, t), spd: RIB_SPD_MED };
+    return { tilt: lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, t), spd: RIB_SPD_MED };
   }
-  // FF: descida rápida 190→100 (60t, spd=200)
+  // FF: descida rápida HIGH→LOW (60t, spd=200)
   if (phase < RIB_SG) {
     const t = (phase - RIB_SF) / RIB_DF;
-    return { tilt: lerp(RIB_TILT_HIGH, RIB_TILT_LOW, t), spd: RIB_SPD_FAST };
+    return { tilt: lerp(MP_RIB.TILT_HIGH, MP_RIB.TILT_LOW, t), spd: RIB_SPD_FAST };
   }
-  // FG: pausa em 100 + preparação lenta (70t, spd=60)
-  return { tilt: RIB_TILT_LOW, spd: RIB_SPD_PREP };
+  // FG: pausa em LOW + preparação lenta (70t, spd=60)
+  return { tilt: MP_RIB.TILT_LOW, spd: RIB_SPD_PREP };
 }
 
 // ─── OnExecute ───────────────────────────────────────────────────────────────
 function OnExecute() {
   tick++;
+
+  mp_applyParLeds();
 
   // ── Moving Heads — sincronizados na mesma direção ────────────────────────────
   const mhPhase = tick % MH_CYCLE;
@@ -217,7 +203,7 @@ function OnExecute() {
   if (mh1Fecho      !== null) SetChannel(mh1Fecho,      255);
   if (mh1Strobo     !== null) SetChannel(mh1Strobo,     255);
   if (mh1ColorWheel !== null) SetChannel(mh1ColorWheel, 0);
-  if (mh1Pan        !== null) SetChannel(mh1Pan,        mh.pan - MH_GAP);
+  if (mh1Pan        !== null) SetChannel(mh1Pan,        mh.pan - MP_MH_GAP);
   if (mh1PanFine    !== null) SetChannel(mh1PanFine,    0);
   if (mh1Tilt       !== null) SetChannel(mh1Tilt,       mh.tilt);
   if (mh1Speed      !== null) SetChannel(mh1Speed,      mh.spd);
@@ -225,7 +211,7 @@ function OnExecute() {
   if (mh2Fecho      !== null) SetChannel(mh2Fecho,      255);
   if (mh2Strobo     !== null) SetChannel(mh2Strobo,     255);
   if (mh2ColorWheel !== null) SetChannel(mh2ColorWheel, 0);
-  if (mh2Pan        !== null) SetChannel(mh2Pan,        mh.pan + MH_GAP);
+  if (mh2Pan        !== null) SetChannel(mh2Pan,        mh.pan + MP_MH_GAP);
   if (mh2PanFine    !== null) SetChannel(mh2PanFine,    0);
   if (mh2Tilt       !== null) SetChannel(mh2Tilt,       mh.tilt);
   if (mh2Speed      !== null) SetChannel(mh2Speed,      mh.spd);
@@ -236,14 +222,14 @@ function OnExecute() {
 
   if (rib1Tilt   !== null) SetChannel(rib1Tilt,   rib.tilt);
   if (rib1Speed  !== null) SetChannel(rib1Speed,  rib.spd);
-  if (rib1Dimmer !== null) SetChannel(rib1Dimmer, RIB_DIM_ON);
+  if (rib1Dimmer !== null) SetChannel(rib1Dimmer, MP_RIB.DIM_WASH);
   for (let i = 0; i < rib1Leds.length; i++) {
     if (rib1Leds[i] !== null) SetChannel(rib1Leds[i], 255);
   }
 
   if (rib2Tilt   !== null) SetChannel(rib2Tilt,   rib.tilt);
   if (rib2Speed  !== null) SetChannel(rib2Speed,  rib.spd);
-  if (rib2Dimmer !== null) SetChannel(rib2Dimmer, RIB_DIM_ON);
+  if (rib2Dimmer !== null) SetChannel(rib2Dimmer, MP_RIB.DIM_WASH);
   for (let i = 0; i < rib2Leds.length; i++) {
     if (rib2Leds[i] !== null) SetChannel(rib2Leds[i], 255);
   }
@@ -254,16 +240,16 @@ function OnTerminate() {
   if (mh1Fecho      !== null) SetChannel(mh1Fecho,      0);
   if (mh1Strobo     !== null) SetChannel(mh1Strobo,     0);
   if (mh1ColorWheel !== null) SetChannel(mh1ColorWheel, 0);
-  if (mh1Pan        !== null) SetChannel(mh1Pan,        MH_PAN_LEFT);
+  if (mh1Pan        !== null) SetChannel(mh1Pan,        MP_M1.PAN_L);
   if (mh1PanFine    !== null) SetChannel(mh1PanFine,    0);
-  if (mh1Tilt       !== null) SetChannel(mh1Tilt,       MH_TILT_MID);
+  if (mh1Tilt       !== null) SetChannel(mh1Tilt,       MP_M1.TILT_MID);
   if (mh1Speed      !== null) SetChannel(mh1Speed,      0);
   if (mh2Fecho      !== null) SetChannel(mh2Fecho,      0);
   if (mh2Strobo     !== null) SetChannel(mh2Strobo,     0);
   if (mh2ColorWheel !== null) SetChannel(mh2ColorWheel, 0);
-  if (mh2Pan        !== null) SetChannel(mh2Pan,        MH_PAN_LEFT);
+  if (mh2Pan        !== null) SetChannel(mh2Pan,        MP_M2.PAN_L);
   if (mh2PanFine    !== null) SetChannel(mh2PanFine,    0);
-  if (mh2Tilt       !== null) SetChannel(mh2Tilt,       MH_TILT_MID);
+  if (mh2Tilt       !== null) SetChannel(mh2Tilt,       MP_M2.TILT_MID);
   if (mh2Speed      !== null) SetChannel(mh2Speed,      0);
   if (rib1Tilt   !== null) SetChannel(rib1Tilt,   0);
   if (rib1Speed  !== null) SetChannel(rib1Speed,  0);
@@ -277,4 +263,6 @@ function OnTerminate() {
   for (let i = 0; i < rib2Leds.length; i++) {
     if (rib2Leds[i] !== null) SetChannel(rib2Leds[i], 0);
   }
+
+  mp_zeroParLeds();
 }

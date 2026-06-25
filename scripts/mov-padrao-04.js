@@ -1,7 +1,5 @@
-// onda-branca-reset-escondido
-// Cena branca com Moving Heads + Ribaltas descendo sincronizadas.
-// Ao finalizar a descida, as ribaltas apagam, voltam para tilt 100 escondidas
-// e só acendem novamente quando iniciarem a próxima descida. Destino: F1.
+// mov-padrao-04 — Ribaltas reset escondido ao fim da descida. Destino: F1.
+// Preset compartilhado: scripts/mov-padrao-preset.js (cor ParLed + pan/tilt)
 
 // ── IDs de fixture ──────────────────────────────────────────────────────────
 
@@ -46,27 +44,8 @@ const RESET_TICKS   = 35;  // 1.4s apagado para voltar ao tilt inicial
 const LOOP = DESCEND_TICKS + RESET_TICKS;
 
 
-// ── Movings ─────────────────────────────────────────────────────────────────
-
-const M1_PAN_C  = 84;
-const M1_TILT_F = 36;
-const M1_TILT_A = 78;
-
-const M2_PAN_C  = 84;
-const M2_TILT_F = 32;
-const M2_TILT_A = 72;
-
-const MOVING_SPEED_DESCEND = 210;
-const MOVING_SPEED_RESET   = 210;
-
-
-// ── Ribaltas ────────────────────────────────────────────────────────────────
-
-const RIBALTA_TILT_START = 100;
-const RIBALTA_TILT_LIMIT = 190;
-
-const R1_SPEED_SYNC = 190;
-const R2_SPEED_SYNC = 90;
+const MOVING_SPEED_DESCEND = MP_MH_SPEED_SLOW;
+const MOVING_SPEED_RESET   = MP_MH_SPEED_SLOW;
 
 
 // ── Valores gerais ──────────────────────────────────────────────────────────
@@ -172,11 +151,11 @@ function OnStart() {
   ch(r2_function, 0);
 
   // Começa com ribaltas apagadas e em tilt 100
-  ch(r1_speed, R1_SPEED_SYNC);
-  ch(r2_speed, R2_SPEED_SYNC);
+  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
+  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
 
-  ch(r1_tilt, RIBALTA_TILT_START + 70);
-  ch(r2_tilt, RIBALTA_TILT_START);
+  ch(r1_tilt, MP_RIB.TILT_LOW);
+  ch(r2_tilt, MP_RIB.TILT_LOW);
 
   blackoutRibaltas();
 
@@ -187,6 +166,8 @@ function OnStart() {
   b02 = getChannel(ID_B02, 'dimmer');
   b03 = getChannel(ID_B03, 'dimmer');
   b04 = getChannel(ID_B04, 'dimmer');
+
+  mp_resolveParLeds();
 }
 
 
@@ -198,12 +179,14 @@ function OnExecute() {
   const cycleTick = tick % LOOP;
   const isDescending = cycleTick < DESCEND_TICKS;
 
+  mp_applyParLeds();
+
   // Mantém configurações base
   ch(m1_cw, 0);
   ch(m2_cw, 0);
 
-  ch(m1_pan, M1_PAN_C);
-  ch(m2_pan, M2_PAN_C);
+  ch(m1_pan, MP_M1.PAN_C);
+  ch(m2_pan, MP_M2.PAN_C);
 
   ch(m1_prism, 0);
   ch(m2_prism, 0);
@@ -211,8 +194,8 @@ function OnExecute() {
   ch(r1_function, 0);
   ch(r2_function, 0);
 
-  ch(r1_speed, R1_SPEED_SYNC);
-  ch(r2_speed, R2_SPEED_SYNC);
+  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
+  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
 
   if (isDescending) {
     const p = clamp01(cycleTick / (DESCEND_TICKS - 1));
@@ -221,8 +204,8 @@ function OnExecute() {
     ch(m1_speed, MOVING_SPEED_DESCEND);
     ch(m2_speed, MOVING_SPEED_DESCEND);
 
-    ch(m1_tilt, lerp(M1_TILT_F, M1_TILT_A, p));
-    ch(m2_tilt, lerp(M2_TILT_F, M2_TILT_A, p));
+    ch(m1_tilt, lerp(MP_M1.TILT_F, MP_M1.TILT_A, p));
+    ch(m2_tilt, lerp(MP_M2.TILT_F, MP_M2.TILT_A, p));
 
     ch(m1_fecho, 255);
     ch(m2_fecho, 255);
@@ -231,7 +214,7 @@ function OnExecute() {
     ch(m2_strobo, 255);
 
     // RIBALTAS — acesas e descendo junto
-    const ribaltaTilt = lerp(RIBALTA_TILT_START, RIBALTA_TILT_LIMIT, p);
+    const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, p);
 
     ch(r1_tilt, ribaltaTilt + 70);
     ch(r2_tilt, ribaltaTilt);
@@ -248,15 +231,15 @@ function OnExecute() {
     // Aqui a ribalta apaga, volta para tilt 100, e ninguém vê ela subindo.
     blackoutRibaltas();
 
-    ch(r1_tilt, RIBALTA_TILT_START + 70);
-    ch(r2_tilt, RIBALTA_TILT_START);
+    ch(r1_tilt, MP_RIB.TILT_LOW);
+    ch(r2_tilt, MP_RIB.TILT_LOW);
 
     // Também fecho os movings durante o reset para esconder o retorno deles.
     ch(m1_speed, MOVING_SPEED_RESET);
     ch(m2_speed, MOVING_SPEED_RESET);
 
-    ch(m1_tilt, M1_TILT_F);
-    ch(m2_tilt, M2_TILT_F);
+    ch(m1_tilt, MP_M1.TILT_F);
+    ch(m2_tilt, MP_M2.TILT_F);
 
     ch(m1_fecho, 0);
     ch(m2_fecho, 0);
@@ -315,4 +298,6 @@ function OnTerminate() {
   ch(b02, 0);
   ch(b03, 0);
   ch(b04, 0);
+
+  mp_zeroParLeds();
 }

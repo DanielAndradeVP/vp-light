@@ -23,6 +23,7 @@ const {
   buildChannelOffsetMap: buildFixtureChannelOffsetMap,
   normalizeShowFixtureOffsets,
 } = require('./fixtureOffsets');
+const fixtureAdapter = require('./adapter');
 
 const isDev = !app.isPackaged;
 const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
@@ -346,7 +347,8 @@ let parLedChannels = new Set(); // canais DMX de par_led — preenchido via setA
  *   - liga/desliga de script (handler script:toggle — RMOP-002)
  */
 function _applySceneLock() {
-  const anyScriptRunning = Object.keys(runningScripts).length > 0;
+  const anyScriptRunning = Object.keys(runningScripts).length > 0
+    || Object.keys(runningPageScripts).length > 0;
   if (anyScriptRunning && parLedChannels.size > 0) {
     // Solta os canais de par_led do lock — o script passa a escrevê-los.
     const lock = {};
@@ -418,52 +420,8 @@ ipcMain.handle('show:save', (_, showData) => {
       '| scripts:', Object.keys(currentShow?.scripts || {})
     );
 
-    // Scripts: scriptMeta do main é a ÚNICA fonte de verdade.
-    // Não herdar do disco nem do renderer — qualquer entrada que não esteja
-    // em scriptMeta neste momento foi removida via script:clear e não deve voltar.
-    const mergedScripts = {};
-    for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      mergedScripts[fkey] = { name: meta.name, file: meta.file };
-    }
-
-    // Páginas: merge profundo por página.
-    // Renderer é a fonte da verdade para intenção do usuário (name + quais cenas existem).
-    // currentShow.pages complementa páginas que o renderer não enviou.
-    // Dentro de cada página, scenes do renderer vencem — garantindo que limpezas e
-    // saves recentes do renderer prevaleçam sobre o que ficou em memória no main.
-    const mergedPages = {};
-    const _allPageIds = new Set([
-      ...Object.keys(currentShow?.pages || {}),
-      ...Object.keys(showData.pages || {}),
-    ]);
-    for (const _pid of _allPageIds) {
-      const _fromMain     = currentShow?.pages?.[_pid]  || {};
-      const _fromRenderer = showData.pages?.[_pid]      || {};
-      mergedPages[_pid] = {
-        name:   _fromRenderer.name   || _fromMain.name   || `Página ${_pid}`,
-        // Cenas: currentShow (atualizado por show:updateScene em tempo real) como base,
-        // renderer sobrescreve — garante que a cena mais recente salva pelo renderer vença.
-        scenes: { ...(_fromMain.scenes || {}), ...(_fromRenderer.scenes || {}) },
-      };
-    }
-
-    // page_scripts: pageScriptMeta do main e a fonte de verdade em runtime.
-    // Nao herdar do renderer/disco aqui: entradas removidas via page_script:clear
-    // nao podem voltar em saves completos posteriores.
-    const mergedPageScripts = {};
-    for (const [pgId, pgData] of Object.entries(pageScriptMeta)) {
-      if (!mergedPageScripts[pgId]) mergedPageScripts[pgId] = {};
-      for (const [sceneKey, meta] of Object.entries(pgData)) {
-        mergedPageScripts[pgId][sceneKey] = { name: meta.name, file: meta.file };
-      }
-    }
-
-    const merged = normalizeRuntimeFixtureFields({
-      ...showData,
-      scripts:      mergedScripts,
-      pages:        mergedPages,
-      page_scripts: mergedPageScripts,
-    });
+    // Scripts, páginas, page_scripts e macros: merge via buildMergedShow (fonte runtime do main).
+    const merged = buildMergedShow(showData);
 
     // ── LOG 2: o que vai para o disco ────────────────────────────────────────
     console.log('[show:save] gravando no disco:',
@@ -494,7 +452,12 @@ ipcMain.handle('show:saveAs', async (_, showData) => {
       filters: [{ name: 'vp-light Show', extensions: ['show.json'] }],
     });
     if (canceled || !filePath) return { ok: false, error: 'Cancelado' };
-    show.saveShowAs(filePath, showData);
+    const merged = buildMergedShow(showData);
+    show.saveShowAs(filePath, merged);
+    loadScriptMeta();
+    loadPageScriptMeta();
+    loadMacros();
+    initializeOffsets();
     return { ok: true, path: filePath };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -528,18 +491,58 @@ function normalizePageId(pageId) {
 
 function psKey(pageId, sceneKey) { return `${normalizePageId(pageId)}:${sceneKey}`; }
 
+/**
+ * Mescla showData do renderer com metadados runtime do main (scripts, page_scripts, páginas, macros).
+ * Usado por show:save e show:saveAs.
+ */
+function buildMergedShow(showData) {
+  const currentShow = show.getShow();
+
+  const mergedScripts = {};
+  for (const [fkey, meta] of Object.entries(scriptMeta)) {
+    mergedScripts[fkey] = { name: meta.name, file: meta.file };
+    if (meta.color) mergedScripts[fkey].color = meta.color;
+  }
+
+  const mergedPages = {};
+  const allPageIds = new Set([
+    ...Object.keys(currentShow?.pages || {}),
+    ...Object.keys(showData?.pages || {}),
+  ]);
+  for (const pid of allPageIds) {
+    const fromMain = currentShow?.pages?.[pid] || {};
+    const fromRenderer = showData?.pages?.[pid] || {};
+    mergedPages[pid] = {
+      name: fromRenderer.name || fromMain.name || `Página ${pid}`,
+      scenes: { ...(fromMain.scenes || {}), ...(fromRenderer.scenes || {}) },
+    };
+  }
+
+  const mergedPageScripts = {};
+  for (const [pgId, pgData] of Object.entries(pageScriptMeta)) {
+    if (!mergedPageScripts[pgId]) mergedPageScripts[pgId] = {};
+    for (const [sceneKey, meta] of Object.entries(pgData)) {
+      mergedPageScripts[pgId][sceneKey] = { name: meta.name, file: meta.file };
+    }
+  }
+
+  return normalizeRuntimeFixtureFields({
+    ...showData,
+    scripts: mergedScripts,
+    pages: mergedPages,
+    page_scripts: mergedPageScripts,
+    macros: currentShow?.macros ?? showData?.macros ?? [],
+  });
+}
+
 function stopRunningPageScript(pageId, sceneKey, reason) {
   pageId = normalizePageId(pageId);
   const k = psKey(pageId, sceneKey);
   const running = runningPageScripts[k];
   if (!running) return false;
-  compositor.removeLayer(`page:${k}`);
-  if (typeof running.context.OnTerminate === 'function') {
-    try { running.context.OnTerminate(); } catch (e) {
-      console.error(`[page_script] OnTerminate error (${reason}) (${k}):`, e.message);
-    }
-  }
+  compositor.stopLayer(`page:${k}`);
   delete runningPageScripts[k];
+  _applySceneLock();
   return true;
 }
 
@@ -578,17 +581,7 @@ function savePageScriptMeta() {
 function stopRunningScript(fkey, reason) {
   const running = runningScripts[fkey];
   if (!running) return false;
-
-  compositor.removeLayer(fkey);
-
-  if (typeof running.context.OnTerminate === 'function') {
-    try {
-      running.context.OnTerminate();
-    } catch (e) {
-      console.error(`[script] OnTerminate error ao parar (${reason}) (${fkey}):`, e.message);
-    }
-  }
-
+  compositor.stopLayer(fkey);
   delete runningScripts[fkey];
   return true;
 }
@@ -844,14 +837,20 @@ function getFixtureChannel(fixtureId, alias) {
   return getFixtureChannelByAlias(fixture, alias);
 }
 
-// Compila um arquivo de script numa CAMADA { buffer, touched, context } pronta para o compositor.
-// SetChannel escreve no buffer da camada (guards aplicados na composição). Lança se o arquivo
-// não existir ou não compilar. Reutilizado pelas macros (factory por passo).
-function compileLayer(filePath) {
-  const code = fs.readFileSync(filePath, 'utf-8');
-  const buffer = new Uint8Array(512);
-  const touched = new Uint8Array(512);
-  const ctx = {};
+function resolveAdapterValue(fixtureId, alias, adapterKey, logicalValue) {
+  return fixtureAdapter.resolve(
+    getShowFixture,
+    getFixtureChannelByAlias,
+    isFixtureEnabled,
+    fixtureId,
+    alias,
+    adapterKey,
+    logicalValue,
+  );
+}
+
+// API exposta na sandbox de scripts ao lado de SetChannel e getChannel.
+function buildScriptSandbox(buffer, touched) {
   const SetChannel = (ch, val) => {
     if (ch < 1 || ch > 512) return;
     const idx = ch - 1;
@@ -859,13 +858,47 @@ function compileLayer(filePath) {
     touched[idx] = 1;
   };
   const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
-  const fn = new Function('SetChannel', 'getChannel', 'ctx', `
+  const adapter = {
+    resolve: (fixtureId, alias, adapterKey, logicalValue) =>
+      resolveAdapterValue(fixtureId, alias, adapterKey, logicalValue),
+  };
+  return { SetChannel, getChannel, adapter };
+}
+
+const MOV_PADRAO_PRESET = path.join(SCRIPTS_DIR, 'mov-padrao-preset.js');
+
+function readScriptCode(filePath) {
+  let code = fs.readFileSync(filePath, 'utf-8');
+  const base = path.basename(filePath);
+  if (base.startsWith('mov-padrao-') && base !== 'mov-padrao-preset.js') {
+    if (fs.existsSync(MOV_PADRAO_PRESET)) {
+      code = fs.readFileSync(MOV_PADRAO_PRESET, 'utf-8') + '\n\n' + code;
+    }
+  }
+  return code;
+}
+
+function compileScriptContext(code, buffer, touched) {
+  const { SetChannel, getChannel, adapter } = buildScriptSandbox(buffer, touched);
+  const ctx = {};
+  const fn = new Function('SetChannel', 'getChannel', 'adapter', 'ctx', `
     ${code}
     ctx.OnStart = typeof OnStart === 'function' ? OnStart : null;
     ctx.OnExecute = typeof OnExecute === 'function' ? OnExecute : null;
     ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
   `);
-  fn(SetChannel, getChannel, ctx);
+  fn(SetChannel, getChannel, adapter, ctx);
+  return ctx;
+}
+
+// Compila um arquivo de script numa CAMADA { buffer, touched, context } pronta para o compositor.
+// SetChannel escreve no buffer da camada (guards aplicados na composição). Lança se o arquivo
+// não existir ou não compilar. Reutilizado pelas macros (factory por passo).
+function compileLayer(filePath) {
+  const code = readScriptCode(filePath);
+  const buffer = new Uint8Array(512);
+  const touched = new Uint8Array(512);
+  const ctx = compileScriptContext(code, buffer, touched);
   if (typeof ctx.OnStart === 'function') { try { ctx.OnStart(); } catch (e) {} }
   return { buffer, touched, context: ctx };
 }
@@ -908,6 +941,7 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
       `function OnExecute() {`,
       `  // chamado a cada 40ms`,
       `  // SetChannel(canal, valor)`,
+      `  // adapter.resolve(fixtureId, alias, adapterKey, valorLogico)`,
       `}`,
       ``,
       `function OnTerminate() {`,
@@ -943,32 +977,16 @@ function startScript(fkey) {
   if (!meta) return { ok: false, error: 'Nenhum script neste botão' };
   let code;
   try {
-    code = fs.readFileSync(meta.file, 'utf-8');
+    code = readScriptCode(meta.file);
   } catch (e) {
     return { ok: false, error: 'Arquivo não encontrado' };
   }
   // Buffer próprio da camada (pré-alocado, reusado por frame) + máscara de canais tocados.
   const buffer = new Uint8Array(512);
   const touched = new Uint8Array(512);
-  const ctx = {};
-  // SetChannel escreve no buffer DA CAMADA (não no universo). Os guards de cena ativa
-  // e de fixture desabilitado são aplicados pelo compositor sobre o resultado mesclado.
-  const SetChannel = (ch, val) => {
-    if (ch < 1 || ch > 512) return;
-    const idx = ch - 1;
-    buffer[idx] = Math.max(0, Math.min(255, Math.round(Number(val))));
-    touched[idx] = 1;
-  };
-  // getChannel: resolve o canal real de um alias do fixture (ex.: getChannel(id, "strobo")).
-  const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
+  let ctx;
   try {
-    const fn = new Function('SetChannel', 'getChannel', 'ctx', `
-      ${code}
-      ctx.OnStart = typeof OnStart === 'function' ? OnStart : null;
-      ctx.OnExecute = typeof OnExecute === 'function' ? OnExecute : null;
-      ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
-    `);
-    fn(SetChannel, getChannel, ctx);
+    ctx = compileScriptContext(code, buffer, touched);
   } catch (e) {
     return { ok: false, error: `Erro ao compilar: ${e.message}` };
   }
@@ -1042,6 +1060,13 @@ function emitScriptsChanged() {
 
 ipcMain.handle('script:getAll', () => buildAllScripts());
 
+ipcMain.handle('script:stopAll', () => {
+  stopAllRunningScripts('stop-all');
+  _applySceneLock();
+  emitScriptsChanged();
+  return { ok: true };
+});
+
 // ─── WATCH em tempo real do diretório de scripts ─────────────────────────────
 // Reage a criar/modificar/remover .js em SCRIPTS_DIR sem reiniciar o app.
 let scriptsWatcher = null;
@@ -1068,12 +1093,20 @@ function handleScriptFileEvent(filename) {
     return;
   }
 
-  // MODIFICAÇÃO: se algum F-key que aponta para o arquivo está rodando,
-  // para, recarrega do disco e reinicia automaticamente.
-  for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    if (meta.file === file && runningScripts[fkey]) {
-      stopRunningScript(fkey, 'arquivo modificado');
-      startScript(fkey);
+  // MODIFICAÇÃO: recarrega scripts em execução. Preset mov-padrao recarrega todos os mov-padrao ativos.
+  if (filename === 'mov-padrao-preset.js') {
+    for (const [fkey, meta] of Object.entries(scriptMeta)) {
+      if (path.basename(meta.file).startsWith('mov-padrao-') && runningScripts[fkey]) {
+        stopRunningScript(fkey, 'preset modificado');
+        startScript(fkey);
+      }
+    }
+  } else {
+    for (const [fkey, meta] of Object.entries(scriptMeta)) {
+      if (path.basename(meta.file) === filename && runningScripts[fkey]) {
+        stopRunningScript(fkey, 'arquivo modificado');
+        startScript(fkey);
+      }
     }
   }
   // CRIAÇÃO: scriptMeta é indexado por F-key, então um arquivo novo não recebe
@@ -1114,6 +1147,7 @@ const SCRIPT_TEMPLATE_BODY = [
   'function OnExecute() {',
   '  // chamado a cada 40ms',
   '  // SetChannel(canal, valor)',
+  '  // adapter.resolve(fixtureId, alias, adapterKey, valorLogico)',
   '}',
   '',
   'function OnTerminate() {',
@@ -1159,27 +1193,13 @@ ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
   const meta = pageScriptMeta[pageId]?.[sceneKey];
   if (!meta) return { ok: false, error: 'Nenhum script nesta tecla' };
   let code;
-  try { code = fs.readFileSync(meta.file, 'utf-8'); }
+  try { code = readScriptCode(meta.file); }
   catch (e) { return { ok: false, error: 'Arquivo nao encontrado' }; }
   const buffer = new Uint8Array(512);
   const touched = new Uint8Array(512);
-  const ctx = {};
-  // SetChannel escreve no buffer da camada; guards aplicados pelo compositor.
-  const SetChannel = (ch, val) => {
-    if (ch < 1 || ch > 512) return;
-    const idx = ch - 1;
-    buffer[idx] = Math.max(0, Math.min(255, Math.round(Number(val))));
-    touched[idx] = 1;
-  };
-  const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
+  let ctx;
   try {
-    const fn = new Function('SetChannel', 'getChannel', 'ctx', `
-      ${code}
-      ctx.OnStart     = typeof OnStart     === 'function' ? OnStart     : null;
-      ctx.OnExecute   = typeof OnExecute   === 'function' ? OnExecute   : null;
-      ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
-    `);
-    fn(SetChannel, getChannel, ctx);
+    ctx = compileScriptContext(code, buffer, touched);
   } catch (e) { return { ok: false, error: `Erro ao compilar: ${e.message}` }; }
   if (typeof ctx.OnStart === 'function') { try { ctx.OnStart(); } catch (e) {} }
   compositor.addLayer(`page:${k}`, {
@@ -1187,6 +1207,7 @@ ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
     onError: () => { delete runningPageScripts[k]; },
   });
   runningPageScripts[k] = { context: ctx };
+  _applySceneLock();
   return { ok: true, running: true };
 });
 
@@ -1264,6 +1285,22 @@ function loadMacros() {
 ipcMain.handle('macro:create', (_, id, def = {}) => {
   try {
     if (!id) return { ok: false, error: 'id da macro obrigatório' };
+    if (macroDefs[id]) return { ok: false, error: 'macro já existe' };
+    const norm = normalizeMacroDef(id, def);
+    macroDefs[id] = norm;
+    instantiateMacro(norm);
+    saveMacros();
+    return { ok: true, steps: norm.steps.length };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('macro:update', (_, id, def = {}) => {
+  try {
+    if (!id || !macroDefs[id]) return { ok: false, error: 'macro não encontrada' };
+    compositor.stopMacro(id);
+    compositor.removeMacro(id);
     const norm = normalizeMacroDef(id, def);
     macroDefs[id] = norm;
     instantiateMacro(norm);

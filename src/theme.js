@@ -88,7 +88,13 @@ export const theme = {
     bottomSceneHeight: 56,
     bottomFKeyHeight: 40,
     rightPanelWidth: 320,
-    leftPanelWidth: 96
+    leftPanelWidth: 96,
+    operationPanelMacroWidth: 300,
+    touchTopBarHeight: 52,
+    touchTabHeight: 44,
+    touchSceneHeight: 56,
+    touchFKeyHeight: 48,
+    touchActionMinWidth: 120
   },
   components: {
     button: {

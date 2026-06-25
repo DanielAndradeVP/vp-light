@@ -1,6 +1,19 @@
 /**
  * show.js — Leitura e escrita do arquivo .show.json
  * Roda APENAS no main process.
+ *
+ * Campo opcional `adapters` em cada fixture — mapeamentos lógicos → DMX
+ * consumidos por electron/adapter.js nos scripts de efeito:
+ *
+ *   "adapters": {
+ *     "<adapterKey>": {
+ *       "<valorLogico>": <0-255>,
+ *       ...
+ *     }
+ *   }
+ *
+ * Ex.: adapters.color.red = 30 no Moving Head 1 (roda de cor no alias color_wheel).
+ * adapterKey é extensível (color, gobo, prism, frost, macro, speed, range, …).
  */
 
 const fs = require('fs');
