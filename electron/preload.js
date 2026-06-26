@@ -66,8 +66,8 @@ contextBridge.exposeInMainWorld('vp', {
    */
   getUniverse: () => ipcRenderer.invoke('dmx:getUniverse'),
 
-  // Congela/descongela envio Art-Net para a rede real (palco).
-  // O loopback (viewer 3D) continua ativo independente do estado.
+  // Congela/descongela saída Art-Net (UDP). Viewer 3D usa engine.onFrame (IPC), não Art-Net.
+  getArtNetFrozen: () => ipcRenderer.invoke('artnet:getFrozen'),
   setArtNetFrozen: (frozen) => ipcRenderer.invoke('artnet:setFrozen', frozen),
 
   // ─── SHOW ─────────────────────────────────────────────────

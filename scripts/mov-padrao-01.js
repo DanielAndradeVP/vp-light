@@ -36,7 +36,7 @@ const M2_PAN_C = 84, M2_TILT_F = 32, M2_TILT_A = 72,  M2_PAN_R = 44, M2_TILT_L =
 // Ribaltas — catalog: R1 tilt funcional=175 (R2+70) speed=190; R2 tilt funcional=105 speed=90
 // TL=tilt louvor, TA=tilt altar, SS=speed lenta, SF=speed rápida
 const R1_TL = 105, R1_SS = 190, R1_SF = 20; // tilt igual ao R2; alinhamento da esquerda resolvido pelo offset do sistema
-const R2_TL = 105, R2_SS = 90,  R2_SF = 20;
+const R2_TL = 105, R2_SS = 190,  R2_SF = 20;
 const TA    = 145; // tilt altar (ambas)
 
 // ── Utilitários ─────────────────────────────────────────────────────────────
@@ -132,7 +132,8 @@ function OnExecute() {
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  // RIBALTAS — fase 1: branco cheio, tilt louvor estático
+  // RIBALTAS — function → speed → tilt (equipamento exige esta ordem)
+  ch(r1_function, 0); ch(r2_function, 0);
   ch(r1_dimmer, 255); ch(r2_dimmer, 255);
   ch(r1_speed, MP_RIB.R1_SPEED_SLOW); ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
   ch(r1_tilt, MP_RIB.TILT_LOUVOR_1); ch(r2_tilt, MP_RIB.TILT_LOUVOR_2);
@@ -158,16 +159,16 @@ function OnTerminate() {
   ch(m1_fecho, 0);
   ch(m1_prism, 0);
   ch(m1_pan, 0);
-  ch(m1_tilt, 0);
   ch(m1_speed, 0);
+  ch(m1_tilt, 0);
 
   ch(m2_cw, 0);
   ch(m2_strobo, 0);
   ch(m2_fecho, 0);
   ch(m2_prism, 0);
   ch(m2_pan, 0);
-  ch(m2_tilt, 0);
   ch(m2_speed, 0);
+  ch(m2_tilt, 0);
 
   ch(r1_dimmer, 0); ch(r2_dimmer, 0);
   ch(r1_strobo, 0); ch(r2_strobo, 0);

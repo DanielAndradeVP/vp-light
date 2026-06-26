@@ -9,38 +9,52 @@ C:\vp-light\
 │   ├── preload.js       → expõe window.vp.* para o renderer (ponte IPC)
 │   ├── show.js          → lê e salva o arquivo .show.json do disco
 │   └── engine/
-│       ├── engine.js    → loop 40ms que envia DMX (start/stop)
-│       ├── universe.js  → array de 512 canais DMX (setChannel, blackout, applyScene)
-│       └── artnet.js    → monta e envia pacote UDP Art-Net para 255.255.255.255:6454
+│       ├── engine.js    → loop 40ms: interpolator + compositor + sendArtDMX + onFrame
+│       ├── compositor.js→ camadas de scripts/macros, merge HTP
+│       ├── universe.js  → array de 512 canais DMX
+│       ├── artnet.js    → Art-Net UDP (freeze bloqueia só saída UDP)
+│       └── interpolator.js → pan/tilt speed virtual
 │
 ├── src/
-│   ├── App.jsx          → roteador de telas (main ↔ fixtures)
+│   ├── App.jsx          → roteador de telas (main ↔ fixtures ↔ painel)
 │   ├── main.jsx         → entry point React
+│   ├── theme.js         → tokens visuais
 │   ├── store/
-│   │   └── showStore.js → estado global: fixtures, páginas, cenas, aparelho selecionado
+│   │   └── showStore.js → estado global: fixtures, páginas, cenas
 │   └── screens/
-│       ├── Main.jsx         → tela principal: mesa de aparelhos, faders, cenas A-M, páginas
-│       ├── FixturePanel.jsx → painel de aparelhos: tabela, novo/remover/duplicar
-│       └── FixtureEditor.jsx→ modal de edição: abas Básico e Descrição
+│       ├── Main.jsx           → mesa, faders, cenas ASDFGHJKLZXCV, F-keys
+│       ├── FixturePanel.jsx   → CRUD de aparelhos
+│       ├── FixtureEditor.jsx  → modal de edição
+│       ├── PainelOperacao.jsx → painel de operação
+│       └── Viewer3D.jsx       → preview 3D (janela separada)
 │
+├── skills/              → skills oficiais dos agentes (SKILL.md por pasta)
 ├── shows/
-│   └── vp.show.json → arquivo de show padrão carregado na inicialização
+│   └── vp.show.json     → show padrão
 │
-├── index.html       → entry point HTML
-├── vite.config.js   → configuração do Vite (hot reload, JSX em .js)
-└── package.json     → dependências e scripts (npm run dev)
+├── index.html
+├── vite.config.js
+└── package.json
 ```
+
+## Skills oficiais
+
+- Backend/engine: `skills/desenvolvedor-backend-vplight/SKILL.md`
+- Frontend/UI: `skills/desenvolvedor-frontend-vplight/SKILL.md`
 
 ## Regras de arquitetura
 
 - Engine DMX roda APENAS em electron/engine/ (main process Node.js)
 - Renderer (React) NUNCA acessa hardware diretamente
 - Renderer se comunica com o main APENAS via window.vp.* (definido no preload.js)
-- Alterações visuais → mexer em src/screens/
+- Alterações visuais → mexer em src/screens/ e src/theme.js
 - Alterações de estado global → mexer em src/store/showStore.js
 - Alterações de IPC ou engine → mexer em electron/ e reiniciar npm run dev
 - Arquivos em src/ têm hot reload automático ao salvar (não precisa reiniciar)
+- Congelar palco bloqueia só envio Art-Net UDP; engine, UI e preview 3D continuam
 
 ## Fluxo de dados
 
-Usuário clica → React (src/screens/) → window.vp.* (preload.js) → ipcMain (electron/main.js) → universe.js → engine.js → artnet.js → UDP → SL3000 → DMX → fixture
+Usuário clica → React (src/screens/) → window.vp.* (preload.js) → ipcMain (electron/main.js) → compositor/universe → engine.js → artnet.js → UDP → SL3000 → DMX → fixture
+
+Preview 3D: engine.onFrame → IPC dmx-universe (independente do freeze Art-Net)

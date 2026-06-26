@@ -94,8 +94,7 @@ Tudo isso é o **estado atual**. Padrões anteriores a esses são candidatos a a
 - **Após cada área, valide a sintaxe** (`node --check` nos arquivos de `electron/` alterados) e
   reporte o que mudou. Se a checagem por shell estiver truncando o arquivo (mount), confirme a
   integridade lendo o arquivo pelo leitor antes de afirmar erro.
-- **Não toque nos READMEs** (`README.md` / `README_SKILL.md` — trabalho do fiscal) nem em outras
-  skills (`.agents/`, `.claude/skills/`, `skills/`).
+- **Não toque nos READMEs** (`README.md` / `README_SKILL.md` — trabalho do fiscal) nem em outras skills (`skills/`).
 
 ---
 

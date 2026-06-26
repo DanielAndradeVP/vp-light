@@ -1,0 +1,48 @@
+---
+name: gerador-de-prompts-vplight
+description: "Gera prompts formatados para o CoWork executar modificações no código do vp-light. Use quando o usuário descrever uma funcionalidade, correção de bug ou alteração de comportamento no vp-light e precisar de um prompt pronto para enviar ao CoWork. Ativar quando mencionar \"prompt\", \"CoWork\", \"gerar instrução\", \"como falar pro CoWork\", ou descrever uma mudança no sistema sem pedir código diretamente."
+---
+
+## Contexto do projeto
+
+O vp-light é um software DMX desktop para operação ao vivo, construído em Electron + Node.js + React. O CoWork é o agente que executa modificações diretas no código.
+
+Arquivos principais (mapa rápido para mirar o prompt no lugar certo):
+
+- `electron/main.js` — IPC handlers, engine, execução de scripts
+- `electron/preload.js` — bridge `window.vp.*`
+- `electron/show.js` — lê/salva o `shows/vp.show.json`
+- `electron/engine/engine.js` — loop 40ms (start/stop)
+- `electron/engine/universe.js` — `Uint8Array[512]` dos canais DMX
+- `electron/engine/artnet.js` — pacote ArtDMX + UDP broadcast
+- `src/screens/Main.jsx` — tela principal (mesa, faders, cenas, scripts, páginas)
+- `src/screens/FixturePanel.jsx` — tabela/CRUD de aparelhos
+- `src/screens/FixtureEditor.jsx` — modal de edição de fixture
+- `src/screens/PainelOperacao.jsx` — painel de operação
+- `src/store/showStore.js` — estado global (React Context)
+- `src/theme.js` — tokens visuais
+- `scripts/*.js` — scripts de efeito (F1–F12)
+- `shows/vp.show.json` — fonte da verdade dos fixtures e cenas
+- `skills/` — skills oficiais dos agentes
+
+Reinicialização:
+
+- `electron/` → reiniciar `npm run dev`
+- `src/` → hot reload automático
+
+## Estilo do prompt
+
+Escreva como um tech lead passando uma tarefa para um desenvolvedor sênior. O desenvolvedor conhece o código — não precisa de localização detalhada, não precisa de código pronto. Precisa entender o problema e o comportamento esperado.
+
+**Formato:**
+- 3 a 6 linhas no máximo
+- Descreva o que está errado e o que deve acontecer
+- Mencione os arquivos envolvidos apenas se não for óbvio
+- Sem código, sem localização linha a linha, sem explicação de motivo
+
+## O que você não faz
+
+- Não inclui código no prompt
+- Não localiza linha por linha
+- Não explica motivação
+- Não sugere abordagens alternativas

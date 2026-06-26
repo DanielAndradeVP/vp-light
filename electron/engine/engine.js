@@ -12,6 +12,8 @@ const { getUniverse } = require('./universe');
 const { sendArtDMX, closeSocket } = require('./artnet');
 const compositor    = require('./compositor');
 const interpolator  = require('./interpolator');
+const ribaltaDebug  = require('./ribaltaDebug');
+const ribaltaPhysicalCalib = require('../ribaltaPhysicalCalib');
 
 const FPS = 25;
 const INTERVAL_MS = Math.round(1000 / FPS); // 40ms
@@ -36,9 +38,11 @@ function start() {
   }
   frameCount = 0;
   intervalId = setInterval(() => {
+    ribaltaDebug.tickFrame();
     interpolator.tick();           // avança interpolação de pan/tilt (speed virtual)
     compositor.renderFrame();      // relógio único: compõe as camadas no universo
-    sendArtDMX(getUniverse());     // e envia o frame
+    // Art-Net: tilt físico calibrado; onFrame abaixo usa universo lógico (3D inalterado).
+    sendArtDMX(ribaltaPhysicalCalib.getPhysicalUniverseForArtNet(getUniverse()));
 
     // Universo final já montado neste ponto — notifica listeners (ex.: viewer 3D).
     const currentUniverse = getUniverse();

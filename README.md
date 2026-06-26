@@ -47,7 +47,6 @@ vp-light/
 │   ├── screens/
 │   │   ├── Main.jsx         ← tela principal: mesa de aparelhos, faders, cenas, scripts e páginas
 │   │   ├── PainelOperacao.jsx ← tela ao vivo: macros, scripts rápidos, page-scripts e cenas
-│   │   ├── ChatPanel.jsx    ← aba Chat do painel direito, com menu de skills locais
 │   │   ├── FixturePanel.jsx ← painel de aparelhos: tabela, novo/remover/duplicar
 │   │   └── FixtureEditor.jsx← modal: abas Básico e Descrição
 │   └── store/
@@ -59,10 +58,8 @@ vp-light/
 ├── shows/
 │   ├── vp.show.json        ← show padrão carregado na inicialização
 │   └── fixture_template.json ← modelo aberto pelo fluxo "Criar novo aparelho (AI)"
-├── .agents/           ← skills dos agentes VS Code
-├── .claude/           ← espelhos de skills para Claude/CoWork
-├── skills/            ← cópias/skills locais para agentes externos
-├── README_SKILL.md    ← documentação estrutural para agentes
+├── skills/            ← skills oficiais dos agentes (SKILL.md por pasta)
+├── docs/              ← auditorias e arquivo
 ├── index.html
 ├── vite.config.js
 └── package.json
@@ -327,15 +324,11 @@ Skills ficam em `skills/` (pastas com `SKILL.md`) e servem tarefas específicas.
 
 Uso rápido:
 1. Leia `skills/<nome>/SKILL.md` para entender o propósito da skill.
-2. Abra o chat do agente no VS Code e invoque a skill pelo nome.
+2. Abra o chat do agente no VS Code e invoque a skill pelo nome (ex.: `@skills/desenvolvedor-backend-vplight`).
 3. Para gerar scripts, cole `shows/vp.show.json` antes de pedir geração.
 4. Ao alterar equipamentos ou o show, atualize e cole `vp.show.json` antes de usar as skills.
 
-A aba **Chat** dentro do vp-light lista as skills de `.agents/skills/*/SKILL.md` no botão `+` e
-insere a menção no cursor do input. Algumas skills também existem como espelhos em `skills/` e
-`.claude/skills/`, para serem usadas fora do runtime do app. O envio de mensagens depende de um
-backend exposto em `window.vp.sendChat`; sem essa ponte, a própria interface avisa que o chat ainda
-não está conectado.
+**Local oficial:** todas as skills ficam em `skills/<nome>/SKILL.md` — uma única cópia de cada.
 
 ---
 

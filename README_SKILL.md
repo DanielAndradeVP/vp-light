@@ -27,8 +27,8 @@
 
 | Campo | Valor |
 |---|---|
-| Versão | 1.2 |
-| Última atualização | 2026-06-13 |
+| Versão | 1.3 |
+| Última atualização | 2026-06-25 |
 | Base | Estado real do código + auditorias técnica e direta |
 
 ---
@@ -80,33 +80,38 @@ C:\vp-light\
 │   ├── preload.js       → expõe window.vp.* (contextBridge)
 │   ├── show.js          → lê/salva o .show.json, mantém show em memória
 │   └── engine/
-│       ├── engine.js    → loop setInterval 40ms (start/stop), compositor + envio Art-Net
+│       ├── engine.js    → loop setInterval 40ms (start/stop), compositor + envio Art-Net + onFrame
 │       ├── compositor.js→ composição por camadas, guards, envelopes e macros
 │       ├── universe.js  → Uint8Array(512), estado dos canais DMX
-│       └── artnet.js    → monta pacote ArtDMX e envia UDP broadcast
+│       ├── artnet.js    → pacote ArtDMX, envio UDP multi-interface, setFrozen/isFrozen
+│       └── interpolator.js → interpolação pan/tilt (speed virtual)
 ├── src/
-│   ├── App.jsx          → roteador de telas (main ↔ fixtures)
+│   ├── App.jsx          → roteador de telas (main ↔ fixtures ↔ painel)
 │   ├── main.jsx         → entry point React
 │   ├── theme.js         → tokens visuais (cores, tipografia, espaçamento)
+│   ├── viewer3d/        → cena Three.js do preview 3D
 │   ├── store/
 │   │   └── showStore.js → estado global do renderer (React Context)
 │   └── screens/
 │       ├── Main.jsx         → mesa principal (fixtures, faders, cenas, scripts, páginas)
 │       ├── FixturePanel.jsx → tabela/CRUD de aparelhos
 │       ├── FixtureEditor.jsx→ modal de edição de fixture
+│       ├── PainelOperacao.jsx → painel de operação full-screen
+│       ├── Viewer3D.jsx     → canvas 3D (janela Electron separada)
 │       └── SceneEditor.jsx  → editor de cena (existe no código, não roteado no App.jsx)
 ├── scripts/             → arquivos .js dos efeitos DMX (um por nome) + sync-scripts.js
 ├── banco-de-conhecimento/ → notas .md por grupo de aparelho para injeção em scripts novos
 ├── shows/
 │   └── vp.show.json     → show padrão carregado na inicialização
-├── .agents/skills/      → skills locais dos agentes dentro do app/workspace
-├── .claude/skills/      → cópias de skills para CoWork/Claude
-├── skills/              → skills locais para agentes externos
-├── docs/                → auditorias
+├── skills/              → **fonte oficial** das skills dos agentes (SKILL.md por pasta)
+├── docs/                → auditorias e arquivo
 ├── index.html
 ├── vite.config.js
 └── package.json
 ```
+
+> **Skills oficiais backend/frontend:** `skills/desenvolvedor-backend-vplight/SKILL.md` e
+> `skills/desenvolvedor-frontend-vplight/SKILL.md` — uma única cópia de cada.
 
 > **Nome do arquivo de show:** é `shows/vp.show.json`. (Nomes antigos como
 > `vida-e-paz.show.json` não são mais usados.)
@@ -154,8 +159,23 @@ Usuário interage → React (src/screens/)
 | Pacote | header ArtDMX + 512 bytes do universo |
 
 > **Importante (estrutura de loops):** existe um relógio principal de 40ms em `engine.js`.
-> A cada frame ele chama `compositor.renderFrame()` e depois `sendArtDMX(getUniverse())`.
+> A cada frame: `interpolator.tick()` → `compositor.renderFrame()` → `sendArtDMX(getUniverse())`
+> → listeners `onFrame` (viewer 3D via IPC).
 > Scripts de efeito não criam `setInterval` próprio para renderização.
+
+### Congelar palco (freeze Art-Net)
+
+| Item | Valor |
+|---|---|
+| Estado | `artnet.setFrozen(bool)` em `artnet.js` |
+| IPC | `artnet:setFrozen`, `artnet:getFrozen` |
+| Renderer | `window.vp.setArtNetFrozen`, `getArtNetFrozen` |
+| Efeito | Suprime **todo** envio UDP Art-Net; palco fica no último frame |
+| Não afeta | engine loop, compositor, scripts, UI, preview 3D (IPC `dmx-universe`) |
+
+### Envio Art-Net (`artnet.js`)
+
+Três destinos quando não congelado: loopback `127.0.0.1`, broadcast `255.255.255.255` por interface IPv4 ativa, fallback broadcast via loopback.
 
 ### Compositor de scripts
 
@@ -191,9 +211,13 @@ Macros no compositor:
 ```
 // Window
 closeApp()  onWindowCloseRequested(callback)
+open3DViewer()  onViewer3DClosed(callback)  onDmxUniverse(callback)
 
 // Engine
 startEngine()            getEngineStatus()           stopEngine()
+
+// Art-Net
+getArtNetFrozen()        setArtNetFrozen(frozen)
 
 // DMX
 activateScene(channels)  setChannel(channel, value)  blackout()
@@ -495,6 +519,7 @@ buttonBg:      #000000      buttonSurface:  #233237      buttonHover: #30464d
 > O desenvolvedor preenche aqui a cada nova feature, correção estrutural, equipamento
 > ou mudança de contrato. Mais recente no topo.
 
+- **2026-06-25** — Skills backend/frontend consolidadas em `skills/`; documentados freeze Art-Net, interpolator, viewer 3D, PainelOperacao, envio Art-Net multi-interface.
 - **2026-06-13** — Atualizado para arquitetura de scripts por `compositor.js`: camadas, tick único da engine, macros/crossfade, IPC de macros, `page_scripts`, injeção de `banco-de-conhecimento` e regras de persistência de `scripts`.
 - **2026-06-10** — Atualizado para documentar lifecycle de scripts: `OnTerminate` é chamado em clear/toggle/blackout.
 - **2026-06-10** — Criação do README_SKILL.md a partir do estado real do código e das auditorias.

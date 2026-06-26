@@ -5,7 +5,6 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { activeSceneMatches, parseSceneRef, sceneRefId, useShow } from '../store/showStore.js';
 import theme from '../theme.js';
-import ChatPanel from './ChatPanel.jsx';
 
 const SCENE_KEYS = ['A','S','D','F','G','H','J','K','L','Z','X','C','V'];
 const RIGHT_PANEL_MIN_WIDTH = 260;
@@ -304,9 +303,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   function handleBlackout() {
     if (blackoutActive) {
       setBlackoutActive(false);
-      if (activeScenes.length > 0) {
-        resolveUniverseState(activeScenes, scriptsRef.current);
-      }
+      // Restaura cenas ativas e deixa scripts em execução repintarem seus canais.
+      resolveUniverseState(activeScenes, scriptsRef.current);
     } else {
       setBlackoutActive(true);
       window.vp.blackout();
@@ -357,8 +355,6 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     //     vão a 0 (preto) e, no próximo tick (≤40ms), cada script ativo repinta apenas
     //     os seus próprios canais. Resultado: cena some, script continua rodando.
     setActiveScenes([]);
-    window.vp.setActiveSceneChannels({});
-    window.vp.restoreState({});
   }
 
   async function handleOpen3DViewer() {
@@ -372,6 +368,15 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     return unsubscribe;
   }, []);
 
+  // Sincroniza o botão com o estado real do main (hot reload do renderer não reseta o main).
+  useEffect(() => {
+    window.vp?.getArtNetFrozen?.()
+      .then((res) => {
+        if (res && typeof res.frozen === 'boolean') setArtNetFrozen(res.frozen);
+      })
+      .catch(() => {});
+  }, []);
+
   const [liveValues, setLiveValues] = useState({});
   const [universeSnapshot, setUniverseSnapshot] = useState({}); // snapshot completo do universo — alimenta cores de todos os fixtures na mesa
   const [testPanelOpen, setTestPanelOpen] = useState(false);
@@ -379,7 +384,6 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   const [conflicts, setConflicts] = useState([]);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState('description');
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
   const [rightPanelResize, setRightPanelResize] = useState(null); // { startX, startWidth }
   const [customFunctionMenuFixtureId, setCustomFunctionMenuFixtureId] = useState(null);
@@ -488,7 +492,25 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   const viewRef = useRef(view);
   const gridModeRef = useRef(gridMode);
   const restoredGridViewRef = useRef(null);
-  const reEmitOnNextResolveRef = useRef(false); // sinaliza re-emissão de DMX na próxima resolução da barra lateral
+  const resolveGenerationRef = useRef(0); // invalida resolveSidebarValues assíncronos obsoletos
+  const skipDeselectMultiOnClickRef = useRef(false); // true após rubber-band — não limpar multiSelected no click
+
+  function getSelectedFixtureIds() {
+    return multiSelected.length >= 2
+      ? multiSelected
+      : (selectedFixtureId ? [selectedFixtureId] : []);
+  }
+
+  // Desmarca seleção visual — não toca no universo DMX nem nos valores manuais.
+  function clearFixtureSelection() {
+    resolveGenerationRef.current += 1;
+    setSelectedFixtureId(null);
+    if (skipDeselectMultiOnClickRef.current) {
+      skipDeselectMultiOnClickRef.current = false;
+    } else {
+      setMultiSelected([]);
+    }
+  }
 
   // Atualiza refs de forma síncrona no corpo do componente (antes de qualquer handler),
   // garantindo que handlers assíncronos sempre leiam o valor correto.
@@ -613,31 +635,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     setActiveScenes(prev => prev.filter(ref => parseSceneRef(ref, currentPageId).pageId === currentPageId));
   }, [currentPageId]);
 
-  // Sincroniza canais bloqueados por cenas com o main process sempre que activeScenes muda
+  // Metadados de cenas ativas (customFunctions). DMX via SceneDmxSync no showStore.
   useEffect(() => {
-    const merged = {};
-    activeScenes.forEach(activeRef => {
-      const { scene: s } = getActiveSceneData(activeRef);
-      if (s?.channels) {
-        Object.entries(filterDisabledFixtureChannels(s.channels, disabledFixtureChannels)).forEach(([ch, val]) => {
-          merged[Number(ch)] = Number(val);
-        });
-      }
-    });
-    const parLedChs = [...getParLedChannelSet()];
-    window.vp.setActiveSceneChannels(merged, parLedChs);
-    window.vp.restoreState(merged);
-
-    // Envia mapa de cenas ativas para detecção de conflito
-    const scenesMap = {};
-    activeScenes.forEach(activeRef => {
-      const { pageId, sceneKey, scene: s } = getActiveSceneData(activeRef);
-      if (s?.channels) {
-        scenesMap[sceneRefId(pageId, sceneKey)] = { name: s.name || sceneKey, channels: filterDisabledFixtureChannels(s.channels, disabledFixtureChannels) };
-      }
-    });
-    window.vp.setActiveScenes(scenesMap);
-
     const customFunctions = mergeSceneCustomFunctions(activeScenes);
     if (Object.keys(customFunctions).length > 0) {
       setActiveCustomFunctionByFixture(prev => {
@@ -834,13 +833,19 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   // selecionado. Prioridade: cena ativa (a mais recente sobrescreve) → script
   // ativo (snapshot ao vivo do universo) → 0. Os labels vêm da descrição do
   // fixture; os valores exibidos vêm deste estado resolvido.
-  const resolveSidebarValues = useCallback(async () => {
+  const resolveSidebarValues = useCallback(async ({ allowReEmit = false } = {}) => {
+    const generation = ++resolveGenerationRef.current;
     // Sempre busca o snapshot do universo — alimenta as cores de todas as caixinhas na mesa
     let snapshot = null;
     try { snapshot = await window.vp.getUniverse(); } catch { snapshot = null; }
+    if (generation !== resolveGenerationRef.current) return;
+
     if (snapshot) setUniverseSnapshot(snapshot);
 
-    if (!selectedFixture || !isFixtureEnabled(selectedFixture)) { setLiveValues({}); return; }
+    if (!selectedFixture || !isFixtureEnabled(selectedFixture)) {
+      setLiveValues({});
+      return;
+    }
 
     const start = selectedFixture.startChannel;
     const count = selectedFixture.channelCount ?? (selectedFixture.channels || []).length;
@@ -871,26 +876,36 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       if (numCh >= start && numCh < start + count) resolved[numCh] = val;
     });
     setLiveValues(resolved);
-    // Re-emite canais ao DMX quando a seleção muda — sem exigir interação com o fader
-    if (reEmitOnNextResolveRef.current) {
-      reEmitOnNextResolveRef.current = false;
-      await Promise.all(
-        Object.entries(resolved)
-          .filter(([ch]) => !disabledFixtureChannels.has(Number(ch)))
-          .map(([ch, val]) => window.vp.setChannel(Number(ch), Number(val)))
-      );
+    // Re-emite canais ao DMX só ao ganhar seleção de fixture — nunca após troca de cena/script,
+    // para não sobrescrever restoreState com snapshot capturado antes do IPC terminar.
+    if (allowReEmit) {
+      if (generation !== resolveGenerationRef.current) return;
+      const channelsToEmit = Object.entries(resolved).filter(([ch, val]) => {
+        if (disabledFixtureChannels.has(Number(ch))) return false;
+        const chNum = Number(ch);
+        if (speedChannelValuesRef.current[chNum] != null) return true;
+        return snapshot != null && snapshot[chNum] != null;
+      });
+      if (channelsToEmit.length > 0) {
+        const r2Emit = channelsToEmit.filter(([ch]) => { const n = Number(ch); return n >= 271 && n <= 283; });
+        if (r2Emit.length > 0) {
+          console.log('[ribalta2-debug]', JSON.stringify({ event: 'sidebar-reEmit', origin: 'UI/reEmit', channels: Object.fromEntries(r2Emit) }));
+        }
+        await Promise.all(
+          channelsToEmit.map(([ch, val]) => window.vp.setChannel(Number(ch), Number(val)))
+        );
+      }
     }
   }, [selectedFixture, activeScenes, pages, currentPageId, scripts, disabledFixtureChannels]);
 
-  // Marca re-emissão de DMX quando seleção muda — deve vir antes do effect de resolução
+  // Re-emissão só ao ganhar seleção — troca de cena/script não reenvia snapshot antigo.
   useEffect(() => {
-    reEmitOnNextResolveRef.current = true;
-  }, [selectedFixtureId, multiSelected]);
+    if (getSelectedFixtureIds().length === 0) return;
+    resolveSidebarValues({ allowReEmit: true });
+  }, [selectedFixtureId, multiSelected, resolveSidebarValues]);
 
   useEffect(() => {
-    const selectedIds = multiSelected.length >= 2
-      ? multiSelected
-      : (selectedFixtureId ? [selectedFixtureId] : []);
+    const selectedIds = getSelectedFixtureIds();
     if (selectedIds.length === 0) return;
 
     const selectedIdSet = new Set(selectedIds);
@@ -914,15 +929,17 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     });
   }, [selectedFixtureId, multiSelected, show.fixtures]);
 
-  // Dispara resolução imediata: muda fixture selecionado, cenas ativas ou scripts
-  useEffect(() => { resolveSidebarValues(); }, [resolveSidebarValues]);
+  // Atualiza barra lateral e cores da mesa quando cena/script muda (sem re-emissão DMX).
+  useEffect(() => {
+    resolveSidebarValues({ allowReEmit: false });
+  }, [activeScenes, scripts, pages, currentPageId, disabledFixtureChannels, resolveSidebarValues]);
 
   // Mantém a barra lateral sincronizada em tempo real enquanto houver script ativo
   useEffect(() => {
     const anyScriptRunning = Object.values(scripts).some(s => s?.running);
     if (!anyScriptRunning || !selectedFixture) return;
     let active = true;
-    const interval = setInterval(() => { if (active) resolveSidebarValues(); }, 100);
+    const interval = setInterval(() => { if (active) resolveSidebarValues({ allowReEmit: false }); }, 100);
     return () => { active = false; clearInterval(interval); };
   }, [scripts, selectedFixture, resolveSidebarValues]);
 
@@ -1412,7 +1429,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
           <div style={{ padding:'3px 6px', fontSize:11, color:'#c8dddd', background:'#24343a', borderBottom:'1px solid #5f8588' }}>Aparelhos</div>
           <div
             ref={mesaRef}
-            onClick={() => setSelectedFixtureId(null)}
+            onClick={() => clearFixtureSelection()}
             onMouseDown={(e) => {
               if (e.target === e.currentTarget) {
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -1495,6 +1512,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   return x + GRID > minX && x < maxX && y + GRID > minY && y < maxY;
                 }).map(f => f.id);
                 setMultiSelected(selected);
+                skipDeselectMultiOnClickRef.current = selected.length > 0;
                 setSelection(null);
               }
               setDragging(null);
@@ -1708,69 +1726,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               borderLeft:rightPanelResize ? '1px solid #b7dede' : '1px solid transparent',
             }}
           />
-          <div style={{ display:'flex', height:28, minHeight:28, background:'#24343a', borderBottom:'1px solid #8db8b8' }}>
-            <button
-              onClick={() => setRightPanelTab('chat')}
-              style={{
-                flex:1,
-                textAlign:'center',
-                height:28,
-                minHeight:28,
-                display:'flex',
-                alignItems:'center',
-                justifyContent:'center',
-                padding:'0 8px',
-                background: rightPanelTab === 'chat' ? '#35484f' : '#24343a',
-                color: rightPanelTab === 'chat' ? '#ffffff' : '#c8dddd',
-                borderLeft: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderRight: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderTop: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderBottom: rightPanelTab === 'chat' ? 'none' : '1px solid #8db8b8',
-                borderRadius:0,
-                outline:'none',
-                boxShadow:'none',
-                fontFamily:'Arial, Helvetica, sans-serif',
-                fontSize:12,
-                fontWeight:700,
-                whiteSpace:'nowrap',
-                overflow:'hidden',
-                textOverflow:'clip',
-                cursor:'pointer',
-              }}
-            >
-              Chat
-            </button>
-            <button
-              onClick={() => setRightPanelTab('description')}
-              style={{
-                flex:1,
-                textAlign:'center',
-                height:28,
-                minHeight:28,
-                display:'flex',
-                alignItems:'center',
-                justifyContent:'center',
-                padding:'0 8px',
-                background: rightPanelTab === 'description' ? '#35484f' : '#24343a',
-                color: rightPanelTab === 'description' ? '#ffffff' : '#c8dddd',
-                borderLeft: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderRight: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderTop: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderBottom: rightPanelTab === 'description' ? 'none' : '1px solid #8db8b8',
-                borderRadius:0,
-                outline:'none',
-                boxShadow:'none',
-                fontFamily:'Arial, Helvetica, sans-serif',
-                fontSize:12,
-                fontWeight:700,
-                whiteSpace:'nowrap',
-                overflow:'hidden',
-                textOverflow:'clip',
-                cursor:'pointer',
-              }}
-            >
-              Descrição
-            </button>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:28, minHeight:28, background:'#24343a', borderBottom:'1px solid #8db8b8', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, color:'#ffffff' }}>
+            Descrição
           </div>
           <div style={{ flex:1, display:'flex', background:'#35484f', overflow:'hidden' }}>
             <div style={{ width:40, minWidth:40, maxWidth:40, background:'#24343a', borderRight:'1px solid #8db8b8', display:'flex', flexDirection:'column', alignItems:'stretch', justifyContent:'flex-start', padding:2, gap:2 }}>
@@ -1779,7 +1736,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 ['Z-', 44],
                 ['ZFit', 70, handleFitFixtures],
                 ['BO', 92],
-                ['freeZe', 78],
+                ['freeZe', 78, handleToggleArtNetFreeze, artNetFrozen, artNetFrozen ? theme.colors.warn : undefined],
                 ['mode', 78, () => { setGridMode(m => m === 0 ? 1 : 0); }, gridMode === 1],
                 ...(gridMode === 1 ? [
                   ['ajuste', 78, () => setLayoutAdjustActive(a => !a), layoutAdjustActive, layoutAdjustActive ? '#ff9500' : undefined],
@@ -1817,8 +1774,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               ))}
             </div>
             <div style={{ flex:1, background:'#35484f', color:'#ffffff', overflow:'auto', position:'relative' }}>
-              {rightPanelTab === 'chat' && <ChatPanel />}
-              {rightPanelTab === 'description' && multiSelected.length >= 2 && (() => {
+              {multiSelected.length >= 2 && (() => {
                 // Painel agrupado: agrupa canais por label entre os fixtures selecionados.
                 // Canais com mesmo label em 2+ fixtures → fader único que afeta todos.
                 // Label único ou sem label → fader individual do último fixture clicado.
@@ -2075,7 +2031,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   </div>
                 );
               })()}
-              {rightPanelTab === 'description' && multiSelected.length < 2 && selectedFixture && (() => {
+              {multiSelected.length < 2 && selectedFixture && (() => {
                 const fixtureChannels = getFixtureDmxChannels(selectedFixture);
                 const fixtureFunctions = getFixtureCustomFunctions(selectedFixture);
                 const storedCustomFunction = activeCustomFunctionByFixture[selectedFixture.id];

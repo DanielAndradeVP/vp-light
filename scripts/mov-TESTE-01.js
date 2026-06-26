@@ -11,11 +11,6 @@ const ID_R2   = 'fixture_1780805067518_ribalta_2';
 
 const ID_FITA = 'fixture_1780805067518_fita_led';
 
-const ID_B01  = 'fixture_1780805067518_mini_brut_01';
-const ID_B02  = 'fixture_1780805067518_mini_brut_02';
-const ID_B03  = 'fixture_1780805067518_mini_brut_03';
-const ID_B04  = 'fixture_1780805067518_mini_brut_04';
-
 
 // ── Canais resolvidos ───────────────────────────────────────────────────────
 
@@ -28,7 +23,7 @@ let r2_tilt, r2_speed, r2_dimmer, r2_strobo, r2_function;
 let r1_leds = null;
 let r2_leds = null;
 
-let fita, b01, b02, b03, b04;
+let fita;
 
 
 // ── Estado ──────────────────────────────────────────────────────────────────
@@ -46,6 +41,9 @@ const LOOP = DESCEND_TICKS + RESET_TICKS;
 
 const MOVING_SPEED_DESCEND = MP_MH_SPEED_SLOW;
 const MOVING_SPEED_RESET   = MP_MH_SPEED_SLOW;
+
+// Ribaltas em par: mesmo valor de velocidade para as duas
+const RIBALTA_SPEED = MP_RIB.R1_SPEED_SLOW;
 
 
 // ── Valores gerais ──────────────────────────────────────────────────────────
@@ -68,10 +66,6 @@ function lerp(a, b, t) {
 
 function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
-}
-
-function spulse(t, min, max, period) {
-  return min + ((max - min) / 2) * (1 + Math.sin(2 * Math.PI * t / period));
 }
 
 function setRibaltaLeds(value) {
@@ -150,22 +144,17 @@ function OnStart() {
   ch(r1_function, 0);
   ch(r2_function, 0);
 
-  // Começa com ribaltas apagadas e em tilt 100
-  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
-  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
+  // Ribaltas começam apagadas e as duas em tilt 0
+  ch(r1_speed, RIBALTA_SPEED);
+  ch(r2_speed, RIBALTA_SPEED);
 
-  ch(r1_tilt, MP_RIB.TILT_LOW);
-  ch(r2_tilt, MP_RIB.TILT_LOW);
+  ch(r1_tilt, 0);
+  ch(r2_tilt, 0);
 
   blackoutRibaltas();
 
-  // Fita e Mini Bruts
+  // Fita
   fita = getChannel(ID_FITA, 'dimmer');
-
-  b01 = getChannel(ID_B01, 'dimmer');
-  b02 = getChannel(ID_B02, 'dimmer');
-  b03 = getChannel(ID_B03, 'dimmer');
-  b04 = getChannel(ID_B04, 'dimmer');
 
   mp_resolveParLeds();
 }
@@ -194,8 +183,9 @@ function OnExecute() {
   ch(r1_function, 0);
   ch(r2_function, 0);
 
-  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
-  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
+  // Ribaltas sempre com a mesma velocidade
+  ch(r1_speed, RIBALTA_SPEED);
+  ch(r2_speed, RIBALTA_SPEED);
 
   if (isDescending) {
     const p = clamp01(cycleTick / (DESCEND_TICKS - 1));
@@ -213,10 +203,11 @@ function OnExecute() {
     ch(m1_strobo, 255);
     ch(m2_strobo, 255);
 
-    // RIBALTAS — acesas e descendo junto
-    const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, p);
+    // RIBALTAS — acesas e descendo juntas como par
+    // As duas começam em 0 e recebem exatamente o mesmo valor.
+    const ribaltaTilt = lerp(0, MP_RIB.TILT_HIGH, p);
 
-    ch(r1_tilt, ribaltaTilt + 70);
+    ch(r1_tilt, ribaltaTilt);
     ch(r2_tilt, ribaltaTilt);
 
     ch(r1_dimmer, 255);
@@ -228,11 +219,11 @@ function OnExecute() {
     setRibaltaLeds(255);
   } else {
     // RESET ESCONDIDO
-    // Aqui a ribalta apaga, volta para tilt 100, e ninguém vê ela subindo.
+    // Aqui as ribaltas apagam e voltam juntas para tilt 0.
     blackoutRibaltas();
 
-    ch(r1_tilt, MP_RIB.TILT_LOW);
-    ch(r2_tilt, MP_RIB.TILT_LOW);
+    ch(r1_tilt, 0);
+    ch(r2_tilt, 0);
 
     // Também fecho os movings durante o reset para esconder o retorno deles.
     ch(m1_speed, MOVING_SPEED_RESET);
@@ -248,12 +239,6 @@ function OnExecute() {
     ch(m2_strobo, 0);
   }
 
-  // MINI BRUTS — onda suave em 4 canais
-  ch(b01, spulse(cycleTick, 76, 255, 100));
-  ch(b02, spulse(cycleTick + 25, 76, 255, 100));
-  ch(b03, spulse(cycleTick + 50, 76, 255, 100));
-  ch(b04, spulse(cycleTick + 75, 76, 255, 100));
-
   // FITA LED — 70% constante
   ch(fita, 178);
 }
@@ -267,16 +252,16 @@ function OnTerminate() {
   ch(m1_fecho, 0);
   ch(m1_prism, 0);
   ch(m1_pan, 0);
-  ch(m1_speed, 0);
   ch(m1_tilt, 0);
+  ch(m1_speed, 0);
 
   ch(m2_cw, 0);
   ch(m2_strobo, 0);
   ch(m2_fecho, 0);
   ch(m2_prism, 0);
   ch(m2_pan, 0);
-  ch(m2_speed, 0);
   ch(m2_tilt, 0);
+  ch(m2_speed, 0);
 
   ch(r1_dimmer, 0);
   ch(r2_dimmer, 0);
@@ -284,19 +269,15 @@ function OnTerminate() {
   ch(r1_strobo, 0);
   ch(r2_strobo, 0);
 
-  ch(r1_speed, 0);
-  ch(r2_speed, 0);
   ch(r1_tilt, 0);
   ch(r2_tilt, 0);
+
+  ch(r1_speed, 0);
+  ch(r2_speed, 0);
 
   setRibaltaLeds(0);
 
   ch(fita, 0);
-
-  ch(b01, 0);
-  ch(b02, 0);
-  ch(b03, 0);
-  ch(b04, 0);
 
   mp_zeroParLeds();
 }

@@ -194,10 +194,11 @@ function OnExecute() {
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  // RIBALTAS — branco cheio, descendo junto com os movings.
-  // Quando t volta para 0, o tilt volta para 100 e o padrão reinicia.
+  // RIBALTAS — function → speed → tilt (equipamento exige esta ordem)
   const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, p);
 
+  ch(r1_function, 0);
+  ch(r2_function, 0);
   ch(r1_dimmer, 255);
   ch(r2_dimmer, 255);
 
@@ -234,16 +235,16 @@ function OnTerminate() {
   ch(m1_fecho, 0);
   ch(m1_prism, 0);
   ch(m1_pan, 0);
-  ch(m1_tilt, 0);
   ch(m1_speed, 0);
+  ch(m1_tilt, 0);
 
   ch(m2_cw, 0);
   ch(m2_strobo, 0);
   ch(m2_fecho, 0);
   ch(m2_prism, 0);
   ch(m2_pan, 0);
-  ch(m2_tilt, 0);
   ch(m2_speed, 0);
+  ch(m2_tilt, 0);
 
   ch(r1_dimmer, 0);
   ch(r2_dimmer, 0);
@@ -251,11 +252,10 @@ function OnTerminate() {
   ch(r1_strobo, 0);
   ch(r2_strobo, 0);
 
-  ch(r1_tilt, 0);
-  ch(r2_tilt, 0);
-
   ch(r1_speed, 0);
   ch(r2_speed, 0);
+  ch(r1_tilt, 0);
+  ch(r2_tilt, 0);
 
   if (r1_leds) {
     for (let i = 0; i < 8; i++) {

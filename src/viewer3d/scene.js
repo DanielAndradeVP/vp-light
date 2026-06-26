@@ -946,14 +946,11 @@ function buildFixtures() {
 
       group.userData.channels = MOVING_HEAD_BEAM_CHANNELS[fixtureId];
 
-      if (item.beam === 1) {
-        group.userData.panOffsetDeg = 90;
-        group.userData.panDirection = 1;
-      }
-
+      // Moving Head 2: pan lógico 0 aponta para a parede (não para a direita).
+      // Offset visual apenas — não altera DMX/Art-Net.
       if (item.beam === 2) {
-        group.userData.panDirection = -1;
         group.userData.panOffsetDeg = -90;
+        group.userData.tiltSign = -1;
       }
 
       register(group);

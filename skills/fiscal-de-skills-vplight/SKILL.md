@@ -35,7 +35,7 @@ Use quando o usuário disser algo como: "varre todas", "alinha todas as skills",
 
 Entradas:
 
-1. **Diretório `C:\vp-light\.agents\skills\`** — varrer cada subpasta com `SKILL.md`.
+1. **Diretório `C:\vp-light\skills\`** — varrer cada subpasta com `SKILL.md`.
 2. **`C:\vp-light\README_SKILL.md`**.
 3. **`C:\vp-light\README.md`**.
 
@@ -64,7 +64,7 @@ skill e feche com resumo geral.
 
 1. Leia o `README_SKILL.md` inteiro. Use a **§14 (Checklist de validação)** como roteiro mínimo.
 2. Leia o `README.md` inteiro para confirmar o registro humano atual.
-3. Leia a skill-alvo inteira. No modo lote, leia cada `SKILL.md` dentro de `.agents/skills/`.
+3. Leia a skill-alvo inteira. No modo lote, leia cada `SKILL.md` dentro de `skills/`.
 4. Compare ponto a ponto. Para cada item do checklist (§14 do README_SKILL), verifique se a skill:
    - afirma algo **contrário** ao README → **desatualizado**;
    - afirma algo que o README **não diz mais** → **obsoleto**;
@@ -128,7 +128,7 @@ trabalhar). Sem postâmbulo longo.
 
 Comece com uma linha geral:
 
-> **Auditoria em lote:** `<N>` skills analisadas em `C:\vp-light\.agents\skills\` contra README_SKILL.md (vX.Y) e README.md.
+> **Auditoria em lote:** `<N>` skills analisadas em `C:\vp-light\skills\` contra README_SKILL.md (vX.Y) e README.md.
 
 Depois, uma seção por skill, mantendo o mesmo formato do modo skill-alvo única:
 
@@ -159,7 +159,7 @@ Resumo geral: <A> alinhada(s), <B> parcialmente desalinhada(s), <C> desatualizad
 
 No modo lote:
 
-- Uma seção por skill encontrada em `.agents/skills/*/SKILL.md`.
+- Uma seção por skill encontrada em `skills/*/SKILL.md`.
 - Não pare na primeira divergência; complete o conjunto.
 - Não altere nenhuma skill durante a auditoria.
 - Se o usuário pedir explicitamente edição depois da auditoria, aplique mudanças cirúrgicas apenas nas skills indicadas.

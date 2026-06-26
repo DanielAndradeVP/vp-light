@@ -39,7 +39,6 @@ Quando a tarefa envolver fixture, aparelho, canal, universo DMX ou endereço DMX
 | IPC, engine, compositor         | `electron/main.js`, `electron/engine/*.js`         | backend  |
 | Scripts de efeito               | `scripts/*.js`                                     | backend  |
 | Persistência do show            | `electron/show.js`, `shows/vp.show.json`           | backend  |
-| Chat com IA                     | `src/screens/ChatPanel.jsx`                        | frontend |
 | Banco de conhecimento           | `banco-de-conhecimento/*.md`                       | conteúdo |
 
 ## Módulos do engine
@@ -80,18 +79,6 @@ IPC relacionado:
 * `stopMacro`
 * `nextMacroStep`
 * `removeMacro`
-
-## ChatPanel.jsx
-
-`ChatPanel.jsx` é frontend.
-
-Fica na aba Chat do painel direito.
-
-Responsabilidades principais:
-
-* Listar skills locais de `.agents/skills/` no botão `+`.
-* Enviar mensagens via `window.vp.sendChat`.
-* Exibir aviso quando o backend de chat não está conectado.
 
 ## Estrutura obrigatória de todo prompt
 
@@ -195,7 +182,6 @@ Sempre classifique a tarefa antes de escrever.
 * Inputs
 * Faders
 * Modais
-* ChatPanel
 * Cor
 * Tipografia
 * Espaçamento
@@ -283,18 +269,6 @@ Corrija a remoção para apagar a chave da tecla em `page_scripts[pageId]` e sal
 Sucesso: depois de limpar um script de cena, reiniciar o sistema não deve trazer o script de volta.
 
 Altere apenas o fluxo de remoção e persistência de `page_scripts`.
-
-### Frontend — ChatPanel
-
-`/desenvolvedor-frontend-vplight — src/screens/ChatPanel.jsx`
-
-O painel de chat não exibe a lista de skills disponíveis ao clicar no botão `+`.
-
-Implemente o menu ancorado ao botão `+`, listando as skills de `.agents/skills/` usando o nome do diretório como label. Ao selecionar uma skill, insira a menção `@nome-da-skill` no cursor do input.
-
-Sucesso: clicar em `+` abre a lista de skills e selecionar uma delas insere a menção no campo de mensagem.
-
-Altere apenas o visual do menu e a inserção de texto; não mexa na lógica de envio.
 
 ### Frontend — fixtures na mesa
 

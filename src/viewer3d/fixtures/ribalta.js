@@ -17,8 +17,8 @@ const LED_SPACING = 0.17;
 const LIGHT_MAX_INTENSITY = 2.4;
 const EMISSIVE_MAX_INTENSITY = 4.0;
 
-const TILT_MIN_DEG = -80;
-const TILT_MAX_DEG = 145;
+const TILT_MIN_DEG = -135;
+const TILT_MAX_DEG = 135;
 
 /**
  * Velocidade base/calibração da ribalta no 3D.
@@ -275,10 +275,7 @@ export function update(group, channels) {
 
     group.userData.lastTiltUpdateMs = now;
 
-    const tiltDirection = group.userData.tiltDirection ?? 1;
-
-    const targetTiltDeg =
-      dmxToDeg(tilt, TILT_MIN_DEG, TILT_MAX_DEG) * tiltDirection;
+    const targetTiltDeg = dmxToDeg(tilt, TILT_MIN_DEG, TILT_MAX_DEG);
 
     if (group.userData.currentTiltDeg === undefined) {
       group.userData.currentTiltDeg = THREE.MathUtils.radToDeg(group.rotation.x);

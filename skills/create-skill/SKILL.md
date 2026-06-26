@@ -1,0 +1,26 @@
+---
+name: create-skill
+description: Guide the user to turn a conversation workflow or decision process into a reusable SKILL.md file. Use when a user wants to define a new agent skill, document a pattern, or create an agent customization workflow.
+---
+
+# create-skill
+
+Ajuda o usuário a criar uma nova habilidade (`SKILL.md`) para agentes personalizados.
+
+## Quando usar
+
+- O usuário quer transformar um fluxo de conversa em um skill reutilizável.
+- O usuário precisa documentar um processo ou checklist como uma habilidade do agente.
+- O usuário está criando ou refinando `SKILL.md` para um workspace personalizado.
+
+## Passo a passo
+
+1. Leia o histórico de conversa completo e anote o objetivo do usuário.
+2. Identifique se já existe um processo multi-etapa ou apenas um pedido simples.
+3. Crie um rascunho de `SKILL.md` com cabeçalho YAML, instruções e critérios de aceitação.
+4. Finalize o `SKILL.md` e confirme onde o arquivo deve ser salvo.
+
+## Observações
+
+- Se o usuário quer criar uma nova habilidade para o **vp-light**, salve em `skills/<nome-da-skill>/SKILL.md`.
+- Não crie cópias em `.agents/skills/` ou `.claude/skills/` — `skills/` é a fonte única.

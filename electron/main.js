@@ -24,6 +24,14 @@ const {
   normalizeShowFixtureOffsets,
 } = require('./fixtureOffsets');
 const fixtureAdapter = require('./adapter');
+const ribaltaDebug = require('./engine/ribaltaDebug');
+const ribaltaPhysicalCalib = require('./ribaltaPhysicalCalib');
+
+const RIBALTA_APPLY_ORDER = [
+  'function', 'speed', 'dimmer',
+  'led_1', 'led_2', 'led_3', 'led_4', 'led_5', 'led_6', 'led_7', 'led_8',
+  'strobo', 'tilt',
+];
 
 const isDev = !app.isPackaged;
 const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
@@ -244,11 +252,17 @@ ipcMain.handle('engine:stop', () => {
 // Útil para diagnóstico e seleção manual de interface no renderer.
 ipcMain.handle('artnet:getInterfaces', () => artnet.getActiveInterfaces());
 
-// Congela/descongela o envio Art-Net para a rede real.
-// Com freeze ativo, o loopback (viewer 3D) continua recebendo frames normalmente;
-// os pacotes de broadcast para o palco são suprimidos até o descongelamento.
+// Congela/descongela a saída Art-Net (UDP). Engine/compositor/viewer 3D (IPC) seguem.
+ipcMain.handle('artnet:getFrozen', () => ({ frozen: artnet.isFrozen() }));
+
 ipcMain.handle('artnet:setFrozen', (_, frozen) => {
+  const wasFrozen = artnet.isFrozen();
   artnet.setFrozen(frozen);
+  // Descongelar: envia o universo atual imediatamente — não espera o próximo tick de 40ms
+  // e não zera o buffer (diferente de blackout/restoreState).
+  if (wasFrozen && !frozen) {
+    artnet.flushArtDMX(ribaltaPhysicalCalib.getPhysicalUniverseForArtNet(universe.getUniverse()));
+  }
   return { ok: true, frozen: artnet.isFrozen() };
 });
 
@@ -313,8 +327,22 @@ ipcMain.handle('dmx:blackout', () => {
 });
 
 ipcMain.handle('dmx:restoreState', (_, channels) => {
-  universe.blackout();
-  applyDmxChannelMap(filterDisabledFixtureChannels(channels));
+  const filtered = filterDisabledFixtureChannels(channels);
+  const anyScriptRunning = Object.keys(runningScripts).length > 0
+    || Object.keys(runningPageScripts).length > 0;
+
+  ribaltaDebug.logRestoreState('restoreState:before', filtered, { anyScriptRunning });
+
+  // Com scripts ativos: reaplica cenas sem blackout total — evita apagar o palco
+  // enquanto o compositor reescreve os canais dos scripts no próximo tick.
+  if (anyScriptRunning) {
+    applyDmxChannelMap(filtered, 'restoreState/merge');
+  } else {
+    universe.blackout();
+    ribaltaDebug.logRestoreState('restoreState:after-blackout', filtered);
+    applyDmxChannelMap(filtered, 'restoreState');
+  }
+  ribaltaDebug.logRestoreState('restoreState:after', filtered);
   return { ok: true };
 });
 
@@ -331,41 +359,13 @@ ipcMain.handle('dmx:getConflicts', () => {
   return universe.detectConflicts();
 });
 
-// Mapa de canais bloqueados por cenas ativas — atualizado pelo renderer
-let activeSceneChannels = {}; // { [canal]: valor } — scripts não sobrescrevem esses canais
-let parLedChannels = new Set(); // canais DMX de par_led — preenchido via setActiveSceneChannels (RMOP-004/005)
+// Mapa de canais das cenas ativas — usado pelo renderer para restoreState e conflitos.
+// Scripts têm prioridade temporária: cena é base (restoreState), compositor sobrescreve
+// nos canais que o script toca a cada frame; ao parar o script, restoreState reaplica a cena.
+let activeSceneChannels = {}; // { [canal]: valor }
 
-/**
- * Recalcula o lock de cena aplicado ao compositor, permitindo a COEXISTÊNCIA
- * cena + script: enquanto houver script rodando, os canais de par_led saem do
- * lock (o script controla); a cena segue travando o restante (moving heads,
- * ribalta, etc.). Sem script rodando, o lock volta a cobrir todos os canais
- * da cena.
- *
- * Reavaliado em dois momentos:
- *   - mudança de cenas ativas (handler dmx:setActiveSceneChannels)
- *   - liga/desliga de script (handler script:toggle — RMOP-002)
- */
-function _applySceneLock() {
-  const anyScriptRunning = Object.keys(runningScripts).length > 0
-    || Object.keys(runningPageScripts).length > 0;
-  if (anyScriptRunning && parLedChannels.size > 0) {
-    // Solta os canais de par_led do lock — o script passa a escrevê-los.
-    const lock = {};
-    for (const [ch, val] of Object.entries(activeSceneChannels)) {
-      if (!parLedChannels.has(Number(ch))) lock[ch] = val;
-    }
-    compositor.setSceneLock(lock);
-  } else {
-    // Sem script: a cena trava todos os seus canais (comportamento original).
-    compositor.setSceneLock(activeSceneChannels);
-  }
-}
-
-ipcMain.handle('dmx:setActiveSceneChannels', (_, channels, parLedChs) => {
+ipcMain.handle('dmx:setActiveSceneChannels', (_, channels, _parLedChs) => {
   activeSceneChannels = filterDisabledFixtureChannels(channels);
-  if (Array.isArray(parLedChs)) parLedChannels = new Set(parLedChs.map(Number));
-  _applySceneLock(); // guard de cena aplicado na composição (condicional a scripts ativos)
   return { ok: true };
 });
 
@@ -542,7 +542,6 @@ function stopRunningPageScript(pageId, sceneKey, reason) {
   if (!running) return false;
   compositor.stopLayer(`page:${k}`);
   delete runningPageScripts[k];
-  _applySceneLock();
   return true;
 }
 
@@ -652,9 +651,12 @@ function buildChannelOffsetMap() {
  * Também reconfigura o interpolador de speed virtual.
  */
 function initializeOffsets() {
+  const current = show.getShow();
+  const fixtures = current?.fixtures || [];
   const offsetMap = buildChannelOffsetMap();
   universe.setChannelOffsets(offsetMap);
   interpolator.configure(buildInterpolatorConfig());
+  ribaltaPhysicalCalib.configureFromFixtures(fixtures, isFixtureEnabled);
 }
 
 /**
@@ -744,27 +746,58 @@ function filterDisabledFixtureChannels(channelMap) {
   return filtered;
 }
 
-function setDmxChannelRuntime(channel, value) {
+function setDmxChannelRuntime(channel, value, origin = 'runtime') {
   const ch = Number(channel);
   if (!isDmxChannelEnabled(ch)) return false;
   if (interpolator.isVirtualChannel(ch)) {
     // Canal de speed virtual — alimenta o interpolador, não vai ao universo DMX
     interpolator.setSpeed(ch, value);
+    ribaltaDebug.logSetChannel(origin, ch, value);
     return true;
   }
   if (interpolator.isControlledChannel(ch)) {
     // Canal pan/tilt controlado — define o alvo; interpolador avança no próximo tick
     interpolator.setTarget(ch, value);
+    ribaltaDebug.logSetChannel(origin, ch, value);
     return true;
   }
   universe.setChannel(ch, value);
+  ribaltaDebug.logSetChannel(origin, ch, value);
   return true;
 }
 
-function applyDmxChannelMap(channelMap) {
-  Object.entries(channelMap || {}).forEach(([channel, value]) => {
-    setDmxChannelRuntime(channel, value);
-  });
+/**
+ * Aplica mapa de cena com ordem segura para ribaltas motorizadas:
+ * function → speed → demais canais → tilt por último.
+ * Garante function=0 (modo DMX manual) quando a cena toca a ribalta mas não inclui function.
+ */
+function applyDmxChannelMap(channelMap, origin = 'apply') {
+  const map = channelMap || {};
+  const applied = new Set();
+
+  for (const fixture of getMotorizedRibaltaFixtures()) {
+    const start = Number(fixture.startChannel) || 1;
+    const aliases = Array.isArray(fixture.channels) ? fixture.channels : [];
+    const hasAny = aliases.some((_, index) => channelMapHasKey(map, start + index));
+    if (!hasAny) continue;
+
+    for (const alias of RIBALTA_APPLY_ORDER) {
+      const ch = getFixtureChannelByAlias(fixture, alias);
+      if (!ch) continue;
+      if (channelMapHasKey(map, ch)) {
+        setDmxChannelRuntime(ch, channelMapGet(map, ch), origin);
+        applied.add(ch);
+      } else if (alias === 'function') {
+        setDmxChannelRuntime(ch, 0, `${origin}/function-baseline`);
+        applied.add(ch);
+      }
+    }
+  }
+
+  for (const [channel, value] of Object.entries(map)) {
+    const ch = Number(channel);
+    if (!applied.has(ch)) setDmxChannelRuntime(ch, value, origin);
+  }
 }
 
 function filterDisabledFixtureScenes(scenesMap) {
@@ -808,6 +841,23 @@ function isRibaltaSpeedFixture(fixture) {
   const name = normalizeAlias(fixture?.name);
   return getFixtureType(fixture) === 'ribalta'
     && (name === 'ribalta_1' || name === 'ribalta_2');
+}
+
+function isMotorizedRibaltaFixture(fixture) {
+  return isRibaltaSpeedFixture(fixture);
+}
+
+function getMotorizedRibaltaFixtures() {
+  return (show.getShow()?.fixtures || []).filter(f => isFixtureEnabled(f) && isMotorizedRibaltaFixture(f));
+}
+
+function channelMapHasKey(map, ch) {
+  return Object.prototype.hasOwnProperty.call(map || {}, ch)
+    || Object.prototype.hasOwnProperty.call(map || {}, String(ch));
+}
+
+function channelMapGet(map, ch) {
+  return map[ch] ?? map[String(ch)];
 }
 
 function getFixtureChannelByAlias(fixture, alias) {
@@ -1006,11 +1056,9 @@ ipcMain.handle('script:toggle', (_, fkey) => {
   if (runningScripts[fkey]) {
     // Parar
     stopRunningScript(fkey, 'toggle');
-    _applySceneLock(); // se era o último script, par_leds voltam ao controle da cena
     return { ok: true, running: false };
   }
   const result = startScript(fkey);
-  _applySceneLock(); // script ligou — solta par_leds do lock para o script controlar
   return result;
 });
 
@@ -1062,7 +1110,6 @@ ipcMain.handle('script:getAll', () => buildAllScripts());
 
 ipcMain.handle('script:stopAll', () => {
   stopAllRunningScripts('stop-all');
-  _applySceneLock();
   emitScriptsChanged();
   return { ok: true };
 });
@@ -1207,7 +1254,6 @@ ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
     onError: () => { delete runningPageScripts[k]; },
   });
   runningPageScripts[k] = { context: ctx };
-  _applySceneLock();
   return { ok: true, running: true };
 });
 
@@ -1380,6 +1426,13 @@ app.whenReady().then(() => {
 
   // Guard de fixture desabilitado aplicado na composição (uma vez por frame).
   compositor.setDisabledChannelsProvider(getDisabledFixtureChannelSet);
+  ribaltaDebug.configure({
+    getUniverse: () => universe.getUniverse(),
+    getFixtureChannel: (fixtureId, alias) => getFixtureChannel(fixtureId, alias),
+  });
+  if (ribaltaDebug.isEnabled()) {
+    console.log('[ribalta2-debug] logging ativo — ligado via VP_RIBALTA_DEBUG=1');
+  }
 
   engine.start();
   console.log('[main] engine DMX iniciado');
