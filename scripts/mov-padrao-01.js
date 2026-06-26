@@ -33,12 +33,6 @@ const F2   = 300;
 const M1_PAN_C = 84, M1_TILT_F = 36, M1_TILT_A = 78,  M1_PAN_L = 42, M1_TILT_L = 35;
 const M2_PAN_C = 84, M2_TILT_F = 32, M2_TILT_A = 72,  M2_PAN_R = 44, M2_TILT_L = 26;
 
-// Ribaltas — catalog: R1 tilt funcional=175 (R2+70) speed=190; R2 tilt funcional=105 speed=90
-// TL=tilt louvor, TA=tilt altar, SS=speed lenta, SF=speed rápida
-const R1_TL = 105, R1_SS = 190, R1_SF = 20; // tilt igual ao R2; alinhamento da esquerda resolvido pelo offset do sistema
-const R2_TL = 105, R2_SS = 190,  R2_SF = 20;
-const TA    = 145; // tilt altar (ambas)
-
 // ── Utilitários ─────────────────────────────────────────────────────────────
 function ch(c, v) {
   if (c !== null && c !== undefined) {
@@ -132,11 +126,15 @@ function OnExecute() {
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  // RIBALTAS — function → speed → tilt (equipamento exige esta ordem)
-  ch(r1_function, 0); ch(r2_function, 0);
+  // RIBALTAS — par sincronizado (function → speed → tilt, mesmo valor logico)
+  mp_applyRibaltaPair(
+    r1_function, r2_function,
+    r1_speed, r2_speed,
+    r1_tilt, r2_tilt,
+    MP_RIB.SPEED_SLOW,
+    MP_RIB.TILT_LOUVOR
+  );
   ch(r1_dimmer, 255); ch(r2_dimmer, 255);
-  ch(r1_speed, MP_RIB.R1_SPEED_SLOW); ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
-  ch(r1_tilt, MP_RIB.TILT_LOUVOR_1); ch(r2_tilt, MP_RIB.TILT_LOUVOR_2);
   ch(r1_strobo, 0); ch(r2_strobo, 0);
   for (let i = 0; i < 8; i++) {
     ch(r1_leds[i], 255);
@@ -170,6 +168,7 @@ function OnTerminate() {
   ch(m2_speed, 0);
   ch(m2_tilt, 0);
 
+  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, MP_RIB.TILT_LOW);
   ch(r1_dimmer, 0); ch(r2_dimmer, 0);
   ch(r1_strobo, 0); ch(r2_strobo, 0);
   if (r1_leds) { for (let i = 0; i < 8; i++) ch(r1_leds[i], 0); }

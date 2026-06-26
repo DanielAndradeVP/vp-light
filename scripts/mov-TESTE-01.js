@@ -42,8 +42,8 @@ const LOOP = DESCEND_TICKS + RESET_TICKS;
 const MOVING_SPEED_DESCEND = MP_MH_SPEED_SLOW;
 const MOVING_SPEED_RESET   = MP_MH_SPEED_SLOW;
 
-// Ribaltas em par: mesmo valor de velocidade para as duas
-const RIBALTA_SPEED = MP_RIB.R1_SPEED_SLOW;
+// Ribaltas em par: mesma velocidade e mesmo tilt logico
+const RIBALTA_SPEED = MP_RIB.SPEED_SLOW;
 
 
 // ── Valores gerais ──────────────────────────────────────────────────────────
@@ -140,16 +140,14 @@ function OnStart() {
     r2_leds.push(getChannel(ID_R2, 'led_' + i));
   }
 
-  // Modo DMX manual das ribaltas
-  ch(r1_function, 0);
-  ch(r2_function, 0);
-
   // Ribaltas começam apagadas e as duas em tilt 0
-  ch(r1_speed, RIBALTA_SPEED);
-  ch(r2_speed, RIBALTA_SPEED);
-
-  ch(r1_tilt, 0);
-  ch(r2_tilt, 0);
+  mp_applyRibaltaPair(
+    r1_function, r2_function,
+    r1_speed, r2_speed,
+    r1_tilt, r2_tilt,
+    RIBALTA_SPEED,
+    0
+  );
 
   blackoutRibaltas();
 
@@ -180,12 +178,17 @@ function OnExecute() {
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  ch(r1_function, 0);
-  ch(r2_function, 0);
+  const ribaltaTilt = isDescending
+    ? lerp(0, MP_RIB.TILT_HIGH, clamp01(cycleTick / (DESCEND_TICKS - 1)))
+    : 0;
 
-  // Ribaltas sempre com a mesma velocidade
-  ch(r1_speed, RIBALTA_SPEED);
-  ch(r2_speed, RIBALTA_SPEED);
+  mp_applyRibaltaPair(
+    r1_function, r2_function,
+    r1_speed, r2_speed,
+    r1_tilt, r2_tilt,
+    RIBALTA_SPEED,
+    ribaltaTilt
+  );
 
   if (isDescending) {
     const p = clamp01(cycleTick / (DESCEND_TICKS - 1));
@@ -203,13 +206,6 @@ function OnExecute() {
     ch(m1_strobo, 255);
     ch(m2_strobo, 255);
 
-    // RIBALTAS — acesas e descendo juntas como par
-    // As duas começam em 0 e recebem exatamente o mesmo valor.
-    const ribaltaTilt = lerp(0, MP_RIB.TILT_HIGH, p);
-
-    ch(r1_tilt, ribaltaTilt);
-    ch(r2_tilt, ribaltaTilt);
-
     ch(r1_dimmer, 255);
     ch(r2_dimmer, 255);
 
@@ -218,12 +214,8 @@ function OnExecute() {
 
     setRibaltaLeds(255);
   } else {
-    // RESET ESCONDIDO
-    // Aqui as ribaltas apagam e voltam juntas para tilt 0.
+    // RESET ESCONDIDO — tilt ja em 0 via mp_applyRibaltaPair
     blackoutRibaltas();
-
-    ch(r1_tilt, 0);
-    ch(r2_tilt, 0);
 
     // Também fecho os movings durante o reset para esconder o retorno deles.
     ch(m1_speed, MOVING_SPEED_RESET);
@@ -263,17 +255,13 @@ function OnTerminate() {
   ch(m2_tilt, 0);
   ch(m2_speed, 0);
 
+  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, 0);
+
   ch(r1_dimmer, 0);
   ch(r2_dimmer, 0);
 
   ch(r1_strobo, 0);
   ch(r2_strobo, 0);
-
-  ch(r1_tilt, 0);
-  ch(r2_tilt, 0);
-
-  ch(r1_speed, 0);
-  ch(r2_speed, 0);
 
   setRibaltaLeds(0);
 

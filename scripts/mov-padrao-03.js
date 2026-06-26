@@ -218,21 +218,22 @@ function OnExecute() {
   if (mh2PanFine    !== null) SetChannel(mh2PanFine,    0);
   if (mh2Tilt       !== null) SetChannel(mh2Tilt,       mh.tilt);
 
-  // ── Ribaltas — function → speed → tilt (equipamento exige esta ordem) ──
+  // ── Ribaltas — par sincronizado (function → speed → tilt) ──
   const ribPhase = tick % RIB_CYCLE;
   const rib = ribStateForPhase(ribPhase);
 
-  if (rib1Function !== null) SetChannel(rib1Function, 0);
-  if (rib1Speed    !== null) SetChannel(rib1Speed,    rib.spd);
-  if (rib1Tilt     !== null) SetChannel(rib1Tilt,     rib.tilt);
+  mp_applyRibaltaPair(
+    rib1Function, rib2Function,
+    rib1Speed, rib2Speed,
+    rib1Tilt, rib2Tilt,
+    rib.spd,
+    rib.tilt
+  );
   if (rib1Dimmer !== null) SetChannel(rib1Dimmer, MP_RIB.DIM_WASH);
   for (let i = 0; i < rib1Leds.length; i++) {
     if (rib1Leds[i] !== null) SetChannel(rib1Leds[i], 255);
   }
 
-  if (rib2Function !== null) SetChannel(rib2Function, 0);
-  if (rib2Speed    !== null) SetChannel(rib2Speed,    rib.spd);
-  if (rib2Tilt     !== null) SetChannel(rib2Tilt,     rib.tilt);
   if (rib2Dimmer !== null) SetChannel(rib2Dimmer, MP_RIB.DIM_WASH);
   for (let i = 0; i < rib2Leds.length; i++) {
     if (rib2Leds[i] !== null) SetChannel(rib2Leds[i], 255);
@@ -255,16 +256,11 @@ function OnTerminate() {
   if (mh2Pan        !== null) SetChannel(mh2Pan,        MP_M2.PAN_L);
   if (mh2PanFine    !== null) SetChannel(mh2PanFine,    0);
   if (mh2Tilt       !== null) SetChannel(mh2Tilt,       MP_M2.TILT_MID);
-  if (rib1Function !== null) SetChannel(rib1Function, 0);
-  if (rib1Speed    !== null) SetChannel(rib1Speed,    0);
-  if (rib1Tilt     !== null) SetChannel(rib1Tilt,     0);
+  mp_zeroRibaltaPair(rib1Function, rib2Function, rib1Speed, rib2Speed, rib1Tilt, rib2Tilt, MP_RIB.TILT_LOW);
   if (rib1Dimmer !== null) SetChannel(rib1Dimmer, 0);
   for (let i = 0; i < rib1Leds.length; i++) {
     if (rib1Leds[i] !== null) SetChannel(rib1Leds[i], 0);
   }
-  if (rib2Function !== null) SetChannel(rib2Function, 0);
-  if (rib2Speed    !== null) SetChannel(rib2Speed,    0);
-  if (rib2Tilt     !== null) SetChannel(rib2Tilt,     0);
   if (rib2Dimmer !== null) SetChannel(rib2Dimmer, 0);
   for (let i = 0; i < rib2Leds.length; i++) {
     if (rib2Leds[i] !== null) SetChannel(rib2Leds[i], 0);

@@ -146,16 +146,14 @@ function OnStart() {
     r2_leds.push(getChannel(ID_R2, 'led_' + i));
   }
 
-  // Modo DMX manual das ribaltas
-  ch(r1_function, 0);
-  ch(r2_function, 0);
-
-  // Começa com ribaltas apagadas e em tilt 100
-  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
-  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
-
-  ch(r1_tilt, MP_RIB.TILT_LOW);
-  ch(r2_tilt, MP_RIB.TILT_LOW);
+  // Modo DMX manual + tilt inicial (par sincronizado)
+  mp_applyRibaltaPair(
+    r1_function, r2_function,
+    r1_speed, r2_speed,
+    r1_tilt, r2_tilt,
+    MP_RIB.SPEED_SLOW,
+    MP_RIB.TILT_LOW
+  );
 
   blackoutRibaltas();
 
@@ -191,11 +189,17 @@ function OnExecute() {
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  ch(r1_function, 0);
-  ch(r2_function, 0);
+  const ribaltaTilt = isDescending
+    ? lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, clamp01(cycleTick / (DESCEND_TICKS - 1)))
+    : MP_RIB.TILT_LOW;
 
-  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
-  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
+  mp_applyRibaltaPair(
+    r1_function, r2_function,
+    r1_speed, r2_speed,
+    r1_tilt, r2_tilt,
+    MP_RIB.SPEED_SLOW,
+    ribaltaTilt
+  );
 
   if (isDescending) {
     const p = clamp01(cycleTick / (DESCEND_TICKS - 1));
@@ -213,12 +217,6 @@ function OnExecute() {
     ch(m1_strobo, 255);
     ch(m2_strobo, 255);
 
-    // RIBALTAS — acesas e descendo junto
-    const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, p);
-
-    ch(r1_tilt, ribaltaTilt + 70);
-    ch(r2_tilt, ribaltaTilt);
-
     ch(r1_dimmer, 255);
     ch(r2_dimmer, 255);
 
@@ -227,12 +225,8 @@ function OnExecute() {
 
     setRibaltaLeds(255);
   } else {
-    // RESET ESCONDIDO
-    // Aqui a ribalta apaga, volta para tilt 100, e ninguém vê ela subindo.
+    // RESET ESCONDIDO — ribaltas apagadas; tilt ja em TILT_LOW via mp_applyRibaltaPair
     blackoutRibaltas();
-
-    ch(r1_tilt, MP_RIB.TILT_LOW);
-    ch(r2_tilt, MP_RIB.TILT_LOW);
 
     // Também fecho os movings durante o reset para esconder o retorno deles.
     ch(m1_speed, MOVING_SPEED_RESET);
@@ -278,16 +272,13 @@ function OnTerminate() {
   ch(m2_speed, 0);
   ch(m2_tilt, 0);
 
+  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, MP_RIB.TILT_LOW);
+
   ch(r1_dimmer, 0);
   ch(r2_dimmer, 0);
 
   ch(r1_strobo, 0);
   ch(r2_strobo, 0);
-
-  ch(r1_speed, 0);
-  ch(r2_speed, 0);
-  ch(r1_tilt, 0);
-  ch(r2_tilt, 0);
 
   setRibaltaLeds(0);
 

@@ -62,14 +62,7 @@ const M2_TILT_A = 72;
 const RIBALTA_TILT_START = 100;
 const RIBALTA_TILT_LIMIT = 190;
 
-// Speed das ribaltas.
-// Mantive os valores diferentes porque no seu catálogo elas parecem responder diferente.
-// R1 tilt funcional=R2+70 speed=190
-// R2 tilt funcional=105 speed=90
-
-const R1_SPEED_SYNC = 190;
-const R2_SPEED_SYNC = 90;
-
+// Speed das ribaltas — mesma velocidade nas duas (par sincronizado).
 
 // ── Utilitários ─────────────────────────────────────────────────────────────
 
@@ -141,14 +134,13 @@ function OnStart() {
   }
 
   // Garante modo DMX manual nas ribaltas.
-  ch(r1_function, 0);
-  ch(r2_function, 0);
-
-  // Garante que as ribaltas iniciem em tilt 100.
-  ch(r1_speed, R1_SPEED_SYNC);
-  ch(r2_speed, R2_SPEED_SYNC);
-  ch(r1_tilt, RIBALTA_TILT_START + 70);
-  ch(r2_tilt, RIBALTA_TILT_START);
+  mp_applyRibaltaPair(
+    r1_function, r2_function,
+    r1_speed, r2_speed,
+    r1_tilt, r2_tilt,
+    MP_RIB.SPEED_SLOW,
+    RIBALTA_TILT_START
+  );
 
   // Fita e Mini Bruts
   fita = getChannel(ID_FITA, 'dimmer');
@@ -194,19 +186,19 @@ function OnExecute() {
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  // RIBALTAS — function → speed → tilt (equipamento exige esta ordem)
+  // RIBALTAS — par sincronizado (mesmo tilt logico; calibracao fisica na engine)
   const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, p);
 
-  ch(r1_function, 0);
-  ch(r2_function, 0);
   ch(r1_dimmer, 255);
   ch(r2_dimmer, 255);
 
-  ch(r1_speed, MP_RIB.R1_SPEED_SLOW);
-  ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
-
-  ch(r1_tilt, ribaltaTilt + 70);
-  ch(r2_tilt, ribaltaTilt);
+  mp_applyRibaltaPair(
+    r1_function, r2_function,
+    r1_speed, r2_speed,
+    r1_tilt, r2_tilt,
+    MP_RIB.SPEED_SLOW,
+    ribaltaTilt
+  );
 
   ch(r1_strobo, 0);
   ch(r2_strobo, 0);
@@ -246,16 +238,13 @@ function OnTerminate() {
   ch(m2_speed, 0);
   ch(m2_tilt, 0);
 
+  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, MP_RIB.TILT_LOW);
+
   ch(r1_dimmer, 0);
   ch(r2_dimmer, 0);
 
   ch(r1_strobo, 0);
   ch(r2_strobo, 0);
-
-  ch(r1_speed, 0);
-  ch(r2_speed, 0);
-  ch(r1_tilt, 0);
-  ch(r2_tilt, 0);
 
   if (r1_leds) {
     for (let i = 0; i < 8; i++) {
