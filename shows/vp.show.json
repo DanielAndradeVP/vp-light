@@ -2619,6 +2619,11 @@
       "name": "mov-padrao-04",
       "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mov-padrao-04.js",
       "color": "#000000"
+    },
+    "F10": {
+      "name": "mov-padrao-preset",
+      "file": "/home/carlos-daniel/Documentos/Projetos/vp-light/scripts/mov-padrao-preset.js",
+      "color": "#000000"
     }
   },
   "mode2": {

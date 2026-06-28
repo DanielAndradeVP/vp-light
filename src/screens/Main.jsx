@@ -5,7 +5,6 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { activeSceneMatches, parseSceneRef, sceneRefId, useShow } from '../store/showStore.js';
 import theme from '../theme.js';
-import ChatPanel from './ChatPanel.jsx';
 
 const SCENE_KEYS = ['A','S','D','F','G','H','J','K','L','Z','X','C','V'];
 const RIGHT_PANEL_MIN_WIDTH = 260;
@@ -217,7 +216,7 @@ const C = {
 
 export default function Main({ onOpenFixtures, onOpenPainel }) {
   const {
-    show, currentPage, setCurrentPage,
+    show, loading, currentPage, setCurrentPage,
     activeScenes, setActiveScenes,
     selectedFixtureId, setSelectedFixtureId,
     selectedFixture, disabledFixtureChannels: storeDisabledFixtureChannels, pages, saveShow, loadShow,
@@ -379,7 +378,6 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   const [conflicts, setConflicts] = useState([]);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState('description');
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
   const [rightPanelResize, setRightPanelResize] = useState(null); // { startX, startWidth }
   const [customFunctionMenuFixtureId, setCustomFunctionMenuFixtureId] = useState(null);
@@ -553,8 +551,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   scriptsRef.current = scripts; // sempre fresco: atualizado na render, antes de qualquer await
   const [scriptMenu, setScriptMenu] = useState(null); // { x, y, fkey }
   const [createModal, setCreateModal] = useState(null); // { fkey }
+  const [existingScriptsModal, setExistingScriptsModal] = useState(null); // { fkey }
   const [scriptName, setScriptName] = useState('');
-  const [createModalTab, setCreateModalTab] = useState('novo');
   const [existingScripts, setExistingScripts] = useState([]);
   const [selectedExisting, setSelectedExisting] = useState(null);
   const [selectedGroups, setSelectedGroups] = useState(new Set());   // seleção de grupo (banco de conhecimento)
@@ -615,6 +613,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   // Sincroniza canais bloqueados por cenas com o main process sempre que activeScenes muda
   useEffect(() => {
+    if (loading) return;
     const merged = {};
     activeScenes.forEach(activeRef => {
       const { scene: s } = getActiveSceneData(activeRef);
@@ -653,7 +652,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
     // Reset acknowledge quando novas cenas são ativadas
     setConflictAcknowledged(false);
-  }, [activeScenes, pages, currentPageId, disabledFixtureChannels]);
+  }, [activeScenes, pages, currentPageId, disabledFixtureChannels, loading]);
 
   // Polling de conflitos a cada 100ms — SEMPRE ativo
   useEffect(() => {
@@ -675,9 +674,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   }, [conflictModalOpen]);
 
   useEffect(() => {
-    if (createModalTab !== 'existentes' || !createModal) return;
+    if (!existingScriptsModal) return;
     window.vp.listScripts().then(r => setExistingScripts(r.ok ? r.files : []));
-  }, [createModalTab, createModal]);
+  }, [existingScriptsModal]);
 
   async function handleScriptRightClick(e, fkey) {
     e.preventDefault();
@@ -934,13 +933,14 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       if (sceneMoveModal)    { setSceneMoveModal(null); return; }
       if (sceneScriptModal)  { setSceneScriptModal(null); setSceneScriptName(''); return; }
       if (saveModal)         { setSaveModal(null); return; }
-      if (createModal)       { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); return; }
+      if (createModal)            { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); return; }
+      if (existingScriptsModal)   { setExistingScriptsModal(null); setSelectedExisting(null); setScriptColor(DEFAULT_SCRIPT_COLOR); return; }
       if (contextMenu)       { setContextMenu(null); return; }
       if (scriptMenu)        { setScriptMenu(null); return; }
     }
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [exitModalOpen, moveModal, sceneMoveModal, sceneScriptModal, saveModal, createModal, contextMenu, scriptMenu]);
+  }, [exitModalOpen, moveModal, sceneMoveModal, sceneScriptModal, saveModal, createModal, existingScriptsModal, contextMenu, scriptMenu]);
 
   const scenes = (pages[currentPageId] || {}).scenes || {};
 
@@ -1692,7 +1692,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
           </div>
         </div>
 
-        {/* PAINEL DIREITO: CHAT / DESCRIÃ‡ÃƒO */}
+        {/* PAINEL DIREITO: DESCRIÇÃO */}
         <div style={{ width:rightPanelWidth, minWidth:RIGHT_PANEL_MIN_WIDTH, maxWidth:RIGHT_PANEL_MAX_WIDTH, position:'relative', display:'flex', flexDirection:'column', background:'#35484f', color:'#ffffff', borderLeft:'1px solid #8db8b8', boxShadow:'none', overflow:'hidden', fontFamily:'Arial, Helvetica, sans-serif' }}>
           <div
             onPointerDown={handleRightPanelResizeStart}
@@ -1708,69 +1708,15 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               borderLeft:rightPanelResize ? '1px solid #b7dede' : '1px solid transparent',
             }}
           />
-          <div style={{ display:'flex', height:28, minHeight:28, background:'#24343a', borderBottom:'1px solid #8db8b8' }}>
-            <button
-              onClick={() => setRightPanelTab('chat')}
-              style={{
-                flex:1,
-                textAlign:'center',
-                height:28,
-                minHeight:28,
-                display:'flex',
-                alignItems:'center',
-                justifyContent:'center',
-                padding:'0 8px',
-                background: rightPanelTab === 'chat' ? '#35484f' : '#24343a',
-                color: rightPanelTab === 'chat' ? '#ffffff' : '#c8dddd',
-                borderLeft: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderRight: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderTop: rightPanelTab === 'chat' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderBottom: rightPanelTab === 'chat' ? 'none' : '1px solid #8db8b8',
-                borderRadius:0,
-                outline:'none',
-                boxShadow:'none',
-                fontFamily:'Arial, Helvetica, sans-serif',
-                fontSize:12,
-                fontWeight:700,
-                whiteSpace:'nowrap',
-                overflow:'hidden',
-                textOverflow:'clip',
-                cursor:'pointer',
-              }}
-            >
-              Chat
-            </button>
-            <button
-              onClick={() => setRightPanelTab('description')}
-              style={{
-                flex:1,
-                textAlign:'center',
-                height:28,
-                minHeight:28,
-                display:'flex',
-                alignItems:'center',
-                justifyContent:'center',
-                padding:'0 8px',
-                background: rightPanelTab === 'description' ? '#35484f' : '#24343a',
-                color: rightPanelTab === 'description' ? '#ffffff' : '#c8dddd',
-                borderLeft: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderRight: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderTop: rightPanelTab === 'description' ? '1px solid #8db8b8' : '1px solid #5f8588',
-                borderBottom: rightPanelTab === 'description' ? 'none' : '1px solid #8db8b8',
-                borderRadius:0,
-                outline:'none',
-                boxShadow:'none',
-                fontFamily:'Arial, Helvetica, sans-serif',
-                fontSize:12,
-                fontWeight:700,
-                whiteSpace:'nowrap',
-                overflow:'hidden',
-                textOverflow:'clip',
-                cursor:'pointer',
-              }}
-            >
+          <div style={{ display:'flex', height:28, minHeight:28, background:'#24343a', borderBottom:'1px solid #8db8b8', alignItems:'center', justifyContent:'center' }}>
+            <span style={{
+              fontFamily:'Arial, Helvetica, sans-serif',
+              fontSize:12,
+              fontWeight:700,
+              color:'#ffffff',
+            }}>
               Descrição
-            </button>
+            </span>
           </div>
           <div style={{ flex:1, display:'flex', background:'#35484f', overflow:'hidden' }}>
             <div style={{ width:40, minWidth:40, maxWidth:40, background:'#24343a', borderRight:'1px solid #8db8b8', display:'flex', flexDirection:'column', alignItems:'stretch', justifyContent:'flex-start', padding:2, gap:2 }}>
@@ -1817,8 +1763,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               ))}
             </div>
             <div style={{ flex:1, background:'#35484f', color:'#ffffff', overflow:'auto', position:'relative' }}>
-              {rightPanelTab === 'chat' && <ChatPanel />}
-              {rightPanelTab === 'description' && multiSelected.length >= 2 && (() => {
+              {multiSelected.length >= 2 && (() => {
                 // Painel agrupado: agrupa canais por label entre os fixtures selecionados.
                 // Canais com mesmo label em 2+ fixtures → fader único que afeta todos.
                 // Label único ou sem label → fader individual do último fixture clicado.
@@ -2075,7 +2020,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   </div>
                 );
               })()}
-              {rightPanelTab === 'description' && multiSelected.length < 2 && selectedFixture && (() => {
+              {multiSelected.length < 2 && selectedFixture && (() => {
                 const fixtureChannels = getFixtureDmxChannels(selectedFixture);
                 const fixtureFunctions = getFixtureCustomFunctions(selectedFixture);
                 const storedCustomFunction = activeCustomFunctionByFixture[selectedFixture.id];
@@ -2431,7 +2376,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
           onClick={e => e.stopPropagation()}
           style={{
             position:'fixed',
-            top: scriptMenu.y + 110 > window.innerHeight ? scriptMenu.y - 110 : scriptMenu.y,
+            top: scriptMenu.y + 140 > window.innerHeight ? scriptMenu.y - 140 : scriptMenu.y,
             left: Math.min(scriptMenu.x, window.innerWidth - 160),
             background:'#2e2e2e', border:'1px solid #444', borderRadius:4,
             zIndex:1000, minWidth:140, boxShadow:'0 4px 12px rgba(0,0,0,0.5)',
@@ -2439,19 +2384,38 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         >
             <div
               onClick={() => {
+                if (scripts[scriptMenu.fkey]) return;
                 const currentScript = scripts[scriptMenu.fkey];
                 setCreateModal({ fkey: scriptMenu.fkey });
-                setCreateModalTab('novo');
-                setSelectedExisting(currentScript || null);
                 setScriptName('');
                 setScriptColor(currentScript?.color || DEFAULT_SCRIPT_COLOR);
+                setSelectedGroups(new Set());
+                setSelectedFixtures(new Set());
                 setScriptMenu(null);
               }}
+            style={{
+              padding:'8px 14px', fontSize:12,
+              cursor: scripts[scriptMenu.fkey] ? 'not-allowed' : 'pointer',
+              color: scripts[scriptMenu.fkey] ? '#555' : '#e0e0e0',
+            }}
+            onMouseEnter={e => { if (!scripts[scriptMenu.fkey]) e.currentTarget.style.background='#383838'; }}
+            onMouseLeave={e => e.currentTarget.style.background='transparent'}
+          >
+            {scripts[scriptMenu.fkey] ? 'Editar Script' : 'Criar Script'}
+          </div>
+          <div
+            onClick={() => {
+              const currentScript = scripts[scriptMenu.fkey];
+              setExistingScriptsModal({ fkey: scriptMenu.fkey });
+              setSelectedExisting(null);
+              setScriptColor(currentScript?.color || DEFAULT_SCRIPT_COLOR);
+              setScriptMenu(null);
+            }}
             style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
             onMouseEnter={e => e.currentTarget.style.background='#383838'}
             onMouseLeave={e => e.currentTarget.style.background='transparent'}
           >
-            {scripts[scriptMenu.fkey] ? 'Editar Script' : 'Criar Script'}
+            Scripts Existentes
           </div>
           <div
             onClick={() => { setMoveModal({ sourceFkey: scriptMenu.fkey }); setScriptMenu(null); }}
@@ -2484,201 +2448,197 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
             {/* Header */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838' }}>
               <span style={{ fontSize:13, fontWeight:600 }}>
-                {scripts[createModal.fkey] ? 'Editar Script' : 'Script'} — {createModal.fkey}
+                {scripts[createModal.fkey] ? 'Editar Script' : 'Novo Script'} — {createModal.fkey}
               </span>
-              <button onClick={() => { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); setSelectedExisting(null); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
+              <button onClick={() => { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
 
-            {/* Abas */}
-            <div style={{ display:'flex', borderBottom:'1px solid #383838' }}>
-              {[['novo', 'Novo Script'], ['existentes', 'Scripts Existentes']].map(([tab, label]) => (
-                <button
-                  key={tab}
-                  onClick={() => setCreateModalTab(tab)}
-                  style={{
-                    flex:1, padding:'7px 0', fontSize:12, cursor:'pointer', border:'none',
-                    background: createModalTab === tab ? '#2e2e2e' : '#1e1e1e',
-                    color: createModalTab === tab ? '#fff' : '#888',
-                    borderBottom: createModalTab === tab ? '2px solid #e0e0e0' : '2px solid transparent',
-                  }}
-                >{label}</button>
-              ))}
-            </div>
+            <div style={{ padding:16, display:'flex', flexDirection:'column', gap:14 }}>
+              {/* Nome */}
+              <div>
+                <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted, marginBottom:4 }}>Nome do script</div>
+                <input
+                  value={scripts[createModal.fkey] ? scripts[createModal.fkey].name : scriptName}
+                  onChange={e => setScriptName(e.target.value)}
+                  disabled={!!scripts[createModal.fkey]}
+                  placeholder="Nome do script..."
+                  style={{ width:'100%', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, color: scripts[createModal.fkey] ? theme.colors.textDisabled : theme.colors.text, background:theme.colors.surface, padding:theme.spacing.inputPadding, border:'none', borderBottom:`1px solid ${theme.colors.textSecondary}`, outline:'none', boxSizing:'border-box' }}
+                />
+              </div>
+              <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
 
-            {/* Conteúdo — Novo Script */}
-            {createModalTab === 'novo' && (
-              <div style={{ padding:16, display:'flex', flexDirection:'column', gap:14 }}>
-                {/* Nome */}
+              {/* Banco de conhecimento — só exibe para script novo */}
+              {!scripts[createModal.fkey] && (
                 <div>
-                  <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted, marginBottom:4 }}>Nome do script</div>
-                  <input
-                    value={scripts[createModal.fkey] ? scripts[createModal.fkey].name : scriptName}
-                    onChange={e => setScriptName(e.target.value)}
-                    disabled={!!scripts[createModal.fkey]}
-                    placeholder="Nome do script..."
-                    style={{ width:'100%', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, color: scripts[createModal.fkey] ? theme.colors.textDisabled : theme.colors.text, background:theme.colors.surface, padding:theme.spacing.inputPadding, border:'none', borderBottom:`1px solid ${theme.colors.textSecondary}`, outline:'none', boxSizing:'border-box' }}
-                  />
-                </div>
-                <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
-
-                {/* Banco de conhecimento — só exibe para script novo */}
-                {!scripts[createModal.fkey] && (
-                  <div>
-                    <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted, marginBottom:8 }}>Banco de conhecimento</div>
-                    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                      {FIXTURE_GROUPS.map(group => {
-                        const groupActive = selectedGroups.has(group.key);
-                        const anyFixture = group.fixtures.some(f => selectedFixtures.has(f));
-                        const effective = groupActive || anyFixture;
-                        return (
-                          <div key={group.key} style={{ border:`1px solid ${effective ? theme.colors.primary : theme.colors.borderSoft}`, borderRadius:theme.radius.md, overflow:'hidden', background: effective ? theme.colors.primaryOverlay : 'transparent', transition:'border-color .15s' }}>
-                            {/* Cabeçalho do grupo */}
-                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderBottom:`1px solid ${effective ? theme.colors.primary : theme.colors.borderSoft}` }}>
-                              <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.toolbar.fontSize, fontWeight:700, color: effective ? theme.colors.primary : theme.colors.text }}>{group.label}</span>
-                              <button
-                                onClick={() => {
-                                  if (groupActive) {
-                                    setSelectedGroups(prev => { const s = new Set(prev); s.delete(group.key); return s; });
-                                    setSelectedFixtures(prev => { const s = new Set(prev); group.fixtures.forEach(f => s.delete(f)); return s; });
-                                  } else {
-                                    setSelectedGroups(prev => new Set([...prev, group.key]));
-                                    setSelectedFixtures(prev => { const s = new Set(prev); group.fixtures.forEach(f => s.delete(f)); return s; });
-                                  }
-                                }}
-                                style={{ fontFamily:theme.typography.fontFamily, fontSize:10, padding:'2px 8px', borderRadius:theme.radius.sm, border:`1px solid ${groupActive ? theme.colors.primary : theme.colors.borderSoft}`, background: groupActive ? theme.colors.primary : theme.colors.buttonSurface, color: groupActive ? theme.colors.bgDarker : theme.colors.text, cursor:'pointer', fontWeight:700, letterSpacing:'.03em' }}
-                              >{groupActive ? '✓ Tudo' : 'Tudo'}</button>
-                            </div>
-                            {/* Fixtures individuais */}
-                            <div style={{ display:'flex', flexWrap:'wrap', gap:4, padding:6 }}>
-                              {group.fixtures.map(fname => {
-                                const isOn = groupActive || selectedFixtures.has(fname);
-                                return (
-                                  <button
-                                    key={fname}
-                                    onClick={() => {
-                                      if (groupActive) return; // grupo inteiro ativo, chips são visuais
-                                      setSelectedFixtures(prev => {
-                                        const s = new Set(prev);
-                                        if (s.has(fname)) s.delete(fname); else s.add(fname);
-                                        return s;
-                                      });
-                                    }}
-                                    style={{ fontFamily:theme.typography.fontFamily, fontSize:9, padding:'2px 6px', borderRadius:theme.radius.sm, border:`1px solid ${isOn ? theme.colors.accent : theme.colors.borderSoft}`, background: isOn ? theme.colors.accentOverlay : theme.colors.buttonSurface, color: isOn ? theme.colors.accent : theme.colors.textMuted, cursor: groupActive ? 'default' : 'pointer', whiteSpace:'nowrap' }}
-                                  >{fname.replace(/_/g,' ')}</button>
-                                );
-                              })}
-                            </div>
+                  <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted, marginBottom:8 }}>Banco de conhecimento</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                    {FIXTURE_GROUPS.map(group => {
+                      const groupActive = selectedGroups.has(group.key);
+                      const anyFixture = group.fixtures.some(f => selectedFixtures.has(f));
+                      const effective = groupActive || anyFixture;
+                      return (
+                        <div key={group.key} style={{ border:`1px solid ${effective ? theme.colors.primary : theme.colors.borderSoft}`, borderRadius:theme.radius.md, overflow:'hidden', background: effective ? theme.colors.primaryOverlay : 'transparent', transition:'border-color .15s' }}>
+                          {/* Cabeçalho do grupo */}
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderBottom:`1px solid ${effective ? theme.colors.primary : theme.colors.borderSoft}` }}>
+                            <span style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.toolbar.fontSize, fontWeight:700, color: effective ? theme.colors.primary : theme.colors.text }}>{group.label}</span>
+                            <button
+                              onClick={() => {
+                                if (groupActive) {
+                                  setSelectedGroups(prev => { const s = new Set(prev); s.delete(group.key); return s; });
+                                  setSelectedFixtures(prev => { const s = new Set(prev); group.fixtures.forEach(f => s.delete(f)); return s; });
+                                } else {
+                                  setSelectedGroups(prev => new Set([...prev, group.key]));
+                                  setSelectedFixtures(prev => { const s = new Set(prev); group.fixtures.forEach(f => s.delete(f)); return s; });
+                                }
+                              }}
+                              style={{ fontFamily:theme.typography.fontFamily, fontSize:10, padding:'2px 8px', borderRadius:theme.radius.sm, border:`1px solid ${groupActive ? theme.colors.primary : theme.colors.borderSoft}`, background: groupActive ? theme.colors.primary : theme.colors.buttonSurface, color: groupActive ? theme.colors.bgDarker : theme.colors.text, cursor:'pointer', fontWeight:700, letterSpacing:'.03em' }}
+                            >{groupActive ? '✓ Tudo' : 'Tudo'}</button>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Conteúdo — Scripts Existentes */}
-            {createModalTab === 'existentes' && (
-              <div style={{ padding:'10px 14px', maxHeight:276, overflowY:'auto', display:'flex', flexDirection:'column', gap:10 }}>
-                {existingScripts.length === 0
-                  ? <div style={{ fontSize:12, color:'#555', padding:'8px 0' }}>Nenhum script encontrado em /scripts/</div>
-                  : (
-                    <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-                      {existingScripts.map(s => (
-                        <div
-                          key={s.file}
-                          onClick={() => { setSelectedExisting(s); setScriptColor(s.color || DEFAULT_SCRIPT_COLOR); }}
-                          style={{
-                            padding:'7px 10px', borderRadius:3, cursor:'pointer', fontSize:12,
-                            background: selectedExisting?.file === s.file ? '#383838' : '#1e1e1e',
-                            border: `1px solid ${selectedExisting?.file === s.file ? '#555' : '#2a2a2a'}`,
-                            color: selectedExisting?.file === s.file ? '#fff' : '#bbb',
-                            display:'flex',
-                            alignItems:'center',
-                            gap:8,
-                          }}
-                        >
-                          <span style={{ width:12, height:12, background:s.color || DEFAULT_SCRIPT_COLOR, border:`1px solid ${theme.colors.borderSoft}`, flexShrink:0 }} />
-                          <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{s.name}</span>
+                          {/* Fixtures individuais */}
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:4, padding:6 }}>
+                            {group.fixtures.map(fname => {
+                              const isOn = groupActive || selectedFixtures.has(fname);
+                              return (
+                                <button
+                                  key={fname}
+                                  onClick={() => {
+                                    if (groupActive) return;
+                                    setSelectedFixtures(prev => {
+                                      const s = new Set(prev);
+                                      if (s.has(fname)) s.delete(fname); else s.add(fname);
+                                      return s;
+                                    });
+                                  }}
+                                  style={{ fontFamily:theme.typography.fontFamily, fontSize:9, padding:'2px 6px', borderRadius:theme.radius.sm, border:`1px solid ${isOn ? theme.colors.accent : theme.colors.borderSoft}`, background: isOn ? theme.colors.accentOverlay : theme.colors.buttonSurface, color: isOn ? theme.colors.accent : theme.colors.textMuted, cursor: groupActive ? 'default' : 'pointer', whiteSpace:'nowrap' }}
+                                >{fname.replace(/_/g,' ')}</button>
+                              );
+                            })}
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  )
-                }
-                <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
-              </div>
-            )}
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Footer */}
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
               <button
-                onClick={() => { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); setSelectedExisting(null); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }}
+                onClick={() => { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }}
                 style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}
               >Cancelar</button>
 
-              {createModalTab === 'novo' && (
-                <button
-                  onClick={async () => {
-                    if (scripts[createModal.fkey]) {
-                      const colorResult = await window.vp.createScript(createModal.fkey, scripts[createModal.fkey].name, { skipOpenEditor: true, color: scriptColor });
-                      if (colorResult?.ok) {
-                        setScripts(prev => ({
-                          ...prev,
-                          [createModal.fkey]: { ...prev[createModal.fkey], color: colorResult.color || scriptColor }
-                        }));
-                      }
-                      await window.vp.editScript(createModal.fkey);
-                      setCreateModal(null);
-                      setScriptColor(DEFAULT_SCRIPT_COLOR);
-                    } else {
-                      handleCreateScript();
+              <button
+                onClick={async () => {
+                  if (scripts[createModal.fkey]) {
+                    const colorResult = await window.vp.createScript(createModal.fkey, scripts[createModal.fkey].name, { skipOpenEditor: true, color: scriptColor });
+                    if (colorResult?.ok) {
+                      setScripts(prev => ({
+                        ...prev,
+                        [createModal.fkey]: { ...prev[createModal.fkey], color: colorResult.color || scriptColor }
+                      }));
                     }
-                  }}
-                  disabled={!scripts[createModal.fkey] && !scriptName.trim()}
-                  style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'default' : 'pointer', background: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'rgba(0,0,0,.12)' : theme.colors.primary, color: (!scripts[createModal.fkey] && !scriptName.trim()) ? theme.colors.textDisabled : '#ffffff', border:'none', boxShadow: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'none' : theme.elevation.z2 }}
-                >
-                  {scripts[createModal.fkey] ? 'Abrir no VS Code' : 'Criar e Abrir'}
-                </button>
-              )}
+                    await window.vp.editScript(createModal.fkey);
+                    setCreateModal(null);
+                    setScriptColor(DEFAULT_SCRIPT_COLOR);
+                  } else {
+                    handleCreateScript();
+                  }
+                }}
+                disabled={!scripts[createModal.fkey] && !scriptName.trim()}
+                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'default' : 'pointer', background: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'rgba(0,0,0,.12)' : theme.colors.primary, color: (!scripts[createModal.fkey] && !scriptName.trim()) ? theme.colors.textDisabled : '#ffffff', border:'none', boxShadow: (!scripts[createModal.fkey] && !scriptName.trim()) ? 'none' : theme.elevation.z2 }}
+              >
+                {scripts[createModal.fkey] ? 'Abrir no VS Code' : 'Criar e Abrir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {createModalTab === 'existentes' && (
-                <>
-                  <button
-                    onClick={async () => {
-                      if (!selectedExisting) return;
-                      const metaResult = await window.vp.createScript(createModal.fkey, selectedExisting.name, { skipOpenEditor: true, color: scriptColor });
-                      if (metaResult?.ok) {
-                        setScripts(prev => ({
-                          ...prev,
-                          [createModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, color: metaResult.color || scriptColor, running: false }
-                        }));
-                      }
-                      const result = await window.vp.editScript(createModal.fkey, selectedExisting.file);
-                      if (!result?.ok) console.warn('[vp] editScript falhou:', result?.error);
-                    }}
-                    disabled={!selectedExisting}
-                    style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? 'transparent' : 'rgba(0,0,0,.12)', color: selectedExisting ? theme.colors.primary : theme.colors.textDisabled, border:'none', boxShadow:'none' }}
-                  >Abrir no VS Code</button>
+      {/* MODAL SCRIPTS EXISTENTES */}
+      {existingScriptsModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
+          <div style={{ background:'#242424', border:'1px solid #444', borderRadius:6, width:360, fontFamily:'Segoe UI, system-ui, sans-serif', color:'#e0e0e0' }}>
 
-                  <button
-                    onClick={async () => {
-                      if (!selectedExisting) return;
-                      const result = await window.vp.createScript(createModal.fkey, selectedExisting.name, { skipOpenEditor: true, color: scriptColor });
-                      if (result.ok) {
-                        setScripts(prev => ({
-                          ...prev,
-                          [createModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, color: result.color || scriptColor, running: false }
-                        }));
-                      }
-                      setCreateModal(null);
-                      setScriptColor(DEFAULT_SCRIPT_COLOR);
-                      setSelectedExisting(null);
-                    }}
-                    disabled={!selectedExisting}
-                    style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? theme.colors.primary : 'rgba(0,0,0,.12)', color: selectedExisting ? '#ffffff' : theme.colors.textDisabled, border:'none', boxShadow: selectedExisting ? theme.elevation.z2 : 'none' }}
-                  >Usar este script</button>
-                </>
-              )}
+            {/* Header */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838' }}>
+              <span style={{ fontSize:13, fontWeight:600 }}>
+                Scripts Existentes — {existingScriptsModal.fkey}
+              </span>
+              <button onClick={() => { setExistingScriptsModal(null); setSelectedExisting(null); setScriptColor(DEFAULT_SCRIPT_COLOR); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
+            </div>
+
+            <div style={{ padding:'10px 14px', maxHeight:276, overflowY:'auto', display:'flex', flexDirection:'column', gap:10 }}>
+              {existingScripts.length === 0
+                ? <div style={{ fontSize:12, color:'#555', padding:'8px 0' }}>Nenhum script encontrado em /scripts/</div>
+                : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                    {existingScripts.map(s => (
+                      <div
+                        key={s.file}
+                        onClick={() => { setSelectedExisting(s); setScriptColor(s.color || DEFAULT_SCRIPT_COLOR); }}
+                        style={{
+                          padding:'7px 10px', borderRadius:3, cursor:'pointer', fontSize:12,
+                          background: selectedExisting?.file === s.file ? '#383838' : '#1e1e1e',
+                          border: `1px solid ${selectedExisting?.file === s.file ? '#555' : '#2a2a2a'}`,
+                          color: selectedExisting?.file === s.file ? '#fff' : '#bbb',
+                          display:'flex',
+                          alignItems:'center',
+                          gap:8,
+                        }}
+                      >
+                        <span style={{ width:12, height:12, background:s.color || DEFAULT_SCRIPT_COLOR, border:`1px solid ${theme.colors.borderSoft}`, flexShrink:0 }} />
+                        <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{s.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              }
+              <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
+            </div>
+
+            {/* Footer */}
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
+              <button
+                onClick={() => { setExistingScriptsModal(null); setSelectedExisting(null); setScriptColor(DEFAULT_SCRIPT_COLOR); }}
+                style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}
+              >Cancelar</button>
+
+              <button
+                onClick={async () => {
+                  if (!selectedExisting) return;
+                  const metaResult = await window.vp.createScript(existingScriptsModal.fkey, selectedExisting.name, { skipOpenEditor: true, color: scriptColor });
+                  if (metaResult?.ok) {
+                    setScripts(prev => ({
+                      ...prev,
+                      [existingScriptsModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, color: metaResult.color || scriptColor, running: false }
+                    }));
+                  }
+                  const result = await window.vp.editScript(existingScriptsModal.fkey, selectedExisting.file);
+                  if (!result?.ok) console.warn('[vp] editScript falhou:', result?.error);
+                }}
+                disabled={!selectedExisting}
+                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? 'transparent' : 'rgba(0,0,0,.12)', color: selectedExisting ? theme.colors.primary : theme.colors.textDisabled, border:'none', boxShadow:'none' }}
+              >Abrir no VS Code</button>
+
+              <button
+                onClick={async () => {
+                  if (!selectedExisting) return;
+                  const result = await window.vp.createScript(existingScriptsModal.fkey, selectedExisting.name, { skipOpenEditor: true, color: scriptColor });
+                  if (result.ok) {
+                    setScripts(prev => ({
+                      ...prev,
+                      [existingScriptsModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, color: result.color || scriptColor, running: false }
+                    }));
+                  }
+                  setExistingScriptsModal(null);
+                  setScriptColor(DEFAULT_SCRIPT_COLOR);
+                  setSelectedExisting(null);
+                }}
+                disabled={!selectedExisting}
+                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? theme.colors.primary : 'rgba(0,0,0,.12)', color: selectedExisting ? '#ffffff' : theme.colors.textDisabled, border:'none', boxShadow: selectedExisting ? theme.elevation.z2 : 'none' }}
+              >Usar este script</button>
             </div>
           </div>
         </div>

@@ -8,8 +8,8 @@
 > Ele tem dois leitores:
 > 1. **O desenvolvedor** (humano), que atualiza este arquivo sempre que cria algo novo,
 >    corrige um bug que mudou estrutura, adiciona um equipamento ou muda um contrato.
-> 2. **A skill `fiscal-de-skills-vplight`** (agente), que lê este arquivo e compara
->    com uma skill-alvo para decidir se a skill ainda está alinhada e "competente".
+> 2. **A skill `fiscal-do-sistema`** (agente), que lê este arquivo após mudanças no código
+>    e mantém `README.md` e este documento sincronizados.
 >
 > **Regra de ouro:** se uma informação aqui mudar, qualquer skill que repita essa
 > informação precisa ser revisada. Este arquivo é o que vence em caso de divergência.
@@ -27,9 +27,9 @@
 
 | Campo | Valor |
 |---|---|
-| Versão | 1.2 |
-| Última atualização | 2026-06-13 |
-| Base | Estado real do código + auditorias técnica e direta |
+| Versão | 1.3 |
+| Última atualização | 2026-06-28 |
+| Base | Estado real do código (jun/2026) |
 
 ---
 
@@ -79,29 +79,34 @@ C:\vp-light\
 │   ├── main.js          → IPC handlers, inicia engine, carrega show, executa scripts
 │   ├── preload.js       → expõe window.vp.* (contextBridge)
 │   ├── show.js          → lê/salva o .show.json, mantém show em memória
+│   ├── fixtureOffsets.js→ offsets pan/tilt por fixture (calibração física)
 │   └── engine/
 │       ├── engine.js    → loop setInterval 40ms (start/stop), compositor + envio Art-Net
 │       ├── compositor.js→ composição por camadas, guards, envelopes e macros
-│       ├── universe.js  → Uint8Array(512), estado dos canais DMX
-│       └── artnet.js    → monta pacote ArtDMX e envia UDP broadcast
+│       ├── universe.js  → Uint8Array(512), estado dos canais DMX (+ offsets pan/tilt)
+│       ├── artnet.js    → ArtDMX: loopback + broadcast por interface + fallback global
+│       └── interpolator.js → interpolação de movimento (pan/tilt)
 ├── src/
-│   ├── App.jsx          → roteador de telas (main ↔ fixtures)
+│   ├── App.jsx          → roteador: main | fixtures | painel
 │   ├── main.jsx         → entry point React
 │   ├── theme.js         → tokens visuais (cores, tipografia, espaçamento)
 │   ├── store/
 │   │   └── showStore.js → estado global do renderer (React Context)
-│   └── screens/
-│       ├── Main.jsx         → mesa principal (fixtures, faders, cenas, scripts, páginas)
-│       ├── FixturePanel.jsx → tabela/CRUD de aparelhos
-│       ├── FixtureEditor.jsx→ modal de edição de fixture
-│       └── SceneEditor.jsx  → editor de cena (existe no código, não roteado no App.jsx)
+│   ├── screens/
+│   │   ├── Main.jsx         → mesa principal (fixtures, faders, cenas, scripts, páginas)
+│   │   ├── PainelOperacao.jsx → tela ao vivo: macros, scripts rápidos, cenas
+│   │   ├── Viewer3D.jsx     → janela 3D (aberta via IPC; consome dmx-universe)
+│   │   ├── FixturePanel.jsx → tabela/CRUD de aparelhos
+│   │   ├── FixtureEditor.jsx→ modal de edição de fixture
+│   │   └── SceneEditor.jsx  → editor de cena (existe no código, não roteado no App.jsx)
+│   └── viewer3d/        → cena Three.js e modelos por tipo de fixture
 ├── scripts/             → arquivos .js dos efeitos DMX (um por nome) + sync-scripts.js
 ├── banco-de-conhecimento/ → notas .md por grupo de aparelho para injeção em scripts novos
 ├── shows/
-│   └── vp.show.json     → show padrão carregado na inicialização
-├── .agents/skills/      → skills locais dos agentes dentro do app/workspace
-├── .claude/skills/      → cópias de skills para CoWork/Claude
-├── skills/              → skills locais para agentes externos
+│   ├── vp.show.json     → show padrão carregado na inicialização
+│   └── fixture_template.json → modelo do fluxo "Criar novo aparelho (AI)"
+├── .agents/skills/      → skills ativas dos agentes
+├── skills-desabilitadas/→ skills arquivadas (fora do runtime)
 ├── docs/                → auditorias
 ├── index.html
 ├── vite.config.js
@@ -132,7 +137,7 @@ Usuário interage → React (src/screens/)
     → ipcMain handlers (electron/main.js)
       → universe.js / compositor.js
         → engine.js  (loop 40ms: renderFrame + sendArtDMX)
-          → artnet.js → UDP broadcast → SL3000 → DMX512 → fixture
+          → artnet.js → UDP (loopback + broadcast por interface) → SL3000 → DMX512 → fixture
 ```
 
 ---
@@ -149,9 +154,13 @@ Usuário interage → React (src/screens/)
 | Snapshot | `getUniverse()` retorna apenas canais com valor > 0 |
 | Protocolo | Art-Net (ArtDMX) sobre UDP |
 | Porta | `6454` |
-| Destino | broadcast `255.255.255.255` |
 | Universo Art-Net | fixo em `0` |
 | Pacote | header ArtDMX + 512 bytes do universo |
+| Envio loopback | `127.0.0.1:6454` — viewer 3D e receptor local |
+| Envio por interface | um socket UDP por interface IPv4 ativa, broadcast dirigido da sub-rede |
+| Fallback global | `255.255.255.255` se nenhuma interface disponível |
+| Refresh interfaces | reenumera a cada **10s** (`IFACE_REFRESH_MS`) |
+| Freeze | `artnet:setFrozen` suprime envio para rede real; loopback continua |
 
 > **Importante (estrutura de loops):** existe um relógio principal de 40ms em `engine.js`.
 > A cada frame ele chama `compositor.renderFrame()` e depois `sendArtDMX(getUniverse())`.
@@ -192,39 +201,44 @@ Macros no compositor:
 // Window
 closeApp()  onWindowCloseRequested(callback)
 
+// Visualizador 3D
+open3DViewer()  onViewer3DClosed(callback)  onDmxUniverse(callback)
+
 // Engine
-startEngine()            getEngineStatus()           stopEngine()
+startEngine()  stopEngine()  getEngineStatus()
 
 // DMX
-activateScene(channels)  setChannel(channel, value)  blackout()
-restoreState(channels)   setActiveSceneChannels(channels)
-setChannelRange(channels, value)
-setActiveScenes(scenesMap)  getConflicts()  getUniverse()
+activateScene(channels)  setChannel(channel, value)  setChannelRange(channels, value)
+blackout()  restoreState(channels)  getUniverse()  getConflicts()
+setActiveSceneChannels(channels, parLedChs?)  setActiveScenes(scenesMap)
+setFixtureSpeed(fixtureId, value)  setMovingHeadSpeed(...)  setRibaltaSpeed(...)
+
+// Art-Net (renderer)
+setArtNetFrozen(frozen)
 
 // Show
 loadShow(filePath)  saveShow(showData)  saveShowAs(showData)
-getShow()           updateScene(pageId, sceneKey, sceneData)
+getShow()  updateScene(pageId, sceneKey, sceneData)
 
 // Scripts
-listScripts()                 createScript(fkey, name, options)
-editScript(fkey, filePath)    clearScript(fkey)
-toggleScript(fkey)            getAllScripts()
+listScripts()  createScript(fkey, name, options)  editScript(fkey, filePath)
+clearScript(fkey)  toggleScript(fkey)  getAllScripts()  stopAllScripts()
 onScriptsChanged(callback)
 
 // Page scripts
-createPageScript(pageId, sceneKey, name)
-editPageScript(pageId, sceneKey)
-clearPageScript(pageId, sceneKey)
-togglePageScript(pageId, sceneKey)
+createPageScript(pageId, sceneKey, name)  editPageScript(pageId, sceneKey)
+clearPageScript(pageId, sceneKey)  togglePageScript(pageId, sceneKey)
 getAllPageScripts(pageId)
 
 // Macros
-createMacro(id, def)  startMacro(id)  stopMacro(id)
-nextMacroStep(id)     removeMacro(id)
+createMacro(id, def)  updateMacro(id, def)  startMacro(id)  stopMacro(id)
+nextMacroStep(id)  removeMacro(id)  macroList()  macroStatus()
 
 // Fixtures
 openFixtureTemplate()
 ```
+
+> **Main-only (não exposto no preload):** `artnet:getInterfaces` → `artnet.getActiveInterfaces()`.
 
 ### Window
 
@@ -232,6 +246,16 @@ openFixtureTemplate()
 |---|---|---|---|
 | `closeApp()` | `window:closeApp` | — | `{ ok }` |
 | `onWindowCloseRequested(callback)` | evento `window:close-requested` | callback | unsubscribe function |
+
+### Visualizador 3D
+
+| `window.vp` | Canal IPC / evento | Entrada | Retorno/evento |
+|---|---|---|---|
+| `open3DViewer()` | `window:open3DViewer` | — | `{ ok }` |
+| `onViewer3DClosed(callback)` | evento `viewer3d:closed` | callback | unsubscribe function |
+| `onDmxUniverse(callback)` | evento `dmx-universe` | callback(channels) | unsubscribe function |
+
+Janela separada carrega `Viewer3D.jsx`; main envia snapshot do universo a cada frame via `dmx-universe`.
 
 ### Engine
 
@@ -248,12 +272,21 @@ openFixtureTemplate()
 | `activateScene(channels)` | `dmx:activateScene` | `{ [canal]: valor }` | `{ ok: true }` |
 | `setChannel(channel, value)` | `dmx:setChannel` | `number, number` | `{ ok: true }` |
 | `setChannelRange(channels, value)` | `dmx:setChannelRange` | `number[], number` | `{ ok, count }` |
+| `setFixtureSpeed(fixtureId, value)` | `custom:speed` | id, 0–255 | `{ ok }` |
+| `setMovingHeadSpeed(fixtureId, value)` | `custom:speed` | id, 0–255 | `{ ok }` |
+| `setRibaltaSpeed(fixtureId, value)` | `custom:speed` | id, 0–255 | `{ ok }` |
 | `blackout()` | `dmx:blackout` | — | `{ ok: true }` |
 | `restoreState(channels)` | `dmx:restoreState` | `{ [canal]: valor }` | `{ ok: true }` |
-| `setActiveSceneChannels(channels)` | `dmx:setActiveSceneChannels` | `{ [canal]: valor }` | `{ ok: true }` |
+| `setActiveSceneChannels(channels, parLedChs?)` | `dmx:setActiveSceneChannels` | mapa, array opcional | `{ ok: true }` |
 | `setActiveScenes(scenesMap)` | `dmx:setActiveScenes` | `{ [id]: { name, channels } }` | `{ ok: true }` |
 | `getConflicts()` | `dmx:getConflicts` | — | lista de conflitos |
 | `getUniverse()` | `dmx:getUniverse` | — | `{ [canal]: valor }` (apenas > 0) |
+
+### Art-Net (renderer)
+
+| `window.vp` | Canal IPC | Entrada | Retorno |
+|---|---|---|---|
+| `setArtNetFrozen(frozen)` | `artnet:setFrozen` | `boolean` | `{ ok, frozen }` |
 
 ### Show
 
@@ -275,6 +308,7 @@ openFixtureTemplate()
 | `clearScript(fkey)` | `script:clear` | F-key | `{ ok: true }` |
 | `toggleScript(fkey)` | `script:toggle` | F-key | `{ ok, running }` |
 | `getAllScripts()` | `script:getAll` | — | `{ [fkey]: { name, file, running } }` |
+| `stopAllScripts()` | `script:stopAll` | — | `{ ok }` |
 | `onScriptsChanged(callback)` | evento `scripts:changed` | callback | unsubscribe function |
 
 > **Identificador de script é a F-key** (`"F1"`…`"F12"`), não o nome do arquivo.
@@ -301,26 +335,31 @@ openFixtureTemplate()
 | `window.vp` | Canal IPC | Entrada | Retorno |
 |---|---|---|---|
 | `createMacro(id, def)` | `macro:create` | id, definição | `{ ok, steps }` ou `{ ok:false, error }` |
+| `updateMacro(id, def)` | `macro:update` | id, definição | `{ ok, steps }` ou `{ ok:false, error }` |
 | `startMacro(id)` | `macro:start` | id | `{ ok }` |
 | `stopMacro(id)` | `macro:stop` | id | `{ ok }` |
 | `nextMacroStep(id)` | `macro:next` | id | `{ ok }` |
 | `removeMacro(id)` | `macro:remove` | id | `{ ok }` |
+| `macroList()` | `macro:list` | — | `MacroDef[]` |
+| `macroStatus()` | `macro:status` | — | status da macro ativa |
 
-`macro:create` aceita:
+`macro:create` / `macro:update` aceitam:
 
 ```js
 {
+  name: "Nome exibido",
   steps: [
-    { name, durationMs, fadeInMs, fadeOutMs, overlapMs }
+    { script, durationMs, fadeInMs, fadeOutMs, overlapMs }
   ],
   mergeMode: "htp" | "linear",
   loop: boolean
 }
 ```
 
-- `steps[].name` resolve `C:\vp-light\scripts\<name>.js`.
+- `steps[].script` (ou `name`) resolve `C:\vp-light\scripts\<script>.js`.
 - `durationMs == null` ou `"infinite"` vira passo manual até `nextMacroStep`.
 - Tempos são convertidos para frames de 40ms no main.
+- Definições persistem em `show.json` → `macros[]` via `saveMacros()` no main.
 
 ### Fixtures
 
@@ -332,7 +371,7 @@ openFixtureTemplate()
 
 ## 8. Modelo de dados — `.show.json`
 
-Blocos de topo: `version`, `meta`, `fixtures`, `pages`, `page_scripts`, `scripts`.
+Blocos de topo: `version`, `meta`, `fixtures`, `pages`, `page_scripts`, `scripts`, `macros`.
 
 ```json
 {
@@ -340,7 +379,10 @@ Blocos de topo: `version`, `meta`, `fixtures`, `pages`, `page_scripts`, `scripts
   "meta": {
     "name": "Vida e Paz — Show Principal",
     "createdAt": "2025-01-01",
-    "notes": "Show base para o Fire. Salvar antes de sair!"
+    "notes": "Show base para o Fire. Salvar antes de sair!",
+    "viewport": {
+      "grid": { "zoom": 1, "panX": 0, "panY": 0 }
+    }
   },
   "fixtures": [
     {
@@ -351,6 +393,8 @@ Blocos de topo: `version`, `meta`, `fixtures`, `pages`, `page_scripts`, `scripts
       "channels": ["dimmer", "strobo", "", "", "red", "green", "blue", "white"],
       "posX": 338,
       "posY": 357,
+      "panOffset": 0,
+      "tiltOffset": 0,
       "enabled": true
     }
   ],
@@ -369,7 +413,24 @@ Blocos de topo: `version`, `meta`, `fixtures`, `pages`, `page_scripts`, `scripts
   },
   "scripts": {
     "F1": { "name": "louvorzao-branco-fogo", "file": "C:\\vp-light\\scripts\\louvorzao-branco-fogo.js" }
-  }
+  },
+  "macros": [
+    {
+      "id": "macro-louvor",
+      "name": "Macro Louvor",
+      "mergeMode": "htp",
+      "loop": false,
+      "steps": [
+        {
+          "script": "louvorzao-branco-fogo",
+          "durationMs": 2000,
+          "fadeInMs": 400,
+          "fadeOutMs": 400,
+          "overlapMs": 200
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -382,7 +443,10 @@ Contrato implícito:
 - `scenes` é objeto indexado por tecla de cena (ver §9).
 - `scene.channels` é mapa `{ "canal": valor }`, normalmente só valores > 0.
 - `page_scripts` é objeto `{ [pageId]: { [sceneKey]: { name, file } } }`.
-- `scripts` é objeto indexado por F-key (`"F1"`…`"F12"`), com `{ name, file }`.
+- `scripts` é objeto indexado por F-key (`"F1"`…`"F12"`), com `{ name, file, color? }`.
+- `macros` é array de definições `{ id, name, mergeMode, loop, steps[] }`; persistido pelo main em `show:save`.
+- `meta.viewport.grid` persiste zoom e pan da mesa (`zoom`, `panX`, `panY`).
+- `fixtures[].panOffset` / `tiltOffset`: calibração física; universo grava `físico = lógico + offset` em aliases `pan`/`tilt`; renderer vê valores lógicos.
 - Ao carregar metadados de script, o main resolve o arquivo por `name` relativo a `SCRIPTS_DIR`; caminho absoluto salvo em `file` não é fonte de verdade portátil.
 - Em `show:save`, `scriptMeta` do main é a única fonte de verdade de `scripts`; entradas removidas por `script:clear` não são herdadas do disco/renderer.
 - Em `show.js`, `scripts` só é preservado do `currentShow` quando `showData.scripts == null`; `scripts: {}` é estado legítimo após limpar todos.
@@ -390,7 +454,8 @@ Contrato implícito:
 - Fixture com `enabled: false` permanece no show, mas seus canais são ignorados em validação de overlap ativo e bloqueados nos caminhos DMX/script quando não houver fixture habilitado cobrindo o mesmo canal.
 
 Campos de fixture lidos mas opcionais (presentes no painel): `manufacturer`, `model`,
-`fixtureType`, `universe`, `group`, `par`, `rdm`, `note`, `observation`, `enabled`.
+`fixtureType`, `universe`, `group`, `par`, `rdm`, `note`, `observation`, `enabled`,
+`panOffset`, `tiltOffset`, `virtualPanTiltSpeed`.
 
 ---
 
@@ -451,19 +516,21 @@ da pasta às F-keys, escrevendo direto no `shows/vp.show.json`.
 Macros:
 
 - Macro é um sequenciador backend de scripts existentes.
-- Cada passo referencia `name` de script e é compilado em camada no momento do disparo.
+- Cada passo referencia `script` (nome do arquivo em `scripts/`) e é compilado em camada no disparo.
 - Crossfade é feito por envelope de peso (`fadeInFrames`/`fadeOutFrames`) e `overlapFrames`.
 - `mergeMode` pode ser `htp` ou `linear`.
-- A UI dedicada de macro ainda não aparece como tela própria; o contrato disponível é IPC/preload (§7).
+- UI principal de macros: `PainelOperacao.jsx`; contrato IPC completo em §7.
 
 ---
 
-## 11. Fixtures (comportamento na mesa)
+## 11. Fixtures e telas (comportamento)
 
 - Aparecem como blocos arrastáveis em `Main.jsx`; posição salva em `posX`/`posY`.
 - Rubber-band selection: arrastar área seleciona múltiplos; clicar no vazio desmarca.
-- O painel do fixture selecionado mostra faders ao vivo; cada fader chama `setChannel()` em tempo real.
+- Painel direito de `Main.jsx` (**Descrição**): faders ao vivo da fixture selecionada; funções personalizadas por tipo.
 - CRUD de fixtures em `FixturePanel.jsx` (novo, editar, remover, duplicar) + `FixtureEditor.jsx`.
+- `PainelOperacao.jsx`: operação ao vivo — macros, abas F-keys / page-scripts / cenas.
+- `App.jsx` roteia `main` | `fixtures` | `painel`.
 
 ---
 
@@ -495,22 +562,23 @@ buttonBg:      #000000      buttonSurface:  #233237      buttonHover: #30464d
 > O desenvolvedor preenche aqui a cada nova feature, correção estrutural, equipamento
 > ou mudança de contrato. Mais recente no topo.
 
+- **2026-06-28** — Sincronizado com estado atual: Art-Net multi-interface + freeze, viewer 3D, PainelOperacao, macros completas (CRUD/list/status + persistência), offsets pan/tilt, remoção do ChatPanel, skills em `.agents/skills/` vs `skills-desabilitadas/`, IPC ampliado (stopAllScripts, custom:speed, setArtNetFrozen).
 - **2026-06-13** — Atualizado para arquitetura de scripts por `compositor.js`: camadas, tick único da engine, macros/crossfade, IPC de macros, `page_scripts`, injeção de `banco-de-conhecimento` e regras de persistência de `scripts`.
 - **2026-06-10** — Atualizado para documentar lifecycle de scripts: `OnTerminate` é chamado em clear/toggle/blackout.
 - **2026-06-10** — Criação do README_SKILL.md a partir do estado real do código e das auditorias.
 
 ---
 
-## 14. Checklist de validação de skill (uso da sync-skills)
+## 14. Checklist de validação de skill (uso do fiscal-de-skills ou auditoria manual)
 
 Uma skill-alvo está **alinhada** quando bate com este README em:
 
 1. Nome do arquivo de show (`vp.show.json`).
-2. Estrutura de pastas e nomes de telas (inclui `SceneEditor.jsx` existente mas não roteado).
-3. Contratos IPC: nomes, assinaturas e identificador por F-key (§7).
-4. Specs da engine: 40ms/25fps, Art-Net, porta 6454, broadcast, universo 0, compositor por camadas e tick único (§6).
-5. Modelo `show.json`: blocos `version/meta/fixtures/pages/page_scripts/scripts`, `enabled:false` e contrato de canais (§8).
+2. Estrutura de pastas e nomes de telas (Main, PainelOperacao, Viewer3D, FixturePanel, FixtureEditor, SceneEditor não roteado).
+3. Contratos IPC: nomes, assinaturas e identificador por F-key (§7), incluindo viewer 3D, Art-Net freeze, macros CRUD/list/status, stopAllScripts, custom:speed.
+4. Specs da engine e Art-Net: 40ms/25fps, loopback + broadcast por interface, porta 6454, universo 0, compositor por camadas, freeze (§6).
+5. Modelo `show.json`: blocos `version/meta/fixtures/pages/page_scripts/scripts/macros`, `meta.viewport`, `enabled:false`, offsets pan/tilt e contrato de canais (§8).
 6. SCENE_KEYS `ASDFGHJKLZXCV` (não A–M) (§9).
 7. Contrato de scripts: `OnStart/OnExecute/OnTerminate` + `SetChannel` em buffer de camada + `getChannel` (§10).
 8. Paleta atual teal/verde do `theme.js` (§12).
-9. Contratos de macros: `createMacro/startMacro/stopMacro/nextMacroStep/removeMacro` (§7).
+9. Skills ativas só em `.agents/skills/`; arquivadas em `skills-desabilitadas/` (§3).

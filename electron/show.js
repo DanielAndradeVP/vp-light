@@ -240,6 +240,24 @@ function getStartupChannels() {
   return startupChannels;
 }
 
+const DEFAULT_STARTUP_PAGE_ID = '1';
+const DEFAULT_STARTUP_SCENE_KEY = 'A';
+
+/**
+ * Cena padrão ao iniciar o app: tecla A da página 1.
+ * @returns {{ pageId: string, sceneKey: string, name: string, channels: Object } | null}
+ */
+function getDefaultStartupScene() {
+  const scene = currentShow?.pages?.[DEFAULT_STARTUP_PAGE_ID]?.scenes?.[DEFAULT_STARTUP_SCENE_KEY];
+  if (!scene?.channels || Object.keys(scene.channels).length === 0) return null;
+  return {
+    pageId: DEFAULT_STARTUP_PAGE_ID,
+    sceneKey: DEFAULT_STARTUP_SCENE_KEY,
+    name: scene.name || DEFAULT_STARTUP_SCENE_KEY,
+    channels: scene.channels,
+  };
+}
+
 /**
  * Atualiza uma cena específica em memória.
  * @param {string|number} pageId   ID da página
@@ -259,4 +277,6 @@ function updateScene(pageId, sceneKey, sceneData) {
   }
 }
 
-module.exports = { loadShow, saveShow, saveShowAs, getShow, getStartupChannels, updateScene, validateFixtures };
+module.exports = {
+  loadShow, saveShow, saveShowAs, getShow, getStartupChannels, getDefaultStartupScene, updateScene, validateFixtures,
+};

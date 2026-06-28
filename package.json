@@ -8,8 +8,11 @@
   },
   "scripts": {
     "start": "electron .",
-    "dev": "concurrently \"vite --port 5173\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev": "concurrently -k --success first \"vite --port 5173 --strictPort\" \"wait-on http://localhost:5173 && electron .\"",
     "dev:linux": "concurrently \"vite --port 5173\" \"wait-on http://localhost:5173 && electron . --disable-gpu\"",
+    "setup:linux-icon": "node tools/setup-linux-desktop-icon.js",
+    "setup:linux-app": "node tools/setup-linux-app.js",
+    "setup:windows-app": "powershell -ExecutionPolicy Bypass -File tools/setup-windows-app.ps1",
     "build": "vite build && electron-builder"
   },
   "devDependencies": {

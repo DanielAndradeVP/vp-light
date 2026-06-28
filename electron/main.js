@@ -8,10 +8,10 @@
  *   - Carrega o show padrão na inicialização
  */
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
-const path = require('path');
-const { execFile, spawn } = require('child_process');
 const fs = require('fs');
+const path = require('path');
+const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
+const { execFile, spawn } = require('child_process');
 
 const universe     = require('./engine/universe');
 const engine       = require('./engine/engine');
@@ -27,6 +27,28 @@ const fixtureAdapter = require('./adapter');
 
 const isDev = !app.isPackaged;
 const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
+
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('class', 'vp-light');
+  app.setDesktopName('vp-light.desktop');
+}
+
+app.setName('VP Light');
+
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.vplight.app');
+}
+
+const iconPath = process.platform === 'win32'
+  ? path.resolve(__dirname, '..', 'assets', 'icons', 'icon.ico')
+  : path.resolve(__dirname, '..', 'assets', 'icons', 'icon.png');
+
+const appIcon = nativeImage.createFromPath(iconPath);
+
+console.log('[VP Light] platform:', process.platform);
+console.log('[VP Light] iconPath:', iconPath);
+console.log('[VP Light] icon exists:', fs.existsSync(iconPath));
+console.log('[VP Light] icon empty:', appIcon.isEmpty());
 
 const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
 if (!fs.existsSync(SCRIPTS_DIR)) fs.mkdirSync(SCRIPTS_DIR);
@@ -140,6 +162,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 600,
     title: 'vp-light',
+    icon: appIcon,
     backgroundColor: '#0a0a0a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -181,6 +204,7 @@ function createViewer3DWindow() {
     height: 720,
     resizable: true,
     title: 'vp-light 3D — Vida e Paz',
+    icon: appIcon,
     backgroundColor: '#000000',
     webPreferences: {
       contextIsolation: true,
@@ -392,6 +416,7 @@ ipcMain.handle('show:load', async (_, filePath) => {
     initializeOffsets();
     const startupChannels = show.getStartupChannels();
     Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
+    applyDefaultStartupScene();
     return { ok: true, show: data, path: targetPath };
   } catch (err) {
     console.error('[main] show:load error:', err.message);
@@ -759,6 +784,16 @@ function applyDmxChannelMap(channelMap) {
   Object.entries(channelMap || {}).forEach(([channel, value]) => {
     setDmxChannelRuntime(channel, value);
   });
+}
+
+/** Aplica cena A da página 1 como cena ativa no main (DMX + lock do compositor). */
+function applyDefaultStartupScene() {
+  const defaultScene = show.getDefaultStartupScene();
+  if (!defaultScene) return;
+  const channels = filterDisabledFixtureChannels(defaultScene.channels);
+  activeSceneChannels = { ...channels };
+  _applySceneLock();
+  applyDmxChannelMap(channels);
 }
 
 function filterDisabledFixtureScenes(scenesMap) {
@@ -1354,6 +1389,7 @@ app.whenReady().then(() => {
       initializeOffsets();
       const startupChannels = show.getStartupChannels();
       Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
+      applyDefaultStartupScene();
       console.log('[main] scripts carregados:', Object.keys(scriptMeta));
     } catch (e) {
       console.warn('[main] falha ao carregar show padrao:', e.message);
@@ -1371,7 +1407,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   engine.stop();
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
 
 app.on('activate', () => {

@@ -28,6 +28,40 @@ Arquivos em `electron/` exigem reiniciar o `npm run dev`.
 
 ---
 
+## Atalho na área de trabalho / menu
+
+Scripts de setup ficam em `tools/` (separados dos scripts DMX em `scripts/`).
+
+### Windows
+
+Na primeira vez — ou depois de mover/atualizar o projeto — crie os atalhos na Área de Trabalho e no Menu Iniciar:
+
+```bash
+npm run setup:windows-app
+```
+
+Isso executa `tools/setup-windows-app.ps1` e cria atalhos apontando para `tools/run-vp-light-dev.cmd`, que inicia o app com `npm run dev`.
+
+Se o atalho parar de funcionar após uma atualização do repositório, rode o comando de novo para recriar os atalhos com os caminhos corretos.
+
+### Linux (Ubuntu)
+
+```bash
+npm run setup:linux-app
+```
+
+Cria o item **VP Light** no menu de aplicativos, usando `tools/run-vp-light-dev.sh` (libera portas ocupadas antes e depois do dev).
+
+Alternativa com terminal visível:
+
+```bash
+npm run setup:linux-icon
+```
+
+Se o atalho fixado na barra ou dock ainda apontar para um caminho antigo, remova-o e adicione de novo pelo menu após rodar o setup.
+
+---
+
 ## Estrutura de arquivos
 
 ```
@@ -47,21 +81,23 @@ vp-light/
 │   ├── screens/
 │   │   ├── Main.jsx         ← tela principal: mesa de aparelhos, faders, cenas, scripts e páginas
 │   │   ├── PainelOperacao.jsx ← tela ao vivo: macros, scripts rápidos, page-scripts e cenas
-│   │   ├── ChatPanel.jsx    ← aba Chat do painel direito, com menu de skills locais
+│   │   ├── Viewer3D.jsx     ← visualizador 3D (janela separada via IPC)
 │   │   ├── FixturePanel.jsx ← painel de aparelhos: tabela, novo/remover/duplicar
 │   │   └── FixtureEditor.jsx← modal: abas Básico e Descrição
+│   └── viewer3d/        ← cena Three.js e modelos por tipo de fixture
 │   └── store/
 │       └── showStore.js ← estado global via React Context
 ├── scripts/
 │   └── *.js           ← scripts de efeito DMX (F1–F12)
+├── tools/
+│   └── *              ← utilitários do projeto (setup, launcher dev, sync-scripts)
 ├── banco-de-conhecimento/
 │   └── *.md           ← notas por grupo de aparelho injetadas em scripts novos
 ├── shows/
 │   ├── vp.show.json        ← show padrão carregado na inicialização
 │   └── fixture_template.json ← modelo aberto pelo fluxo "Criar novo aparelho (AI)"
-├── .agents/           ← skills dos agentes VS Code
-├── .claude/           ← espelhos de skills para Claude/CoWork
-├── skills/            ← cópias/skills locais para agentes externos
+├── .agents/skills/    ← skills ativas dos agentes
+├── skills-desabilitadas/ ← skills arquivadas (fora do runtime)
 ├── README_SKILL.md    ← documentação estrutural para agentes
 ├── index.html
 ├── vite.config.js
@@ -303,9 +339,10 @@ O botão `mode` alterna entre o layout manual da grade e um layout agrupado por 
 fixture; no modo agrupado os aparelhos são reorganizados visualmente para operação e seleção, sem
 reescrever suas posições salvas.
 
-O painel direito da tela principal alterna entre **Chat** e **Descrição**. Em **Descrição**, os
-faders mostram os canais da fixture selecionada e acompanham a prioridade real do universo:
-cenas ativas primeiro, depois scripts em execução, depois zero.
+O painel direito da tela principal exibe **Descrição**: faders dos canais da fixture selecionada
+e acompanham a prioridade real do universo — cenas ativas primeiro, depois scripts em execução,
+depois zero. Com múltiplas fixtures selecionadas, canais com o mesmo alias são agrupados em um
+fader único.
 
 Alguns tipos de fixture podem expor funções personalizadas no painel de faders. Ribaltas usam esse
 mecanismo para o ALL ON: o painel agrupa os canais de LED e envia o mesmo valor em lote por
@@ -315,27 +352,20 @@ mecanismo para o ALL ON: o painel agrupa os canais de LED e envia o mesmo valor 
 
 ## Agentes de IA
 
-Skills ficam em `skills/` (pastas com `SKILL.md`) e servem tarefas específicas. Principais:
+Skills **ativas** ficam em `.agents/skills/` (pastas com `SKILL.md`):
 
-- `desenvolvedor-backend-vplight`: backend/engine, Art‑Net, IPC, scripts de efeito.
-- `desenvolvedor-frontend-vplight`: UI, telas, tokens do `src/theme.js` e consistência visual.
-- `gerador-de-prompts-vplight`: gera prompts formatados para o CoWork (geração de mudanças).
-- `criador-de-tarefa-vplight`: registra bugs, melhorias e novas funcionalidades como tarefas no Notion.
-- `fiscal-de-skills-vplight`: audita e valida skills contra o `README_SKILL.md`.
+- `desenvolvedor-backend`: backend/engine, Art-Net, IPC, scripts de efeito, macros.
+- `desenvolvedor-frontend`: UI, telas, tokens do `src/theme.js`, visualizador 3D.
 - `fiscal-do-sistema`: sincroniza `README_SKILL.md` e `README.md` a partir de mudanças no código.
-- `alinhador-de-sistema`: caminho inverso do fiscal; lê a documentação atual e corrige código antigo que divergiu dela, uma área por vez.
+- `create-skill`: cria novas skills no projeto.
+
+Skills arquivadas (não usadas pelo runtime) estão em `skills-desabilitadas/`.
 
 Uso rápido:
-1. Leia `skills/<nome>/SKILL.md` para entender o propósito da skill.
-2. Abra o chat do agente no VS Code e invoque a skill pelo nome.
+1. Leia `.agents/skills/<nome>/SKILL.md` para entender o propósito da skill.
+2. Abra o chat do agente no VS Code/Cursor e invoque a skill pelo nome.
 3. Para gerar scripts, cole `shows/vp.show.json` antes de pedir geração.
 4. Ao alterar equipamentos ou o show, atualize e cole `vp.show.json` antes de usar as skills.
-
-A aba **Chat** dentro do vp-light lista as skills de `.agents/skills/*/SKILL.md` no botão `+` e
-insere a menção no cursor do input. Algumas skills também existem como espelhos em `skills/` e
-`.claude/skills/`, para serem usadas fora do runtime do app. O envio de mensagens depende de um
-backend exposto em `window.vp.sendChat`; sem essa ponte, a própria interface avisa que o chat ainda
-não está conectado.
 
 ---
 
@@ -343,11 +373,10 @@ não está conectado.
 
 Existem duas formas de gerar scripts DMX para associar a botões `F1`–`F12` ou a teclas de cena:
 
-### 1. Via CoWork (Claude)
+### 1. Via agente no Cursor / VS Code
 
-Abra o projeto `C:\vp-light` no CoWork e mencione a skill `gerador-de-prompts-vplight` para
-formatar a solicitação, ou use uma skill técnica específica quando o agente disponível suportar
-escrita direta em `scripts/`. Descreva o efeito desejado informando o id da fixture e as
+Abra o projeto e mencione a skill `desenvolvedor-backend` (scripts diretos) ou
+`desenvolvedor-frontend` (UI). Descreva o efeito desejado informando o id da fixture e as
 características dos canais (cores, strobo, dimmer, etc.).
 
 O agente deve usar `vp.show.json` para mapear as fixtures e suas funções por canal (via label da
@@ -356,7 +385,7 @@ descrição), e então gerar ou orientar a criação do arquivo `.js` na pasta `
 Depois de criar o arquivo, associe-o a uma F-key ou a uma tecla de cena pelo menu de contexto na
 tela principal.
 
-### 2. Via Copilot no VS Code
+### 2. Via Copilot no VS Code (alternativa)
 
 No chat do VS Code, mencione a skill adequada e anexe `shows/vp.show.json`. Descreva o efeito
 desejado da mesma forma.

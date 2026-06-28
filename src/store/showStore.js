@@ -129,6 +129,15 @@ const DEFAULT_SHOW = {
   pages: createDefaultPages(),
 };
 
+const DEFAULT_STARTUP_PAGE_ID = '1';
+const DEFAULT_STARTUP_SCENE_KEY = 'A';
+
+function getDefaultStartupActiveScenes(showData) {
+  const scene = showData?.pages?.[DEFAULT_STARTUP_PAGE_ID]?.scenes?.[DEFAULT_STARTUP_SCENE_KEY];
+  if (!scene?.channels || Object.keys(scene.channels).length === 0) return [];
+  return [sceneRefId(DEFAULT_STARTUP_PAGE_ID, DEFAULT_STARTUP_SCENE_KEY)];
+}
+
 export function ShowProvider({ children }) {
   const [show, setShow] = useState(DEFAULT_SHOW);
   const [currentPage, setCurrentPage] = useState('1');
@@ -140,7 +149,12 @@ export function ShowProvider({ children }) {
     async function init() {
       try {
         const result = await window.vp.getShow();
-        if (result?.show) setShow(normalizeShowFixturePositions(normalizeShowPages(result.show)));
+        if (result?.show) {
+          const loadedShow = normalizeShowFixturePositions(normalizeShowPages(result.show));
+          setShow(loadedShow);
+          setCurrentPage(DEFAULT_STARTUP_PAGE_ID);
+          setActiveScenes(getDefaultStartupActiveScenes(loadedShow));
+        }
       } catch (e) {
         console.error('[showStore] init:', e);
       } finally {
@@ -158,9 +172,10 @@ export function ShowProvider({ children }) {
   const loadShow = useCallback(async () => {
     const result = await window.vp.loadShow();
     if (result.ok) {
-      setShow(normalizeShowFixturePositions(normalizeShowPages(result.show)));
-      setCurrentPage('1');
-      setActiveScenes([]);
+      const loadedShow = normalizeShowFixturePositions(normalizeShowPages(result.show));
+      setShow(loadedShow);
+      setCurrentPage(DEFAULT_STARTUP_PAGE_ID);
+      setActiveScenes(getDefaultStartupActiveScenes(loadedShow));
     }
     return result;
   }, []);
