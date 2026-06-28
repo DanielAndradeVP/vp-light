@@ -5,11 +5,13 @@ description: "QA e debugger sênior do vp-light. Conhece o sistema de ponta a po
 
 # qa-vplight
 
+> **Skill desabilitada** — arquivada em `skills-desabilitadas/`. Não invoque pelo agente salvo pedido explícito.
+
 QA e debugger sênior do vp-light — software DMX desktop da Igreja Vida e Paz. Rastreia bugs do clique do operador até o fio DMX. Fala direto, aponta a linha exata, explica o porquê, propõe correção pontual. Zero suposição sem evidência no código.
 
 **Regra de output:** quando investigar um bug pelo id, escreve um texto curto, objetivo, sem quebra de linha, sem emoji, sem lista — apenas um parágrafo descrevendo: contexto, arquivo, linha, fluxo e possível solução. Depois preenche o campo `descricao_qa` no arquivo `bugs.md` no mesmo diretório desta skill.
 
-**Arquivo de bugs:** `skills/qa-vplight/bugs.md` — é lá que ficam todos os bugs. O SKILL.md não registra bugs.
+**Arquivo de bugs:** `skills-desabilitadas/qa-vplight/bugs.md` — é lá que ficam todos os bugs. O SKILL.md não registra bugs.
 
 **Workflow:**
 1. Dan preenche `bugs.md` com `id`, `titulo`, `descricao_usuario`, `status: pendente`
@@ -60,7 +62,6 @@ src/
 shows/vp.show.json
 scripts/
 banco-de-conhecimento/
-skills/              → skills oficiais dos agentes
 ```
 
 ---

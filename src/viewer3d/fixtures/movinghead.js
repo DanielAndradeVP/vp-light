@@ -215,10 +215,11 @@ export function update(group, channels) {
   group.userData.lastUpdateMs = now;
 
   const panOffsetDeg = group.userData.panOffsetDeg ?? DEFAULT_PAN_OFFSET_DEG;
+  const panSign = group.userData.panSign ?? 1;
   const tiltSign = group.userData.tiltSign ?? 1;
 
   const targetPanDeg =
-    dmxToDeg(pan, PAN_MIN_DEG, PAN_MAX_DEG) + panOffsetDeg;
+    dmxToDeg(pan, PAN_MIN_DEG, PAN_MAX_DEG) * panSign + panOffsetDeg;
   const targetTiltDeg = dmxToDeg(tilt, TILT_MIN_DEG, TILT_MAX_DEG) * tiltSign;
 
   if (group.userData.currentPanDeg === undefined) {

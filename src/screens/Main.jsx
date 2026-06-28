@@ -2,9 +2,9 @@
  * Main.jsx — Tela principal
  * Mesa de aparelhos + painel direito com faders ao vivo + cenas A-M + páginas
  */
-import React, { useEffect, useCallback, useState, useRef } from 'react';
+import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { activeSceneMatches, parseSceneRef, sceneRefId, useShow } from '../store/showStore.js';
-import theme from '../theme.js';
+import theme, { getContrastTextColor, getPaletteSelectionBorder, normalizeHexColor, resolvePaletteColor } from '../theme.js';
 
 const SCENE_KEYS = ['A','S','D','F','G','H','J','K','L','Z','X','C','V'];
 const RIGHT_PANEL_MIN_WIDTH = 260;
@@ -13,16 +13,94 @@ const DESK_MIN_WIDTH = 360;
 const MAX_PAGE = 10;
 const COLOR_PALETTE = theme.colors.scenePalette;
 const DEFAULT_SCRIPT_COLOR = COLOR_PALETTE[0];
+const EXISTING_SCRIPTS_SHOW_VSCODE = false;
+
+const EXISTING_SCRIPT_CATEGORIES = [
+  { key: 'moving', label: 'Moving' },
+  { key: 'brut', label: 'Brut' },
+  { key: 'ribalta', label: 'Ribalta' },
+  { key: 'mov_ribalta', label: 'Mov + Ribalta' },
+  { key: 'mov_ribalta_brut', label: 'Mov + Ribalta + Brut' },
+  { key: 'outros', label: 'Outros' },
+];
+
+function classifyExistingScriptByName(name) {
+  const n = String(name || '').toLowerCase();
+  const hasMov = /mov|moving/.test(n);
+  const hasBrut = /brut/.test(n);
+  const hasRib = !/sem[-_]rib/.test(n) && (/ribalta/.test(n) || /(?:^|[-_])rib(?:$|[-_])/.test(n));
+
+  if (hasMov && hasRib && hasBrut) return 'mov_ribalta_brut';
+  if (hasMov && hasRib) return 'mov_ribalta';
+  if (hasMov && !hasRib && !hasBrut) return 'moving';
+  if (hasBrut && !hasMov && !hasRib) return 'brut';
+  if (hasRib && !hasMov && !hasBrut) return 'ribalta';
+  return 'outros';
+}
+
+function groupExistingScripts(scripts) {
+  const buckets = Object.fromEntries(EXISTING_SCRIPT_CATEGORIES.map(c => [c.key, []]));
+  for (const script of scripts) {
+    buckets[classifyExistingScriptByName(script.name)].push(script);
+  }
+  for (const key of Object.keys(buckets)) {
+    buckets[key].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }
+  return EXISTING_SCRIPT_CATEGORIES
+    .map(category => ({ ...category, scripts: buckets[category.key] }));
+}
+
 const GRID = 40;          // tamanho do quadradinho da grade — o aparelho ocupa exatamente 1 quadrado
 
+const RIGHT_PANEL_COLLAPSED_WIDTH = 32;
+
+function RightPanelToggleButton({ collapsed, onClick }) {
+  const dividerX = collapsed ? 8.5 : 17.5;
+  const stroke = theme.colors.border;
+  const fill = theme.colors.buttonSurface;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={collapsed ? 'Expandir painel Descrição' : 'Recolher painel Descrição'}
+      aria-expanded={!collapsed}
+      aria-label={collapsed ? 'Expandir painel Descrição' : 'Recolher painel Descrição'}
+      style={{
+        width: 28,
+        height: 22,
+        padding: 0,
+        margin: 0,
+        background: theme.colors.panelDark,
+        border: theme.borders.thin,
+        borderRadius: theme.radius.none,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        outline: 'none',
+        boxShadow: theme.elevation.none,
+      }}
+    >
+      <svg width="24" height="18" viewBox="0 0 26 20" aria-hidden="true" style={{ display: 'block' }}>
+        <rect x="0.75" y="0.75" width="24.5" height="18.5" rx="0" ry="0" fill={fill} stroke={stroke} strokeWidth="1.25" />
+        <line x1={dividerX} y1="4" x2={dividerX} y2="16" stroke={stroke} strokeWidth="1.25" />
+      </svg>
+    </button>
+  );
+}
+
 function ColorPaletteField({ value, onChange, label = 'Cor' }) {
+  const normalizedValue = normalizeHexColor(value);
   return (
     <div>
       <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, fontWeight:400, color:theme.colors.textSecondary, marginBottom:4 }}>
         {label}
       </div>
       <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-        {COLOR_PALETTE.map(color => (
+        {COLOR_PALETTE.map(color => {
+          const isSelected = normalizedValue === normalizeHexColor(color);
+          return (
           <button
             key={color}
             type="button"
@@ -33,13 +111,14 @@ function ColorPaletteField({ value, onChange, label = 'Cor' }) {
               borderRadius:theme.radius.none,
               background:color,
               cursor:'pointer',
-              border:value === color ? theme.borders.strong : theme.borders.soft,
+              border: getPaletteSelectionBorder(color, isSelected),
               outline:'none',
-              boxShadow:'none',
+              boxShadow: isSelected && getContrastTextColor(color) === '#000000' ? '0 0 0 1px #8db8b8' : 'none',
               padding:0,
             }}
           />
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -116,6 +195,10 @@ function getFixtureDisplayName(name) {
 
 function isFixtureEnabled(fixture) {
   return fixture?.enabled !== false;
+}
+
+function getEnabledFixtures(fixtures) {
+  return (fixtures || []).filter(isFixtureEnabled);
 }
 
 // Retorna uma string css rgb() baseada nos canais "red"/"green"/"blue"/"dimmer" do fixture
@@ -385,7 +468,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [conflictAcknowledged, setConflictAcknowledged] = useState(false);
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
   const [rightPanelResize, setRightPanelResize] = useState(null); // { startX, startWidth }
+  const savedRightPanelWidthRef = useRef(null);
   const [customFunctionMenuFixtureId, setCustomFunctionMenuFixtureId] = useState(null);
   const [activeCustomFunctionByFixture, setActiveCustomFunctionByFixture] = useState({});
   const [speedMultiplierByFixture, setSpeedMultiplierByFixture] = useState({});
@@ -402,9 +487,23 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   }
 
   function handleRightPanelResizeStart(e) {
+    if (rightPanelCollapsed) return;
     e.preventDefault();
     e.stopPropagation();
     setRightPanelResize({ startX: e.clientX, startWidth: rightPanelWidth });
+  }
+
+  function handleToggleRightPanelCollapsed() {
+    if (rightPanelCollapsed) {
+      if (savedRightPanelWidthRef.current != null) {
+        setRightPanelWidth(clampRightPanelWidth(savedRightPanelWidthRef.current));
+      }
+      setRightPanelCollapsed(false);
+      return;
+    }
+    savedRightPanelWidthRef.current = rightPanelWidth;
+    setRightPanelCollapsed(true);
+    setRightPanelResize(null);
   }
 
   function handleTestPanelMouseDown(e) {
@@ -532,7 +631,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     const storedView = getStoredGridViewForMode(show, gridMode);
     if (!storedView) {
       // Sem viewport salvo para este modo: faz ZFit automático UMA vez por modo
-      if (!autoFitDoneRef.current[gridMode] && (show.fixtures || []).length > 0 && mesaRef.current) {
+      if (!autoFitDoneRef.current[gridMode] && getEnabledFixtures(show.fixtures).length > 0 && mesaRef.current) {
         autoFitDoneRef.current = { ...autoFitDoneRef.current, [gridMode]: true };
         // Adia um tick para garantir que o layout do mesaRef já tem dimensões reais
         setTimeout(() => handleFitFixtures(), 0);
@@ -591,8 +690,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   const FKEYS = ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
   const FIXTURE_GROUPS = [
-    { key: 'par-led',  label: 'Par LEDs',      fixtures: ['ParLed_Deluxe_1','ParLed_Deluxe_2','ParLed_Deluxe_3','ParLed_Deluxe_4','ParLed_Deluxe_5','ParLed_Deluxe_6','ParLed_Deluxe_7','ParLed_Deluxe_8','ParLed_Deluxe_9'] },
-    { key: 'ribalta',  label: 'Ribaltas',       fixtures: ['Ribalta_1','Ribalta_2','ribalta-rgb-static_1','ribalta-rgb-static_2','ribalta-rgb-static_3','ribalta-rgb-static_4'] },
+    { key: 'par-led',  label: 'Par LEDs',      fixtures: ['ParLed_Deluxe_1','ParLed_Deluxe_2','ParLed_Deluxe_3','ParLed_Deluxe_5','ParLed_Deluxe_6','ParLed_Deluxe_7','ParLed_Deluxe_8','ParLed_Deluxe_9'] },
+    { key: 'ribalta',  label: 'Ribaltas',       fixtures: ['Ribalta_1','Ribalta_2'] },
     { key: 'moving',   label: 'Moving Heads',   fixtures: ['Moving_01','Moving_07','Moving_08','Moving_Wosh_01','Moving_Wosh_2'] },
     { key: 'brut',     label: 'Bruts',          fixtures: ['Mini_Brut_01','Mini_Brut_02','Mini_Brut_03','Mini_Brut_04'] },
     { key: 'fita-led', label: 'Fita LED',       fixtures: ['Fita_Led'] },
@@ -702,6 +801,35 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     window.vp.listScripts().then(r => setExistingScripts(r.ok ? r.files : []));
   }, [existingScriptsModal]);
 
+  const assignedScriptKeys = useMemo(() => {
+    const files = new Set();
+    const names = new Set();
+    Object.values(scripts).forEach(meta => {
+      if (meta?.file) files.add(meta.file);
+      if (meta?.name) names.add(meta.name);
+    });
+    return { files, names };
+  }, [scripts]);
+
+  const selectableExistingScripts = useMemo(
+    () => existingScripts.filter(s =>
+      !assignedScriptKeys.files.has(s.file) && !assignedScriptKeys.names.has(s.name),
+    ),
+    [existingScripts, assignedScriptKeys],
+  );
+
+  const groupedExistingScripts = useMemo(
+    () => groupExistingScripts(selectableExistingScripts),
+    [selectableExistingScripts],
+  );
+
+  useEffect(() => {
+    if (!existingScriptsModal || !selectedExisting) return;
+    const inUse = assignedScriptKeys.files.has(selectedExisting.file)
+      || assignedScriptKeys.names.has(selectedExisting.name);
+    if (inUse) setSelectedExisting(null);
+  }, [existingScriptsModal, selectedExisting, assignedScriptKeys]);
+
   async function handleScriptRightClick(e, fkey) {
     e.preventDefault();
     setScriptMenu({ x: e.clientX, y: e.clientY, fkey });
@@ -799,13 +927,26 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     setContextMenu({ x: e.clientX, y: e.clientY, sceneKey: key });
   }
 
+  function prefillSaveModal(sceneKey) {
+    const existing = scenes[sceneKey];
+    setModalName(existing?.name || '');
+    setModalColor(resolvePaletteColor(existing?.color, COLORS));
+  }
+
   function openSaveModal() {
     if (!contextMenu) return;
-    const existing = scenes[contextMenu.sceneKey];
-    setModalName(existing?.name || '');
-    setModalColor(existing?.color || '#000000');
+    prefillSaveModal(contextMenu.sceneKey);
     setSaveModal({ sceneKey: contextMenu.sceneKey });
     setContextMenu(null);
+  }
+
+  function handleModalNameChange(name) {
+    setModalName(name);
+    if (!saveModal) return;
+    const existing = scenes[saveModal.sceneKey];
+    if (existing?.name && name.trim() === existing.name.trim() && existing.color) {
+      setModalColor(resolvePaletteColor(existing.color, COLORS));
+    }
   }
 
   async function handleConfirmSave() {
@@ -920,13 +1061,16 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         );
       }
     }
-  }, [selectedFixture, activeScenes, pages, currentPageId, scripts, disabledFixtureChannels]);
+  }, [selectedFixture, activeScenes, pages, currentPageId, disabledFixtureChannels]);
+
+  const resolveSidebarValuesRef = useRef(resolveSidebarValues);
+  resolveSidebarValuesRef.current = resolveSidebarValues;
 
   // Re-emissão só ao ganhar seleção — troca de cena/script não reenvia snapshot antigo.
   useEffect(() => {
     if (getSelectedFixtureIds().length === 0) return;
-    resolveSidebarValues({ allowReEmit: true });
-  }, [selectedFixtureId, multiSelected, resolveSidebarValues]);
+    resolveSidebarValuesRef.current({ allowReEmit: true });
+  }, [selectedFixtureId, multiSelected]);
 
   useEffect(() => {
     const selectedIds = getSelectedFixtureIds();
@@ -1294,7 +1438,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   function computeGroupedLayout(customPositions = {}, customTitleOffsets = {}, layoutType = 'padrao') {
     const groupOrder = [];
     const groupMap = {};
-    (show.fixtures || []).forEach(f => {
+    getEnabledFixtures(show.fixtures).forEach(f => {
       const g = String(f.group || f.fixtureType || 'Outros');
       if (!groupMap[g]) { groupMap[g] = []; groupOrder.push(g); }
       groupMap[g].push(f);
@@ -1350,7 +1494,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   function handleFitFixtures() {
     const rect = mesaRef.current?.getBoundingClientRect();
-    const fixtures = show.fixtures || [];
+    const fixtures = getEnabledFixtures(show.fixtures);
     if (!rect || fixtures.length === 0) {
       applyGridView({ zoom: 1, panX: 0, panY: 0 });
       return;
@@ -1450,7 +1594,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       <div style={{ flex:1, display:'flex', overflow:'hidden', background:'#000000' }}>
 
         {/* MESA DE APARELHOS */}
-        <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', background:'#000000', color:'#ffffff', borderRight:'1px solid #8db8b8' }}>
+        <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', background:'#000000', color:'#ffffff', borderRight: rightPanelCollapsed ? 'none' : '1px solid #8db8b8' }}>
           <div style={{ padding:'3px 6px', fontSize:11, color:'#c8dddd', background:'#24343a', borderBottom:'1px solid #5f8588' }}>Aparelhos</div>
           <div
             ref={mesaRef}
@@ -1621,13 +1765,14 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   {t.name}
                 </div>
               ))}
-              {show.fixtures.map(f => {
-                const fixtureEnabled = isFixtureEnabled(f);
-                const isSelected = fixtureEnabled && (f.id === selectedFixtureId || multiSelected.includes(f.id));
+              {getEnabledFixtures(show.fixtures).map(f => {
+                const isSelected = f.id === selectedFixtureId || multiSelected.includes(f.id);
                 // Fixture selecionado: mescla snapshot + liveValues para feedback em tempo real do fader.
                 // Fixture não selecionado: usa apenas o snapshot do universo — preserva a cor ao desmarcar.
                 const colorSource = isSelected ? { ...universeSnapshot, ...liveValues } : universeSnapshot;
-                const liveColor = fixtureEnabled ? getFixtureLiveColor(f, colorSource) : null;
+                const liveColor = getFixtureLiveColor(f, colorSource);
+                const fixtureTextColor = liveColor ? getContrastTextColor(liveColor) : '#ffffff';
+                const fixtureMutedColor = fixtureTextColor === '#000000' ? '#555555' : '#9bb4b7';
                 const fPos = gridMode === 1
                   ? (groupedLayout?.positions?.[f.id] || { x: 0, y: 0 })
                   : getFixtureGridPosition(f);
@@ -1636,7 +1781,6 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   key={f.id}
                   onMouseDown={(e) => {
                     e.stopPropagation();
-                    if (!fixtureEnabled) return;
                     if (gridMode === 1) {
                       if (!layoutAdjustActive) {
                         setSelectedFixtureId(f.id);
@@ -1675,7 +1819,6 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!fixtureEnabled) return;
                     setMultiSelected(prev =>
                       prev.includes(f.id) ? prev.filter(id => id !== f.id) : [...prev, f.id]
                     );
@@ -1687,23 +1830,22 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                     top: fPos.y,
                     width:GRID, height:GRID,
                     boxSizing:'border-box',
-                    background: liveColor ?? (fixtureEnabled ? '#233237' : '#1d2b30'),
-                    color:'#ffffff',
-                    border: fixtureEnabled ? (isSelected ? '2px solid #b7dede' : '1px solid #5f8588') : '1px dashed #6f8588',
-                    opacity: fixtureEnabled ? 1 : 0.42,
-                    borderRadius:0, boxShadow:'none', cursor: fixtureEnabled ? (gridMode === 1 ? (layoutAdjustActive ? (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab') : 'pointer') : (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab')) : 'default',
+                    background: liveColor ?? '#233237',
+                    color: fixtureTextColor,
+                    border: isSelected ? '2px solid #b7dede' : '1px solid #5f8588',
+                    borderRadius:0, boxShadow:'none', cursor: gridMode === 1 ? (layoutAdjustActive ? (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab') : 'pointer') : (dragging?.ids?.includes(f.id) ? 'grabbing' : 'grab'),
                     display:'flex', flexDirection:'column',
                     alignItems:'center', justifyContent:'center', gap:1,
                     userSelect:'none', overflow:'hidden',
                   }}
                 >
-                  <div style={{ fontSize:7, color:'#9bb4b7', lineHeight:1 }}>{fixtureEnabled ? `ch ${f.startChannel}` : `OFF ch ${f.startChannel}`}</div>
+                  <div style={{ fontSize:7, color: fixtureMutedColor, lineHeight:1 }}>{`ch ${f.startChannel}`}</div>
                   <div
                     title={f.name}
                     style={{
                       fontSize:7,
                       fontWeight:700,
-                      color:'#ffffff',
+                      color: fixtureTextColor,
                       textAlign:'center',
                       lineHeight:1.05,
                       padding:'0 2px',
@@ -1736,6 +1878,20 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         </div>
 
         {/* PAINEL DIREITO: DESCRIÇÃO */}
+        {rightPanelCollapsed ? (
+          <div style={{
+            width: RIGHT_PANEL_COLLAPSED_WIDTH,
+            minWidth: RIGHT_PANEL_COLLAPSED_WIDTH,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            paddingTop: 6,
+            background: theme.colors.panelDark,
+            borderLeft: `1px solid ${theme.colors.borderSoft}`,
+          }}>
+            <RightPanelToggleButton collapsed onClick={handleToggleRightPanelCollapsed} />
+          </div>
+        ) : (
         <div style={{ width:rightPanelWidth, minWidth:RIGHT_PANEL_MIN_WIDTH, maxWidth:RIGHT_PANEL_MAX_WIDTH, position:'relative', display:'flex', flexDirection:'column', background:'#35484f', color:'#ffffff', borderLeft:'1px solid #8db8b8', boxShadow:'none', overflow:'hidden', fontFamily:'Arial, Helvetica, sans-serif' }}>
           <div
             onPointerDown={handleRightPanelResizeStart}
@@ -1751,8 +1907,10 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               borderLeft:rightPanelResize ? '1px solid #b7dede' : '1px solid transparent',
             }}
           />
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:28, minHeight:28, background:'#24343a', borderBottom:'1px solid #8db8b8', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, color:'#ffffff' }}>
-            Descrição
+          <div style={{ display:'flex', alignItems:'center', gap:6, height:28, minHeight:28, padding:'0 6px', background:'#24343a', borderBottom:'1px solid #8db8b8', fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, color:'#ffffff' }}>
+            <RightPanelToggleButton collapsed={false} onClick={handleToggleRightPanelCollapsed} />
+            <span style={{ flex:1, textAlign:'center' }}>Descrição</span>
+            <span style={{ width:28, flexShrink:0 }} aria-hidden="true" />
           </div>
           <div style={{ flex:1, display:'flex', background:'#35484f', overflow:'hidden' }}>
             <div style={{ width:40, minWidth:40, maxWidth:40, background:'#24343a', borderRight:'1px solid #8db8b8', display:'flex', flexDirection:'column', alignItems:'stretch', justifyContent:'flex-start', padding:2, gap:2 }}>
@@ -2311,6 +2469,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
             </div>
           </div>
         </div>
+        )}
 
       </div>
 
@@ -2332,8 +2491,10 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
           const bg = ps ? theme.colors.bgDarker : (scene?.color || '#000000');
           const borderStyle = ps
             ? (psRunning ? `3px solid ${theme.colors.borderStrong}` : `1px solid ${theme.colors.text}`)
-            : (isActive ? '3px solid #b7dede' : `1px solid ${scene ? '#ffffff' : '#8db8b8'}`);
-          const textColor = ps ? theme.colors.text : (scene ? '#ffffff' : '#9bb4b7');
+            : (isActive
+              ? '3px solid #b7dede'
+              : `1px solid ${scene && getContrastTextColor(bg) === '#000000' ? '#8db8b8' : (scene ? '#ffffff' : '#8db8b8')}`);
+          const textColor = ps ? theme.colors.text : (scene ? getContrastTextColor(bg) : '#9bb4b7');
           return (
             <button
               key={key}
@@ -2374,6 +2535,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         {FKEYS.map(fkey => {
           const script = scripts[fkey];
           const isRunning = script?.running;
+          const fKeyStyle = theme.components.fKeyButton;
+          const fKeyBg = script?.color || fKeyStyle.background;
+          const fKeyTextColor = getContrastTextColor(fKeyBg);
           return (
             <button
               key={fkey}
@@ -2391,16 +2555,16 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 borderRadius:0,
                 boxSizing:'border-box',
                 cursor:'pointer',
-                background:script?.color || '#000000',
-                border: isRunning ? '3px solid #b7dede' : `1px solid ${script ? '#8db8b8' : '#ffffff'}`,
-                color:'#ffffff',
+                background: fKeyBg,
+                border: isRunning ? `3px solid ${theme.colors.borderStrong}` : fKeyStyle.border,
+                color: fKeyTextColor,
                 boxShadow:'none',
                 outline:'none',
                 display:'flex', flexDirection:'column', alignItems:'center', gap:1, minWidth:0,
               }}
             >
               <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, color:'inherit' }}>{fkey}</span>
-              {script && <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, overflow:'hidden', maxWidth:'100%', color: isRunning ? '#ffffff' : '#c8dddd' }}>{script.name}</span>}
+              {script && <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, overflow:'hidden', maxWidth:'100%', color:'inherit' }}>{script.name}</span>}
             </button>
           );
         })}
@@ -2418,27 +2582,6 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
             zIndex:1000, minWidth:140, boxShadow:'0 4px 12px rgba(0,0,0,0.5)',
           }}
         >
-            <div
-              onClick={() => {
-                if (scripts[scriptMenu.fkey]) return;
-                const currentScript = scripts[scriptMenu.fkey];
-                setCreateModal({ fkey: scriptMenu.fkey });
-                setScriptName('');
-                setScriptColor(currentScript?.color || DEFAULT_SCRIPT_COLOR);
-                setSelectedGroups(new Set());
-                setSelectedFixtures(new Set());
-                setScriptMenu(null);
-              }}
-            style={{
-              padding:'8px 14px', fontSize:12,
-              cursor: scripts[scriptMenu.fkey] ? 'not-allowed' : 'pointer',
-              color: scripts[scriptMenu.fkey] ? '#555' : '#e0e0e0',
-            }}
-            onMouseEnter={e => { if (!scripts[scriptMenu.fkey]) e.currentTarget.style.background='#383838'; }}
-            onMouseLeave={e => e.currentTarget.style.background='transparent'}
-          >
-            {scripts[scriptMenu.fkey] ? 'Editar Script' : 'Criar Script'}
-          </div>
           <div
             onClick={() => {
               const currentScript = scripts[scriptMenu.fkey];
@@ -2452,6 +2595,27 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
             onMouseLeave={e => e.currentTarget.style.background='transparent'}
           >
             Scripts Existentes
+          </div>
+          <div
+            onClick={() => {
+              if (scripts[scriptMenu.fkey]) return;
+              const currentScript = scripts[scriptMenu.fkey];
+              setCreateModal({ fkey: scriptMenu.fkey });
+              setScriptName('');
+              setScriptColor(currentScript?.color || DEFAULT_SCRIPT_COLOR);
+              setSelectedGroups(new Set());
+              setSelectedFixtures(new Set());
+              setScriptMenu(null);
+            }}
+            style={{
+              padding:'8px 14px', fontSize:12,
+              cursor: scripts[scriptMenu.fkey] ? 'not-allowed' : 'pointer',
+              color: scripts[scriptMenu.fkey] ? '#555' : '#e0e0e0',
+            }}
+            onMouseEnter={e => { if (!scripts[scriptMenu.fkey]) e.currentTarget.style.background='#383838'; }}
+            onMouseLeave={e => e.currentTarget.style.background='transparent'}
+          >
+            {scripts[scriptMenu.fkey] ? 'Editar Script' : 'Criar Script'}
           </div>
           <div
             onClick={() => { setMoveModal({ sourceFkey: scriptMenu.fkey }); setScriptMenu(null); }}
@@ -2595,52 +2759,72 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       {/* MODAL SCRIPTS EXISTENTES */}
       {existingScriptsModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000 }}>
-          <div style={{ background:'#242424', border:'1px solid #444', borderRadius:6, width:360, fontFamily:'Segoe UI, system-ui, sans-serif', color:'#e0e0e0' }}>
+          <div style={{ background:theme.components.modal.background, border:theme.components.modal.border, borderRadius:theme.radius.none, width:420, fontFamily:theme.typography.fontFamily, color:theme.components.modal.color }}>
 
             {/* Header */}
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838' }}>
-              <span style={{ fontSize:13, fontWeight:600 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:theme.borders.thin, background:theme.colors.panelDark }}>
+              <span style={{ fontSize:theme.typography.title.fontSize, fontWeight:theme.typography.title.fontWeight }}>
                 Scripts Existentes — {existingScriptsModal.fkey}
               </span>
-              <button onClick={() => { setExistingScriptsModal(null); setSelectedExisting(null); setScriptColor(DEFAULT_SCRIPT_COLOR); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
+              <button onClick={() => { setExistingScriptsModal(null); setSelectedExisting(null); setScriptColor(DEFAULT_SCRIPT_COLOR); }} style={{ background:'none', border:'none', color:theme.colors.text, fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
 
-            <div style={{ padding:'10px 14px', maxHeight:276, overflowY:'auto', display:'flex', flexDirection:'column', gap:10 }}>
-              {existingScripts.length === 0
-                ? <div style={{ fontSize:12, color:'#555', padding:'8px 0' }}>Nenhum script encontrado em /scripts/</div>
-                : (
-                  <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-                    {existingScripts.map(s => (
-                      <div
-                        key={s.file}
-                        onClick={() => { setSelectedExisting(s); setScriptColor(s.color || DEFAULT_SCRIPT_COLOR); }}
-                        style={{
-                          padding:'7px 10px', borderRadius:3, cursor:'pointer', fontSize:12,
-                          background: selectedExisting?.file === s.file ? '#383838' : '#1e1e1e',
-                          border: `1px solid ${selectedExisting?.file === s.file ? '#555' : '#2a2a2a'}`,
-                          color: selectedExisting?.file === s.file ? '#fff' : '#bbb',
-                          display:'flex',
-                          alignItems:'center',
-                          gap:8,
-                        }}
-                      >
-                        <span style={{ width:12, height:12, background:s.color || DEFAULT_SCRIPT_COLOR, border:`1px solid ${theme.colors.borderSoft}`, flexShrink:0 }} />
-                        <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{s.name}</span>
+            <div style={{ padding:'10px 14px', maxHeight:420, overflowY:'auto', display:'flex', flexDirection:'column', gap:12 }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                {groupedExistingScripts.map(category => (
+                  <div key={category.key}>
+                    <div style={{
+                      fontSize:theme.typography.label.fontSize,
+                      fontWeight:700,
+                      letterSpacing:'0.6px',
+                      textTransform:'uppercase',
+                      color:theme.colors.textSecondary,
+                      padding:'4px 0 6px',
+                      borderBottom:theme.borders.soft,
+                      marginBottom: category.scripts.length > 0 ? 6 : 0,
+                    }}>
+                      {category.label}
+                      <span style={{ fontWeight:400, marginLeft:6, color:theme.colors.textMuted }}>({category.scripts.length})</span>
+                    </div>
+                    {category.scripts.length > 0 && (
+                      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                        {category.scripts.map(s => (
+                          <div
+                            key={s.file}
+                            onClick={() => { setSelectedExisting(s); setScriptColor(s.color || DEFAULT_SCRIPT_COLOR); }}
+                            style={{
+                              padding:'7px 10px',
+                              borderRadius:theme.radius.none,
+                              cursor:'pointer',
+                              fontSize:theme.typography.body.fontSize,
+                              background: selectedExisting?.file === s.file ? theme.colors.selection : theme.colors.bgDarker,
+                              border: `1px solid ${selectedExisting?.file === s.file ? theme.colors.borderStrong : theme.colors.borderSoft}`,
+                              color: selectedExisting?.file === s.file ? theme.colors.text : theme.colors.textSecondary,
+                              display:'flex',
+                              alignItems:'center',
+                              gap:8,
+                            }}
+                          >
+                            <span style={{ width:12, height:12, background:s.color || DEFAULT_SCRIPT_COLOR, border:theme.borders.soft, flexShrink:0 }} />
+                            <span style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{s.name}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )
-              }
+                ))}
+              </div>
               <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
             </div>
 
             {/* Footer */}
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:'1px solid #383838' }}>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, padding:'10px 14px', borderTop:theme.borders.thin, background:theme.colors.panelDark }}>
               <button
                 onClick={() => { setExistingScriptsModal(null); setSelectedExisting(null); setScriptColor(DEFAULT_SCRIPT_COLOR); }}
                 style={{ minHeight:36, padding:'0 16px', borderRadius:4, cursor:'pointer', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, background:'transparent', color:theme.colors.primary, border:'none', boxShadow:'none' }}
               >Cancelar</button>
 
+              {EXISTING_SCRIPTS_SHOW_VSCODE && (
               <button
                 onClick={async () => {
                   if (!selectedExisting) return;
@@ -2657,6 +2841,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 disabled={!selectedExisting}
                 style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? 'transparent' : 'rgba(0,0,0,.12)', color: selectedExisting ? theme.colors.primary : theme.colors.textDisabled, border:'none', boxShadow:'none' }}
               >Abrir no VS Code</button>
+              )}
 
               <button
                 onClick={async () => {
@@ -2674,7 +2859,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 }}
                 disabled={!selectedExisting}
                 style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? theme.colors.primary : 'rgba(0,0,0,.12)', color: selectedExisting ? '#ffffff' : theme.colors.textDisabled, border:'none', boxShadow: selectedExisting ? theme.elevation.z2 : 'none' }}
-              >Usar este script</button>
+              >Confirmar</button>
             </div>
           </div>
         </div>
@@ -2866,27 +3051,12 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 <div style={{ fontSize:11, fontWeight:400, color:'#c8dddd', marginBottom:4 }}>Nome da cena</div>
                 <input
                   value={modalName}
-                  onChange={e => setModalName(e.target.value)}
+                  onChange={e => handleModalNameChange(e.target.value)}
                   placeholder="Nome da cena..."
                   style={{ width:'100%', height:28, fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:400, color:'#ffffff', background:'#000000', padding:'4px 6px', border:'1px solid #5f8588', borderRadius:0, outline:'none', boxShadow:'none', boxSizing:'border-box' }}
                 />
               </div>
-              <div>
-                <div style={{ fontSize:11, fontWeight:400, color:'#c8dddd', marginBottom:4 }}>Cor</div>
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                  {COLORS.map(color => (
-                    <div
-                      key={color}
-                      onClick={() => setModalColor(color)}
-                      style={{
-                        width:32, height:32, borderRadius:0, background:color, cursor:'pointer',
-                        border: modalColor === color ? '2px solid #ffffff' : '1px solid #5f8588',
-                        boxShadow:'none',
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
+              <ColorPaletteField value={modalColor} onChange={setModalColor} />
             </div>
 
             {/* Footer */}
@@ -2969,6 +3139,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 const isSelf = fkey === moveModal.sourceFkey;
                 const hasScript = !!scripts[fkey];
                 const disabled = isSelf || hasScript;
+                const moveBg = scripts[fkey]?.color || theme.components.fKeyButton.background;
+                const moveTextColor = disabled ? theme.colors.textDisabled : getContrastTextColor(moveBg);
                 return (
                   <button
                     key={fkey}
@@ -2991,15 +3163,16 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                       fontFamily:theme.typography.fontFamily,
                       fontSize:theme.typography.button.fontSize,
                       fontWeight:theme.typography.button.fontWeight,
-                      background: disabled ? 'rgba(0,0,0,.12)' : (scripts[fkey]?.color || 'transparent'),
-                      border:'none', boxShadow:'none',
-                      color: disabled ? theme.colors.textDisabled : theme.colors.primary,
+                      background: disabled ? 'rgba(0,0,0,.12)' : moveBg,
+                      border: disabled ? 'none' : theme.components.fKeyButton.border,
+                      boxShadow:'none',
+                      color: moveTextColor,
                       cursor: disabled ? 'default' : 'pointer',
                       display:'flex', flexDirection:'column', alignItems:'center', gap:2,
                     }}
                   >
                     <span>{fkey}</span>
-                    {scripts[fkey] && <span style={{ fontSize:8, color:'#888', overflow:'hidden', maxWidth:56 }}>{scripts[fkey].name}</span>}
+                    {scripts[fkey] && <span style={{ fontSize:8, color:'inherit', overflow:'hidden', maxWidth:56 }}>{scripts[fkey].name}</span>}
                   </button>
                 );
               })}

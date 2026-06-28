@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { activeSceneMatches, useShow } from '../store/showStore.js';
-import theme from '../theme.js';
+import theme, { getContrastTextColor } from '../theme.js';
 
 const C = {
   bg:           theme.colors.bgDarker,
@@ -163,20 +163,27 @@ function DispatchPad({ label, name, active, running, empty, color, onClick, vari
   let borderStyle = `1px solid ${C.border}`;
   let textColor = C.textDisabled;
 
+  const fKeyStyle = theme.components.fKeyButton;
+
   if (!empty) {
     if (isScene) {
       bg = pageScript ? theme.colors.bgDarker : (color || C.btnBg);
+      const sceneText = pageScript ? C.text : getContrastTextColor(bg);
       borderStyle = (running || active)
         ? `3px solid ${C.borderStrong}`
-        : `1px solid ${theme.colors.text}`;
-      textColor = C.text;
+        : `1px solid ${sceneText === '#000000' ? '#8db8b8' : theme.colors.text}`;
+      textColor = sceneText;
     } else {
-      bg = color || C.btnBg;
+      bg = color || fKeyStyle.background;
       borderStyle = running
         ? `3px solid ${C.borderStrong}`
-        : `1px solid ${theme.colors.border}`;
-      textColor = C.text;
+        : fKeyStyle.border;
+      textColor = getContrastTextColor(bg);
     }
+  } else if (variant === 'fkey') {
+    bg = fKeyStyle.background;
+    borderStyle = fKeyStyle.border;
+    textColor = getContrastTextColor(bg);
   }
 
   return (
@@ -219,7 +226,11 @@ function DispatchPad({ label, name, active, running, empty, color, onClick, vari
         <span style={{
           ...ty.tooltip,
           fontWeight: running || active ? 700 : 400,
-          color: running || active ? C.textSecondary : C.textMuted,
+          color: variant === 'fkey'
+            ? 'inherit'
+            : isScene
+              ? 'inherit'
+              : (running || active ? C.textSecondary : C.textMuted),
           overflow: 'hidden',
           maxWidth: '100%',
           whiteSpace: 'nowrap',
@@ -230,12 +241,21 @@ function DispatchPad({ label, name, active, running, empty, color, onClick, vari
         </span>
       )}
       {running && (
-        <span style={{ ...ty.tooltip, color: C.borderStrong, fontWeight: 700, letterSpacing: '0.5px' }}>
+        <span style={{
+          ...ty.tooltip,
+          color: isScene && getContrastTextColor(bg) === '#000000' ? '#333333' : C.borderStrong,
+          fontWeight: 700,
+          letterSpacing: '0.5px',
+        }}>
           ▶ ATIVO
         </span>
       )}
       {active && isScene && !running && (
-        <span style={{ ...ty.tooltip, color: C.borderStrong, fontWeight: 700 }}>● ATIVA</span>
+        <span style={{
+          ...ty.tooltip,
+          color: getContrastTextColor(bg) === '#000000' ? '#333333' : C.borderStrong,
+          fontWeight: 700,
+        }}>● ATIVA</span>
       )}
     </button>
   );
@@ -793,7 +813,7 @@ function QuickDispatchPanel({ currentPage }) {
                   name={script?.name}
                   running={running}
                   empty={!script}
-                  color={script?.color || C.btnBg}
+                  color={script?.color || theme.components.fKeyButton.background}
                   onClick={() => handleToggleScript(fkey)}
                   variant="fkey"
                 />

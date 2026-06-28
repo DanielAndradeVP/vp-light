@@ -96,16 +96,49 @@ function _writeChannelToUniverse(ch, value) {
   ribaltaDebug.logCompositorWrite(ch, v);
 }
 
+/** Máscara cumulativa de canais que outras camadas ainda controlam (exclui layerId). */
+function _getOthersControlledMask(excludeId) {
+  const mask = new Uint8Array(512);
+  for (const [id, layer] of _layers) {
+    if (id === excludeId) continue;
+    const cm = layer.controlledMask;
+    if (!cm) continue;
+    for (let i = 0; i < 512; i++) {
+      if (cm[i]) mask[i] = 1;
+    }
+  }
+  return mask;
+}
+
 /**
  * Aplica o buffer da camada ao universo (weight=1) nos canais tocados.
  * Usado após OnTerminate para que a limpeza do script chegue ao DMX real.
+ * Canais ainda controlados por outra camada ativa são ignorados — evita que
+ * parar um script de brut resete pan/tilt de um script de moving ainda ativo.
  */
 function _flushLayerToUniverse(layer) {
   if (!layer?.buffer || !layer?.touched) return;
+  const skip = _getOthersControlledMask(layer._id);
   for (let i = 0; i < 512; i++) {
-    if (!layer.touched[i]) continue;
+    if (!layer.touched[i] || skip[i]) continue;
     _writeChannelToUniverse(i + 1, layer.buffer[i]);
   }
+}
+
+/**
+ * União dos canais controlados por todas as camadas ativas (índice 0 = DMX ch 1).
+ * Usado pelo restoreState para não sobrescrever canais que scripts ainda dominam.
+ */
+function getActiveControlledChannels() {
+  const mask = new Uint8Array(512);
+  for (const layer of _layers.values()) {
+    const cm = layer.controlledMask;
+    if (!cm) continue;
+    for (let i = 0; i < 512; i++) {
+      if (cm[i]) mask[i] = 1;
+    }
+  }
+  return mask;
 }
 
 /**
@@ -351,6 +384,7 @@ module.exports = {
   setSceneLock, setDisabledChannelsProvider, setMergeMode,
   // camadas (Fase 1 — usado por F-keys e page-scripts)
   addLayer, removeLayer, stopLayer, hasLayer, clearLayers, layerCount, releaseLayer,
+  getActiveControlledChannels,
   // frame
   renderFrame,
   // macro (Fase 2)

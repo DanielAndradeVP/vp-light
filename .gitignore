@@ -30,6 +30,6 @@ pnpm-debug.log*
 Thumbs.db
 start-linux.sh
 
-# Skills duplicadas (fonte única: skills/)
+# Skills locais do agente (fonte única: .agents/skills/)
 .agents/skills/
 .claude/skills/

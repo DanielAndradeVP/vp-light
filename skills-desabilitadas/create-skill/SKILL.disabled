@@ -5,6 +5,8 @@ description: Guide the user to turn a conversation workflow or decision process 
 
 # create-skill
 
+> **Skill desabilitada** — arquivada em `skills-desabilitadas/`. Não invoque pelo agente salvo pedido explícito.
+
 Ajuda o usuário a criar uma nova habilidade (`SKILL.md`) para agentes personalizados.
 
 ## Quando usar
@@ -22,5 +24,6 @@ Ajuda o usuário a criar uma nova habilidade (`SKILL.md`) para agentes personali
 
 ## Observações
 
-- Se o usuário quer criar uma nova habilidade para o **vp-light**, salve em `skills/<nome-da-skill>/SKILL.md`.
-- Não crie cópias em `.agents/skills/` ou `.claude/skills/` — `skills/` é a fonte única.
+- Se o usuário quer criar uma nova habilidade para o **vp-light**, salve em `.agents/skills/<nome-da-skill>/SKILL.md`.
+- Skills arquivadas ficam em `skills-desabilitadas/`.
+- Não crie cópias em `.claude/skills/`.

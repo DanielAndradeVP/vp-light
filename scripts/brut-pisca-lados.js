@@ -1,4 +1,4 @@
-// mini-bruts-pisca-esquerda-direita - Mini Bruts alternando dois da esquerda e dois da direita. Destino: sem F-key definida.
+// brut-pisca-lados — Mini bruts piscando esquerda / direita.
 const LEFT_BRUTS = [
   'fixture_1780805067518_mini_brut_01',
   'fixture_1780805067518_mini_brut_02',

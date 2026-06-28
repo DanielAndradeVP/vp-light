@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld('vp', {
     ipcRenderer.on('dmx-universe', listener);
     return () => ipcRenderer.removeListener('dmx-universe', listener);
   },
+  onActiveScripts: (callback) => {
+    const listener = (_event, names) => callback(names);
+    ipcRenderer.on('viewer3d:active-scripts', listener);
+    return () => ipcRenderer.removeListener('viewer3d:active-scripts', listener);
+  },
 
   // ─── ENGINE ───────────────────────────────────────────────
   startEngine: () => ipcRenderer.invoke('engine:start'),

@@ -1,4 +1,4 @@
-// mini-bruts-pisca-cruzado - Mini Bruts alternando 1+4 e depois 2+3. Destino: sem F-key definida.
+// brut-pisca-cruz — Mini bruts piscando cruzado (1+4 / 2+3).
 
 const LEFT_BRUTS = [
   'fixture_1780805067518_mini_brut_01',

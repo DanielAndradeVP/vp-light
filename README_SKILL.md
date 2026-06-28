@@ -114,8 +114,10 @@ C:\vp-light\
 └── package.json
 ```
 
-> **Skills oficiais backend/frontend:** `skills/desenvolvedor-backend-vplight/SKILL.md` e
-> `skills/desenvolvedor-frontend-vplight/SKILL.md` — uma única cópia de cada.
+> **Skills oficiais:** `.agents/skills/<nome>/SKILL.md` — backend (`desenvolvedor-backend`),
+> frontend (`desenvolvedor-frontend`), scripts DMX (`desenvolvedor-dmx`),
+> sync doc (`fiscal-do-sistema`), criar skills (`create-skill`). Arquivadas em
+> `skills-desabilitadas/` (sem `SKILL.md` ativo).
 
 > **Nome do arquivo de show:** é `shows/vp.show.json`. (Nomes antigos como
 > `vida-e-paz.show.json` não são mais usados.)

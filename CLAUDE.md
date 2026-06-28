@@ -28,7 +28,8 @@ C:\vp-light\
 │       ├── PainelOperacao.jsx → painel de operação
 │       └── Viewer3D.jsx       → preview 3D (janela separada)
 │
-├── skills/              → skills oficiais dos agentes (SKILL.md por pasta)
+├── .agents/skills/      → skills ativas dos agentes (SKILL.md por pasta)
+├── skills-desabilitadas/→ skills arquivadas (fora do runtime)
 ├── shows/
 │   └── vp.show.json     → show padrão
 │
@@ -39,8 +40,13 @@ C:\vp-light\
 
 ## Skills oficiais
 
-- Backend/engine: `skills/desenvolvedor-backend-vplight/SKILL.md`
-- Frontend/UI: `skills/desenvolvedor-frontend-vplight/SKILL.md`
+Todas em `.agents/skills/<nome>/SKILL.md`:
+
+- Backend/engine: `desenvolvedor-backend`
+- Frontend/UI: `desenvolvedor-frontend`
+- Scripts DMX: `desenvolvedor-dmx`
+- Sync documentação: `fiscal-do-sistema`
+- Criar skills: `create-skill`
 
 ## Regras de arquitetura
 

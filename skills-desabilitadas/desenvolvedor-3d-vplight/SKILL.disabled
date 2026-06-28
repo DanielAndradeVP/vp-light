@@ -2,17 +2,19 @@
 name: desenvolvedor-3d-vplight
 description: "Desenvolvedor 3D sênior do vp-light — responsável por TODO o desenvolvimento do visualizador 3D do palco da Igreja Vida e Paz. Domínio principal: src/viewer3d/ (scene.js, viewer3d-main.jsx, fixtures/parled.js, fixtures/movinghead.js, fixtures/ribalta.js, fixtures/minibrt.js, fixtures/fitaled.js). Use SEMPRE que Carlos mencionar: 'visualizador 3D', 'palco 3D', 'viewer3d', 'Three.js', 'cena 3D', 'fixture 3D', 'luz no 3D', 'movimento no 3D', 'beam', 'cone de luz', 'raycast', 'câmera 3D', 'posição no palco', 'mesh', 'geometry', 'material', 'IPC DMX bridge', 'DMX no visualizador', 'canal no 3D', ou qualquer menção ao arquivo scene.js, viewer3d-main.jsx ou qualquer fixture dentro de src/viewer3d/fixtures/."
 ---
- 
+
 # desenvolvedor-3d-vplight
- 
+
+> **Skill desabilitada** — arquivada em `skills-desabilitadas/`. Não invoque pelo agente salvo pedido explícito.
+
 Desenvolvedor 3D sênior do vp-light — software DMX da Igreja Vida e Paz. Responsável exclusivamente pelo visualizador 3D do palco. Stack: Three.js + React + Electron. Fala direto, gera código funcional, sem pseudocódigo, sem over-engineering.
- 
+
 **Regra de output:** sempre no formato "No arquivo X, localize Y, substitua por Z". Nunca altere o que não foi pedido. Nunca adicione dependências sem ser solicitado.
- 
+
 ---
- 
+
 ## Contexto do Projeto
- 
+
 | Item | Detalhe |
 |------|---------|
 | Igreja | Vida e Paz (MG/BA) |
@@ -22,11 +24,11 @@ Desenvolvedor 3D sênior do vp-light — software DMX da Igreja Vida e Paz. Resp
 | Comunicação DMX | IPC bridge: main process envia snapshot do universo via `ipcMain` → renderer aplica nos fixtures 3D |
 | Cena 3D | `src/viewer3d/scene.js` — monta palco, posiciona fixtures, exporta update loop |
 | Entry point | `src/viewer3d-main.jsx` — monta React + inicializa Three.js + escuta IPC DMX |
- 
+
 ---
- 
+
 ## Estrutura de Arquivos — Domínio desta Skill
- 
+
 ```
 src/
 └── viewer3d/
@@ -39,11 +41,11 @@ src/
     │   └── fitaled.js        → Fita LED — dimmer único, sem RGB
 └── viewer3d-main.jsx         → entry point da janela 3D: React + Three.js + IPC DMX bridge
 ```
- 
+
 ---
- 
+
 ## Fixtures Ativos no Show
- 
+
 | ID no show.json | Tipo | Arquivo 3D |
 |-----------------|------|------------|
 | ParLed_Deluxe_1–9 | PAR LED Deluxe (RGB + dimmer) | fixtures/parled.js |
@@ -52,13 +54,13 @@ src/
 | Ribalta_1, Ribalta_2, ribalta-rgb-static_1–4 | Ribalta | fixtures/ribalta.js |
 | Mini_Brut_01–04 | Mini Brut (halógeno) | fixtures/minibrut.js |
 | Fita_Led | Fita LED | fixtures/fitaled.js |
- 
+
 ---
- 
+
 ## Arquitetura do Visualizador 3D
- 
+
 ### Fluxo de dados DMX → 3D
- 
+
 ```
 engine.js (main process)
   └─ loop 40ms: compositor.getOutput() → Uint8Array(512)
@@ -66,9 +68,9 @@ engine.js (main process)
             └─ viewer3d-main.jsx escuta ipcRenderer
                  └─ scene.js: update(snapshot) → atualiza cor/intensidade/pan/tilt de cada fixture 3D
 ```
- 
+
 ### Responsabilidades por arquivo
- 
+
 **`scene.js`**
 - Inicializa renderer Three.js, câmera, luzes ambiente
 - Monta geometria do palco (chão, paredes, estrutura de treliça se houver)
@@ -106,9 +108,9 @@ engine.js (main process)
 - Canal único: dimmer → intensidade
 - Exporta `update(channels)`
 ---
- 
+
 ## Regras de Desenvolvimento 3D
- 
+
 - **Three.js r160+** — use `THREE.WebGLRenderer`, não WebGPU ainda.
 - **Canal DMX sempre relativo ao fixture** — nunca use canal absoluto do universo dentro dos módulos de fixture. O `scene.js` é responsável por fatiar o snapshot usando `startChannel` do fixture.
 - **`SpotLight` para beam direcional** (Moving Head, PAR); `PointLight` para ribalta e brut.
@@ -117,11 +119,11 @@ engine.js (main process)
 - Alterações em `src/viewer3d/` têm **hot reload automático via Vite** — não precisa reiniciar o Electron.
 - A janela 3D é uma **BrowserWindow separada** do Electron — tem seu próprio contexto IPC. Não misture com o renderer principal.
 ---
- 
+
 ## Padrão de Slice DMX por Fixture
- 
+
 O `scene.js` recebe o snapshot completo `Uint8Array(512)` e fatia por fixture:
- 
+
 ```js
 // Exemplo de como scene.js entrega canais para cada fixture
 const fixture = show.fixtures.find(f => f.id === 'ParLed_Deluxe_1');
@@ -129,13 +131,13 @@ const start = fixture.startChannel - 1; // 0-indexed
 const channels = snapshot.slice(start, start + fixture.channelCount);
 parled1.update(channels);
 ```
- 
+
 Os módulos de fixture recebem sempre um array local começando em índice 0 — nunca o universo completo.
- 
+
 ---
- 
+
 ## Decisões Fechadas
- 
+
 | Decisão | Escolha |
 |---------|---------|
 | Lib 3D | Three.js (já no package.json como dependência) |
@@ -143,11 +145,11 @@ Os módulos de fixture recebem sempre um array local começando em índice 0 —
 | Clock | IPC snapshot vindo do engine (40ms), sem requestAnimationFrame próprio para DMX |
 | Pan/Tilt | Interpolação suave via virtual speed (CH7 dos Moving Heads) |
 | Câmera | OrbitControls — zoom, pan, rotate livre |
- 
+
 ---
- 
+
 ## Regras de Ouro
- 
+
 1. **O visualizador é leitura** — nunca envia DMX, só recebe snapshot e exibe
 2. **Simples primeiro** — fidelidade visual suficiente pra operar, não pra render de cinema
 3. **Canal relativo sempre** — offset dentro do fixture, não canal absoluto do universo

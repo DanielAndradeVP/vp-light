@@ -1,4 +1,4 @@
-// mini-bruts-fita-dimmer-255 - Mini Bruts e Fita LED em dimmer 255. Destino: sem F-key definida.
+// brut-fita-full — Mini bruts + fita LED dimmer máximo.
 const FIXTURES = [
   'fixture_1780805067518_mini_brut_01',
   'fixture_1780805067518_mini_brut_02',

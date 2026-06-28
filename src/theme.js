@@ -31,7 +31,19 @@ export const theme = {
     accentOverlay: 'rgba(0,208,0,.16)',
     warnOverlay: 'rgba(255,51,51,.18)',
     hover: '#5f8588',
-    scenePalette: ['#000000', '#cc0000', '#00aa00', '#0000cc', '#cccc00', '#00cccc', '#aa00aa', '#cc6600']
+    scenePalette: [
+      '#000000', // preto
+      '#cc0000', // vermelho
+      '#ff8800', // laranja (cenas X/C)
+      '#cccc00', // amarelo
+      '#00aa00', // verde
+      '#00cccc', // azul claro
+      '#003399', // azul escuro (cenas L/Z)
+      '#0000cc', // azul
+      '#aa00aa', // roxo
+      '#ffffff', // branco
+      '#ff6699', // rosa
+    ]
   },
   typography: {
     fontFamily: 'Arial, Helvetica, sans-serif',
@@ -115,9 +127,9 @@ export const theme = {
       minHeight: 52
     },
     fKeyButton: {
-      background: '#000000',
-      color: '#ffffff',
-      border: '1px solid #ffffff',
+      background: '#ffffff',
+      color: '#000000',
+      border: '1px solid #8db8b8',
       minHeight: 36,
       focusOutline: 'none'
     },
@@ -139,5 +151,66 @@ export const theme = {
     }
   }
 };
+
+function parseColorRgb(background) {
+  if (!background || typeof background !== 'string') return null;
+  const hex = background.trim();
+  if (hex.startsWith('#')) {
+    const h = hex.slice(1);
+    if (h.length === 3) {
+      return {
+        r: parseInt(h[0] + h[0], 16),
+        g: parseInt(h[1] + h[1], 16),
+        b: parseInt(h[2] + h[2], 16),
+      };
+    }
+    if (h.length === 6) {
+      return {
+        r: parseInt(h.slice(0, 2), 16),
+        g: parseInt(h.slice(2, 4), 16),
+        b: parseInt(h.slice(4, 6), 16),
+      };
+    }
+    return null;
+  }
+  const rgb = hex.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (rgb) return { r: +rgb[1], g: +rgb[2], b: +rgb[3] };
+  return null;
+}
+
+/** Retorna cor de texto legível sobre fundo hex/rgb — claro → preto, escuro → branco. */
+export function getContrastTextColor(background, dark = '#000000', light = '#ffffff') {
+  const rgb = parseColorRgb(background);
+  if (!rgb) return light;
+  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  return luminance > 0.62 ? dark : light;
+}
+
+/** Normaliza hex (#abc → #aabbcc, minúsculas). */
+export function normalizeHexColor(color) {
+  if (!color || typeof color !== 'string') return '';
+  const c = color.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(c)) return c;
+  if (/^#[0-9a-f]{3}$/.test(c)) {
+    return `#${c[1]}${c[1]}${c[2]}${c[2]}${c[3]}${c[3]}`;
+  }
+  return c;
+}
+
+/** Cor da paleta que corresponde ao valor salvo, ou fallback. */
+export function resolvePaletteColor(color, palette, fallback = '#000000') {
+  const normalized = normalizeHexColor(color);
+  if (!normalized) return fallback;
+  const match = palette.find(entry => normalizeHexColor(entry) === normalized);
+  return match || normalized;
+}
+
+/** Borda visível para swatch selecionado na paleta. */
+export function getPaletteSelectionBorder(color, selected) {
+  if (!selected) return '1px solid #5f8588';
+  return getContrastTextColor(color) === '#000000'
+    ? '2px solid #333333'
+    : '2px solid #ffffff';
+}
 
 export default theme;

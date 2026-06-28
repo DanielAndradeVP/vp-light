@@ -16,6 +16,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { update as updateParLed } from './fixtures/parled.js';
 import { update as updateMovingHeadBeam } from './fixtures/movinghead.js';
 import { update as updateRibalta } from './fixtures/ribalta.js';
@@ -98,6 +99,9 @@ front: {
   sideInset: 0.35,
   verticalDrops: [-1.45, 1.45],
 };
+
+/** Altura Y do topo da parede de fundo (mesma fórmula de buildStage). */
+const BACK_WALL_TOP_Y = GRID.rear.y + GRID.chordGap + 2.0;
 
 const CEILING = {
   y: GRID.rear.y + GRID.chordGap + 0.85,
@@ -950,7 +954,8 @@ function buildFixtures() {
       // Offset visual apenas — não altera DMX/Art-Net.
       if (item.beam === 2) {
         group.userData.panOffsetDeg = -90;
-        group.userData.tiltSign = -1;
+        group.userData.panSign = -1;
+        group.userData.tiltSign = 1;
       }
 
       register(group);
@@ -1104,11 +1109,51 @@ camera.position.set(0, 2.3, 17);
   const { group: fixturesGroup, registry: fixtures } = buildFixtures();
   scene.add(fixturesGroup);
 
+  const labelRenderer = new CSS2DRenderer();
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  const labelMount = canvas.parentElement || document.body;
+  labelMount.appendChild(labelRenderer.domElement);
+
+  const scriptLabelEl = document.createElement('div');
+  scriptLabelEl.style.cssText = [
+    'padding:6px 14px',
+    'font-family:Arial,Helvetica,sans-serif',
+    'font-size:14px',
+    'font-weight:700',
+    'letter-spacing:0.4px',
+    'color:#e0f0f0',
+    'background:rgba(38,54,60,0.9)',
+    'border:1px solid #8db8b8',
+    'white-space:nowrap',
+    'pointer-events:none',
+    'user-select:none',
+    'text-align:center',
+  ].join(';');
+  const scriptLabel = new CSS2DObject(scriptLabelEl);
+  scriptLabel.position.set(0, BACK_WALL_TOP_Y + 0.45, BACK_WALL_Z + 0.12);
+  scriptLabel.visible = false;
+  scene.add(scriptLabel);
+
+  function setActiveScriptNames(names) {
+    const list = Array.isArray(names) ? names.filter(Boolean) : [];
+    if (list.length === 0) {
+      scriptLabel.visible = false;
+      scriptLabelEl.textContent = '';
+      return;
+    }
+    scriptLabel.visible = true;
+    scriptLabelEl.textContent = list.join(' · ');
+  }
+
   function handleResize(width, height) {
     if (!width || !height) return;
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
+    labelRenderer.setSize(width, height);
   }
 
   // Fase 4 — guarda a referência ao universo DMX (512 canais) sem alterar
@@ -1131,6 +1176,7 @@ camera.position.set(0, 2.3, 17);
     }
 
     renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
   }
 
   function start() {
@@ -1140,6 +1186,8 @@ camera.position.set(0, 2.3, 17);
   function dispose() {
     if (rafId !== null) cancelAnimationFrame(rafId);
     rafId = null;
+    scene.remove(scriptLabel);
+    labelRenderer.domElement.remove();
     controls.dispose();
     renderer.dispose();
     scene.traverse((obj) => {
@@ -1152,7 +1200,7 @@ camera.position.set(0, 2.3, 17);
   }
 
   return {
-    scene, camera, renderer, controls, fixtures, start, handleResize, dispose,
+    scene, camera, renderer, controls, fixtures, start, handleResize, dispose, setActiveScriptNames,
     // Fase 4: Viewer3D.jsx atribui `viewer.dmxUniverseRef = universeRef`
     // exatamente como na Fase 3 — este setter apenas guarda a referência
     // no closure para que renderLoop possa lê-la a cada frame.

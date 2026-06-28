@@ -1,9 +1,4 @@
-// mini-bruts-combo-3-padroes
-// Padrões:
-// 1) Cruzado: 1+4 / 2+3
-// 2) Esquerda-direita: 1+2 / 3+4
-// 3) Ping-pong físico: 400 -> 401 -> 402 -> 410 -> 402 -> 401
-// Destino: sem F-key definida.
+// brut-pisca-combo — Três padrões de pisca nos mini bruts.
 
 // ── IDs dos Mini Bruts ──────────────────────────────────────────────────────
 

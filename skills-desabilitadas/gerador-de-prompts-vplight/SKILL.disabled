@@ -3,6 +3,8 @@ name: gerador-de-prompts-vplight
 description: "Gera prompts formatados para o CoWork executar modificações no código do vp-light. Use quando o usuário descrever uma funcionalidade, correção de bug ou alteração de comportamento no vp-light e precisar de um prompt pronto para enviar ao CoWork. Ativar quando mencionar \"prompt\", \"CoWork\", \"gerar instrução\", \"como falar pro CoWork\", ou descrever uma mudança no sistema sem pedir código diretamente."
 ---
 
+> **Skill desabilitada** — arquivada em `skills-desabilitadas/`. Não invoque pelo agente salvo pedido explícito.
+
 ## Contexto do projeto
 
 O vp-light é um software DMX desktop para operação ao vivo, construído em Electron + Node.js + React. O CoWork é o agente que executa modificações diretas no código.
@@ -23,7 +25,6 @@ Arquivos principais (mapa rápido para mirar o prompt no lugar certo):
 - `src/theme.js` — tokens visuais
 - `scripts/*.js` — scripts de efeito (F1–F12)
 - `shows/vp.show.json` — fonte da verdade dos fixtures e cenas
-- `skills/` — skills oficiais dos agentes
 
 Reinicialização:
 

@@ -208,6 +208,6 @@ NOTAS PARA O ENGENHEIRO DE SCRIPT
 
 =================================================
   PRÓXIMO PASSO
-  Leve este arquivo para a skill engenheiro-de-script-vplight
+  Leve este arquivo para a skill desenvolvedor-dmx
   para transformar esta ideia em script DMX real.
 =================================================

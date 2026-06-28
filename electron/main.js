@@ -204,6 +204,8 @@ function createWindow() {
 function createViewer3DWindow() {
   if (viewer3DWindow) {
     viewer3DWindow.focus();
+    lastViewer3DScriptLabelsKey = '';
+    broadcastActiveScriptsToViewer3DIfChanged();
     return viewer3DWindow;
   }
 
@@ -232,7 +234,46 @@ function createViewer3DWindow() {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('viewer3d:closed');
   });
 
+  viewer3DWindow.webContents.on('did-finish-load', () => {
+    lastViewer3DScriptLabelsKey = '';
+    broadcastActiveScriptsToViewer3DIfChanged();
+  });
+
   return viewer3DWindow;
+}
+
+// Nomes dos scripts em execução (F-keys, page-scripts, passo atual de macro).
+function getActiveScriptLabelsForViewer3D() {
+  const labels = [];
+  for (const [fkey, running] of Object.entries(runningScripts)) {
+    if (running && scriptMeta[fkey]?.name) labels.push(scriptMeta[fkey].name);
+  }
+  for (const [k, running] of Object.entries(runningPageScripts)) {
+    if (!running) continue;
+    const colonIdx = k.indexOf(':');
+    const pageId = k.slice(0, colonIdx);
+    const sceneKey = k.slice(colonIdx + 1);
+    const meta = pageScriptMeta[pageId]?.[sceneKey];
+    if (meta?.name) labels.push(meta.name);
+  }
+  const macroStatus = compositor.getActiveMacroStatus();
+  if (macroStatus) {
+    const def = macroDefs[macroStatus.id];
+    const step = def?.steps?.[macroStatus.stepIndex];
+    if (step?.script) labels.push(step.script);
+  }
+  return [...new Set(labels)];
+}
+
+let lastViewer3DScriptLabelsKey = '';
+
+function broadcastActiveScriptsToViewer3DIfChanged() {
+  if (!viewer3DWindow || viewer3DWindow.isDestroyed()) return;
+  const labels = getActiveScriptLabelsForViewer3D();
+  const key = labels.join('\u0001');
+  if (key === lastViewer3DScriptLabelsKey) return;
+  lastViewer3DScriptLabelsKey = key;
+  viewer3DWindow.webContents.send('viewer3d:active-scripts', labels);
 }
 
 // Envia o universo DMX (512 canais) para a janela 3D a cada frame da engine.
@@ -241,6 +282,7 @@ function createViewer3DWindow() {
 function broadcastDmxUniverseToViewer3D(universeBuffer) {
   if (!viewer3DWindow || viewer3DWindow.isDestroyed()) return;
   viewer3DWindow.webContents.send('dmx-universe', Array.from(universeBuffer));
+  broadcastActiveScriptsToViewer3DIfChanged();
 }
 
 engine.onFrame(broadcastDmxUniverseToViewer3D);
@@ -350,6 +392,24 @@ ipcMain.handle('dmx:blackout', () => {
   return { ok: true };
 });
 
+function filterSceneMapByActiveScripts(channelMap) {
+  const controlled = compositor.getActiveControlledChannels();
+  let skipped = 0;
+  const filtered = {};
+  for (const [channel, value] of Object.entries(channelMap || {})) {
+    const idx = Number(channel) - 1;
+    if (idx >= 0 && idx < 512 && controlled[idx]) {
+      skipped++;
+      continue;
+    }
+    filtered[channel] = value;
+  }
+  if (skipped > 0) {
+    ribaltaDebug.logRestoreState('restoreState:skip-script-controlled', filtered, { skipped });
+  }
+  return filtered;
+}
+
 ipcMain.handle('dmx:restoreState', (_, channels) => {
   const filtered = filterDisabledFixtureChannels(channels);
   const anyScriptRunning = Object.keys(runningScripts).length > 0
@@ -359,8 +419,10 @@ ipcMain.handle('dmx:restoreState', (_, channels) => {
 
   // Com scripts ativos: reaplica cenas sem blackout total — evita apagar o palco
   // enquanto o compositor reescreve os canais dos scripts no próximo tick.
+  // Canais ainda controlados por camadas ativas ficam de fora — moving continua
+  // após ligar um script de brut ou após parar outro script da mesma família.
   if (anyScriptRunning) {
-    applyDmxChannelMap(filtered, 'restoreState/merge');
+    applyDmxChannelMap(filterSceneMapByActiveScripts(filtered), 'restoreState/merge');
   } else {
     universe.blackout();
     ribaltaDebug.logRestoreState('restoreState:after-blackout', filtered);
@@ -935,12 +997,13 @@ function resolveAdapterValue(fixtureId, alias, adapterKey, logicalValue) {
 }
 
 // API exposta na sandbox de scripts ao lado de SetChannel e getChannel.
-function buildScriptSandbox(buffer, touched) {
+function buildScriptSandbox(buffer, touched, controlledMask) {
   const SetChannel = (ch, val) => {
     if (ch < 1 || ch > 512) return;
     const idx = ch - 1;
     buffer[idx] = Math.max(0, Math.min(255, Math.round(Number(val))));
     touched[idx] = 1;
+    if (controlledMask) controlledMask[idx] = 1;
   };
   const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
   const adapter = {
@@ -950,12 +1013,18 @@ function buildScriptSandbox(buffer, touched) {
   return { SetChannel, getChannel, adapter };
 }
 
-const MOV_PADRAO_PRESET = path.join(SCRIPTS_DIR, 'mov-padrao-preset.js');
+const MOV_PADRAO_PRESET = path.join(SCRIPTS_DIR, 'mov-preset.js');
+
+/** Scripts mov-* (exceto mov-preset.js) concatenam o preset antes de compilar. */
+function scriptPrependsMovPreset(filePath) {
+  const base = path.basename(filePath);
+  if (base === 'mov-preset.js') return false;
+  return base.startsWith('mov-') && base.endsWith('.js');
+}
 
 function readScriptCode(filePath) {
   let code = fs.readFileSync(filePath, 'utf-8');
-  const base = path.basename(filePath);
-  if (base.startsWith('mov-padrao-') && base !== 'mov-padrao-preset.js') {
+  if (scriptPrependsMovPreset(filePath)) {
     if (fs.existsSync(MOV_PADRAO_PRESET)) {
       code = fs.readFileSync(MOV_PADRAO_PRESET, 'utf-8') + '\n\n' + code;
     }
@@ -963,8 +1032,8 @@ function readScriptCode(filePath) {
   return code;
 }
 
-function compileScriptContext(code, buffer, touched) {
-  const { SetChannel, getChannel, adapter } = buildScriptSandbox(buffer, touched);
+function compileScriptContext(code, buffer, touched, controlledMask) {
+  const { SetChannel, getChannel, adapter } = buildScriptSandbox(buffer, touched, controlledMask);
   const ctx = {};
   const fn = new Function('SetChannel', 'getChannel', 'adapter', 'ctx', `
     ${code}
@@ -983,9 +1052,10 @@ function compileLayer(filePath) {
   const code = readScriptCode(filePath);
   const buffer = new Uint8Array(512);
   const touched = new Uint8Array(512);
-  const ctx = compileScriptContext(code, buffer, touched);
+  const controlledMask = new Uint8Array(512);
+  const ctx = compileScriptContext(code, buffer, touched, controlledMask);
   if (typeof ctx.OnStart === 'function') { try { ctx.OnStart(); } catch (e) {} }
-  return { buffer, touched, context: ctx };
+  return { buffer, touched, controlledMask, context: ctx };
 }
 
 ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
@@ -1069,9 +1139,10 @@ function startScript(fkey) {
   // Buffer próprio da camada (pré-alocado, reusado por frame) + máscara de canais tocados.
   const buffer = new Uint8Array(512);
   const touched = new Uint8Array(512);
+  const controlledMask = new Uint8Array(512);
   let ctx;
   try {
-    ctx = compileScriptContext(code, buffer, touched);
+    ctx = compileScriptContext(code, buffer, touched, controlledMask);
   } catch (e) {
     return { ok: false, error: `Erro ao compilar: ${e.message}` };
   }
@@ -1080,7 +1151,7 @@ function startScript(fkey) {
   }
   // Registra a camada — o relógio único (engine → compositor) roda o OnExecute por frame.
   compositor.addLayer(fkey, {
-    buffer, touched, context: ctx,
+    buffer, touched, controlledMask, context: ctx,
     onError: () => { delete runningScripts[fkey]; emitScriptsChanged(); },
   });
   runningScripts[fkey] = { context: ctx };
@@ -1107,6 +1178,7 @@ ipcMain.handle('script:list', () => {
       const results = [];
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (entry.isDirectory()) {
+          if (entry.name === 'backlog') continue;
           const sub = relBase ? `${relBase}/${entry.name}` : entry.name;
           results.push(...collectScripts(path.join(dir, entry.name), sub));
         } else if (entry.name.endsWith('.js')) {
@@ -1175,10 +1247,10 @@ function handleScriptFileEvent(filename) {
     return;
   }
 
-  // MODIFICAÇÃO: recarrega scripts em execução. Preset mov-padrao recarrega todos os mov-padrao ativos.
-  if (filename === 'mov-padrao-preset.js') {
+  // Preset mov-preset recarrega todos os mov-* ativos que usam preset.
+  if (filename === 'mov-preset.js') {
     for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (path.basename(meta.file).startsWith('mov-padrao-') && runningScripts[fkey]) {
+      if (scriptPrependsMovPreset(meta.file) && runningScripts[fkey]) {
         stopRunningScript(fkey, 'preset modificado');
         startScript(fkey);
       }
@@ -1279,13 +1351,14 @@ ipcMain.handle('page_script:toggle', (_, pageId, sceneKey) => {
   catch (e) { return { ok: false, error: 'Arquivo nao encontrado' }; }
   const buffer = new Uint8Array(512);
   const touched = new Uint8Array(512);
+  const controlledMask = new Uint8Array(512);
   let ctx;
   try {
-    ctx = compileScriptContext(code, buffer, touched);
+    ctx = compileScriptContext(code, buffer, touched, controlledMask);
   } catch (e) { return { ok: false, error: `Erro ao compilar: ${e.message}` }; }
   if (typeof ctx.OnStart === 'function') { try { ctx.OnStart(); } catch (e) {} }
   compositor.addLayer(`page:${k}`, {
-    buffer, touched, context: ctx,
+    buffer, touched, controlledMask, context: ctx,
     onError: () => { delete runningPageScripts[k]; },
   });
   runningPageScripts[k] = { context: ctx };

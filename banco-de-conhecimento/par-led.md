@@ -4,13 +4,15 @@ Banco de conhecimento dos Par LEDs: cores primárias, secundárias, dimmer, stro
 9 fixtures do mesmo modelo (Par LED Deluxe), 8 canais cada, comportamento idêntico.
 Diferem apenas no startChannel. Todos têm **7 canais funcionais** — 1 canal morto por fixture.
 
+> **ParLed_Deluxe_4** está com `enabled: false` no show — fora de escopo; não usar canais DMX 25–32.
+
 ## Fixtures no Patch
 |Nome           |Start|Canais|Canal morto (abs)          |
 |---------------|-----|------|---------------------------|
 |ParLed_Deluxe_1|1    |8     |canal 1 — índice 1 (morto) |
 |ParLed_Deluxe_2|9    |8     |canal 16 — índice 8 (morto)|
 |ParLed_Deluxe_3|17   |8     |canal 24 — índice 8 (morto)|
-|ParLed_Deluxe_4|25   |8     |canal 32 — índice 8 (morto)|
+|ParLed_Deluxe_4|25   |8     |— (desativado, enabled:false) |
 |ParLed_Deluxe_5|33   |8     |canal 40 — índice 8 (morto)|
 |ParLed_Deluxe_6|41   |8     |canal 48 — índice 8 (morto)|
 |ParLed_Deluxe_7|49   |8     |canal 56 — índice 8 (morto)|
