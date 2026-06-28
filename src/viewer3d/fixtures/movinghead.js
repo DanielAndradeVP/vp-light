@@ -6,7 +6,7 @@
  *
  * - fecho_lampada: luz só liga quando o valor estiver em 255 (binário).
  * - pan 0-255 → -270°..+270° (rotação do group inteiro, eixo Y).
- * - tilt 0-255 → -135°..+135° (rotação só da cabeça, eixo X).
+ * - tilt 0-255 → -135°..+103° visual (calibrado: 255 ≈ limite físico do teto)
  * - canal de random mode (special_random) é completamente ignorado.
  *
  * update(group, channels) é chamado a cada frame do loop de animação de
@@ -18,7 +18,9 @@ import * as THREE from 'three';
 const PAN_MIN_DEG = -270;
 const PAN_MAX_DEG = 270;
 const TILT_MIN_DEG = -135;
-const TILT_MAX_DEG = 135;
+// Máximo visual calibrado: no físico, tilt 255 ≈ limite do teto; no 3D antigo (+135°)
+// passava ~30 valores DMX além. 135° − (30/255)×270° ≈ 103°.
+const TILT_MAX_DEG = 103;
 const DEFAULT_PAN_OFFSET_DEG = 0;
 
 // Velocidade visual do moving no 3D.
@@ -213,12 +215,11 @@ export function update(group, channels) {
   group.userData.lastUpdateMs = now;
 
   const panOffsetDeg = group.userData.panOffsetDeg ?? DEFAULT_PAN_OFFSET_DEG;
-  const panDirection = group.userData.panDirection ?? 1;
+  const tiltSign = group.userData.tiltSign ?? 1;
 
   const targetPanDeg =
-    dmxToDeg(pan, PAN_MIN_DEG, PAN_MAX_DEG) * panDirection + panOffsetDeg;
-
-  const targetTiltDeg = dmxToDeg(tilt, TILT_MIN_DEG, TILT_MAX_DEG);
+    dmxToDeg(pan, PAN_MIN_DEG, PAN_MAX_DEG) + panOffsetDeg;
+  const targetTiltDeg = dmxToDeg(tilt, TILT_MIN_DEG, TILT_MAX_DEG) * tiltSign;
 
   if (group.userData.currentPanDeg === undefined) {
     group.userData.currentPanDeg = targetPanDeg;

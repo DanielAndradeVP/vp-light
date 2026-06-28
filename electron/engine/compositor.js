@@ -6,7 +6,9 @@
  *   A cada frame (chamado pelo engine a 40ms):
  *     1. avança as macros (pode adicionar / fazer fade-out de camadas)
  *     2. para cada camada: tick do envelope (weight) → buffer.fill(0)+touched.fill(0) → OnExecute
- *     3. mescla as camadas pelos seus weights, só nos canais TOCADOS, aplica guards e escreve
+ *     3. mescla as camadas pelos seus weights, só nos canais TOCADOS, aplica guards
+ *        (fixture desabilitado) e escreve por cima do universo — scripts sobrescrevem
+ *        a base da cena (restoreState) nos canais que controlam
  *     4. remove camadas que terminaram o fade-out (weight chegou a 0)
  *
  * WEIGHT / ENVELOPE
@@ -31,6 +33,7 @@
 
 const universe = require('./universe');
 const interpolator = require('./interpolator');
+const ribaltaDebug = require('./ribaltaDebug');
 
 // id -> camada
 const _layers = new Map();
@@ -38,13 +41,13 @@ const _layers = new Map();
 const _macros = new Map();
 
 const _EMPTY_SET = new Set();
-let _sceneLock = {};                          // { [canal]: valor } — canais travados por cena ativa
 let _getDisabledChannels = () => _EMPTY_SET;  // provider injetado pelo main
 let _mergeMode = 'htp';                        // 'htp' | 'linear'
 let _layerSeq = 0;                             // sequência p/ ids únicos de camadas de macro
 
 // ─── CONFIG / GUARDS ─────────────────────────────────────────────────────────
-function setSceneLock(map) { _sceneLock = map || {}; }
+/** @deprecated Cenas são base via restoreState; scripts sobrescrevem na mescla. Mantido p/ compat IPC. */
+function setSceneLock(_map) { /* no-op — prioridade script > cena na mescla de camadas */ }
 function setDisabledChannelsProvider(fn) { if (typeof fn === 'function') _getDisabledChannels = fn; }
 function setMergeMode(mode) { _mergeMode = (mode === 'linear') ? 'linear' : 'htp'; }
 
@@ -75,11 +78,10 @@ function hasLayer(id)    { return _layers.has(id); }
 function clearLayers()   { _layers.clear(); }
 function layerCount()    { return _layers.size; }
 
-/** Escreve um valor no universo respeitando guards (desabilitado, scene lock, interpolador). */
+/** Escreve um valor no universo respeitando guards (fixture desabilitado, interpolador). */
 function _writeChannelToUniverse(ch, value) {
   const disabled = _getDisabledChannels();
   if (disabled.has(ch)) return;
-  if (ch in _sceneLock) return;
   const v = Math.max(0, Math.min(255, Math.round(Number(value))));
   if (interpolator.isVirtualChannel(ch)) {
     interpolator.setSpeed(ch, v);
@@ -87,9 +89,11 @@ function _writeChannelToUniverse(ch, value) {
   }
   if (interpolator.isControlledChannel(ch)) {
     interpolator.setTarget(ch, v);
+    ribaltaDebug.logCompositorWrite(ch, v);
     return;
   }
   universe.setChannel(ch, v);
+  ribaltaDebug.logCompositorWrite(ch, v);
 }
 
 /**
@@ -193,7 +197,6 @@ function renderFrame() {
     if (!any) continue;
     const ch = i + 1;
     if (disabled.has(ch)) continue;
-    if (ch in _sceneLock) continue;
     let out = linear ? sum : htp;
     if (out > 255) out = 255;
     _writeChannelToUniverse(ch, Math.round(out));

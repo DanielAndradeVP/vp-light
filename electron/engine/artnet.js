@@ -168,18 +168,19 @@ function startIfaceRefresh() {
 // Inicia a gestão de interfaces imediatamente ao carregar o módulo
 startIfaceRefresh();
 
-// ─── Freeze (congela envio de rede, mantém loopback para o viewer 3D) ───────
+// ─── Freeze (congela saída Art-Net; engine/UI/3D continuam calculando) ──────
 
 let _frozen = false;
 
 /**
- * Quando frozen=true, suprime o envio de pacotes para as interfaces de rede
- * reais (broadcast dirigido e fallback global), mas mantém o loopback ativo
- * para que o viewer 3D continue recebendo frames normalmente.
+ * Quando frozen=true, suprime TODO envio UDP Art-Net (loopback, broadcast por
+ * interface e fallback). O viewer 3D recebe o universo via engine.onFrame (IPC),
+ * não via Art-Net — portanto continua atualizando normalmente com freeze ativo.
  * @param {boolean} frozen
  */
 function setFrozen(frozen) {
   _frozen = !!frozen;
+  console.log(`[artnet] saída ${ _frozen ? 'CONGELADA' : 'descongelada' }`);
 }
 
 function isFrozen() {
@@ -188,16 +189,8 @@ function isFrozen() {
 
 // ─── Envio ──────────────────────────────────────────────────────────────────
 
-/**
- * Envia um frame ArtDMX para todos os destinos.
- * Reutiliza buffer pré-alocado — sem pressão de GC a 25fps.
- * @param {Uint8Array} universeData  512 bytes do universo DMX
- */
-function sendArtDMX(universeData) {
-  // Copia os 512 bytes de DMX para o buffer (header permanece intacto)
-  Buffer.from(universeData).copy(packet, 18);
-
-  // 1) Loopback — receptor local (viewer 3D); sempre ativo, mesmo com freeze.
+function _transmitPacket() {
+  // 1) Loopback — receptor Art-Net local (se houver bridge no mesmo PC).
   const ls = getLoopbackSocket();
   if (ls) {
     ls.send(packet, 0, packet.length, ARTNET_PORT, LOOPBACK_IP, (err) => {
@@ -215,9 +208,6 @@ function sendArtDMX(universeData) {
       }
     });
   }
-
-  // Freeze ativo: não envia para a rede real — palco fica congelado no último frame.
-  if (_frozen) return;
 
   // 2) Broadcast por interface — cada socket está vinculado ao IP da interface,
   //    forçando a saída por ela. Usa 255.255.255.255 (não directed broadcast) porque:
@@ -237,6 +227,32 @@ function sendArtDMX(universeData) {
   if (ls) {
     ls.send(packet, 0, packet.length, ARTNET_PORT, BROADCAST_GLOBAL, () => {});
   }
+}
+
+/**
+ * Envia um frame ArtDMX para todos os destinos.
+ * Reutiliza buffer pré-alocado — sem pressão de GC a 25fps.
+ * @param {Uint8Array} universeData  512 bytes do universo DMX
+ */
+function sendArtDMX(universeData) {
+  // Copia os 512 bytes de DMX para o buffer (header permanece intacto)
+  Buffer.from(universeData).copy(packet, 18);
+
+  // Freeze ativo: não envia NENHUM pacote Art-Net — palco fica no último frame.
+  // Engine, compositor e viewer 3D (IPC via engine.onFrame) seguem normais.
+  if (_frozen) return;
+
+  _transmitPacket();
+}
+
+/**
+ * Envia o universo imediatamente, ignorando freeze.
+ * Usado ao descongelar o palco para evitar gap/blackout entre o toggle e o próximo tick.
+ * @param {Uint8Array} universeData
+ */
+function flushArtDMX(universeData) {
+  Buffer.from(universeData).copy(packet, 18);
+  _transmitPacket();
 }
 
 // ─── Utilitários ─────────────────────────────────────────────────────────────
@@ -275,4 +291,4 @@ function closeSocket() {
   console.log('[artnet] sockets fechados');
 }
 
-module.exports = { sendArtDMX, closeSocket, getActiveInterfaces, setFrozen, isFrozen };
+module.exports = { sendArtDMX, flushArtDMX, closeSocket, getActiveInterfaces, setFrozen, isFrozen };

@@ -81,15 +81,16 @@ C:\vp-light\
 │   ├── show.js          → lê/salva o .show.json, mantém show em memória
 │   ├── fixtureOffsets.js→ offsets pan/tilt por fixture (calibração física)
 │   └── engine/
-│       ├── engine.js    → loop setInterval 40ms (start/stop), compositor + envio Art-Net
+│       ├── engine.js    → loop setInterval 40ms (start/stop), compositor + envio Art-Net + onFrame
 │       ├── compositor.js→ composição por camadas, guards, envelopes e macros
-│       ├── universe.js  → Uint8Array(512), estado dos canais DMX (+ offsets pan/tilt)
-│       ├── artnet.js    → ArtDMX: loopback + broadcast por interface + fallback global
-│       └── interpolator.js → interpolação de movimento (pan/tilt)
+│       ├── universe.js  → Uint8Array(512), estado dos canais DMX
+│       ├── artnet.js    → pacote ArtDMX, envio UDP multi-interface, setFrozen/isFrozen
+│       └── interpolator.js → interpolação pan/tilt (speed virtual)
 ├── src/
-│   ├── App.jsx          → roteador: main | fixtures | painel
+│   ├── App.jsx          → roteador de telas (main ↔ fixtures ↔ painel)
 │   ├── main.jsx         → entry point React
 │   ├── theme.js         → tokens visuais (cores, tipografia, espaçamento)
+│   ├── viewer3d/        → cena Three.js do preview 3D
 │   ├── store/
 │   │   └── showStore.js → estado global do renderer (React Context)
 │   ├── screens/
@@ -112,6 +113,9 @@ C:\vp-light\
 ├── vite.config.js
 └── package.json
 ```
+
+> **Skills oficiais backend/frontend:** `skills/desenvolvedor-backend-vplight/SKILL.md` e
+> `skills/desenvolvedor-frontend-vplight/SKILL.md` — uma única cópia de cada.
 
 > **Nome do arquivo de show:** é `shows/vp.show.json`. (Nomes antigos como
 > `vida-e-paz.show.json` não são mais usados.)
@@ -163,8 +167,23 @@ Usuário interage → React (src/screens/)
 | Freeze | `artnet:setFrozen` suprime envio para rede real; loopback continua |
 
 > **Importante (estrutura de loops):** existe um relógio principal de 40ms em `engine.js`.
-> A cada frame ele chama `compositor.renderFrame()` e depois `sendArtDMX(getUniverse())`.
+> A cada frame: `interpolator.tick()` → `compositor.renderFrame()` → `sendArtDMX(getUniverse())`
+> → listeners `onFrame` (viewer 3D via IPC).
 > Scripts de efeito não criam `setInterval` próprio para renderização.
+
+### Congelar palco (freeze Art-Net)
+
+| Item | Valor |
+|---|---|
+| Estado | `artnet.setFrozen(bool)` em `artnet.js` |
+| IPC | `artnet:setFrozen`, `artnet:getFrozen` |
+| Renderer | `window.vp.setArtNetFrozen`, `getArtNetFrozen` |
+| Efeito | Suprime **todo** envio UDP Art-Net; palco fica no último frame |
+| Não afeta | engine loop, compositor, scripts, UI, preview 3D (IPC `dmx-universe`) |
+
+### Envio Art-Net (`artnet.js`)
+
+Três destinos quando não congelado: loopback `127.0.0.1`, broadcast `255.255.255.255` por interface IPv4 ativa, fallback broadcast via loopback.
 
 ### Compositor de scripts
 
@@ -200,12 +219,16 @@ Macros no compositor:
 ```
 // Window
 closeApp()  onWindowCloseRequested(callback)
+open3DViewer()  onViewer3DClosed(callback)  onDmxUniverse(callback)
 
 // Visualizador 3D
 open3DViewer()  onViewer3DClosed(callback)  onDmxUniverse(callback)
 
 // Engine
 startEngine()  stopEngine()  getEngineStatus()
+
+// Art-Net
+getArtNetFrozen()        setArtNetFrozen(frozen)
 
 // DMX
 activateScene(channels)  setChannel(channel, value)  setChannelRange(channels, value)

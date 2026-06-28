@@ -362,10 +362,12 @@ Skills **ativas** ficam em `.agents/skills/` (pastas com `SKILL.md`):
 Skills arquivadas (não usadas pelo runtime) estão em `skills-desabilitadas/`.
 
 Uso rápido:
-1. Leia `.agents/skills/<nome>/SKILL.md` para entender o propósito da skill.
-2. Abra o chat do agente no VS Code/Cursor e invoque a skill pelo nome.
+1. Leia `skills/<nome>/SKILL.md` para entender o propósito da skill.
+2. Abra o chat do agente no VS Code e invoque a skill pelo nome (ex.: `@skills/desenvolvedor-backend-vplight`).
 3. Para gerar scripts, cole `shows/vp.show.json` antes de pedir geração.
 4. Ao alterar equipamentos ou o show, atualize e cole `vp.show.json` antes de usar as skills.
+
+**Local oficial:** todas as skills ficam em `skills/<nome>/SKILL.md` — uma única cópia de cada.
 
 ---
 

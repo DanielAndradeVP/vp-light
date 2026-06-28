@@ -27,6 +27,12 @@ let tick = 0;
 const LOOP = 300;
 const F2   = 300;
 
+// ── Posições de referência (banco de conhecimento / medidas no rig) ─────────
+// Moving Head Beam — posições medidas
+// PAN_C=centro simétrico, TILT_F=nivelado frente, TILT_A=ponta altar, PAN_L/R=laterais, TILT_L=tilt lateral
+const M1_PAN_C = 84, M1_TILT_F = 36, M1_TILT_A = 78,  M1_PAN_L = 42, M1_TILT_L = 35;
+const M2_PAN_C = 84, M2_TILT_F = 32, M2_TILT_A = 72,  M2_PAN_R = 44, M2_TILT_L = 26;
+
 // ── Utilitários ─────────────────────────────────────────────────────────────
 function ch(c, v) {
   if (c !== null && c !== undefined) {
@@ -120,10 +126,15 @@ function OnExecute() {
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  // RIBALTAS — fase 1: branco cheio, tilt louvor estático
+  // RIBALTAS — par sincronizado (function → speed → tilt, mesmo valor logico)
+  mp_applyRibaltaPair(
+    r1_function, r2_function,
+    r1_speed, r2_speed,
+    r1_tilt, r2_tilt,
+    MP_RIB.SPEED_SLOW,
+    MP_RIB.TILT_LOUVOR
+  );
   ch(r1_dimmer, 255); ch(r2_dimmer, 255);
-  ch(r1_speed, MP_RIB.R1_SPEED_SLOW); ch(r2_speed, MP_RIB.R2_SPEED_SLOW);
-  ch(r1_tilt, MP_RIB.TILT_LOUVOR_1); ch(r2_tilt, MP_RIB.TILT_LOUVOR_2);
   ch(r1_strobo, 0); ch(r2_strobo, 0);
   for (let i = 0; i < 8; i++) {
     ch(r1_leds[i], 255);
@@ -146,17 +157,18 @@ function OnTerminate() {
   ch(m1_fecho, 0);
   ch(m1_prism, 0);
   ch(m1_pan, 0);
-  ch(m1_tilt, 0);
   ch(m1_speed, 0);
+  ch(m1_tilt, 0);
 
   ch(m2_cw, 0);
   ch(m2_strobo, 0);
   ch(m2_fecho, 0);
   ch(m2_prism, 0);
   ch(m2_pan, 0);
-  ch(m2_tilt, 0);
   ch(m2_speed, 0);
+  ch(m2_tilt, 0);
 
+  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, MP_RIB.TILT_LOW);
   ch(r1_dimmer, 0); ch(r2_dimmer, 0);
   ch(r1_strobo, 0); ch(r2_strobo, 0);
   if (r1_leds) { for (let i = 0; i < 8; i++) ch(r1_leds[i], 0); }

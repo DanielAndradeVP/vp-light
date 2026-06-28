@@ -1,4 +1,4 @@
-// mov-padrao-02 — Moving Heads + Ribaltas descendo sincronizadas. Destino: F1.
+// mov-padrao-04 — Ribaltas reset escondido ao fim da descida. Destino: F1.
 // Preset compartilhado: scripts/mov-padrao-preset.js (cor ParLed + pan/tilt)
 
 // ── IDs de fixture ──────────────────────────────────────────────────────────
@@ -10,11 +10,6 @@ const ID_R1   = 'fixture_1780805067518_ribalta_1';
 const ID_R2   = 'fixture_1780805067518_ribalta_2';
 
 const ID_FITA = 'fixture_1780805067518_fita_led';
-
-const ID_B01  = 'fixture_1780805067518_mini_brut_01';
-const ID_B02  = 'fixture_1780805067518_mini_brut_02';
-const ID_B03  = 'fixture_1780805067518_mini_brut_03';
-const ID_B04  = 'fixture_1780805067518_mini_brut_04';
 
 
 // ── Canais resolvidos ───────────────────────────────────────────────────────
@@ -28,7 +23,7 @@ let r2_tilt, r2_speed, r2_dimmer, r2_strobo, r2_function;
 let r1_leds = null;
 let r2_leds = null;
 
-let fita, b01, b02, b03, b04;
+let fita;
 
 
 // ── Estado ──────────────────────────────────────────────────────────────────
@@ -38,31 +33,24 @@ let tick = 0;
 
 // ── Timing: 25fps, 40ms/tick ────────────────────────────────────────────────
 
-const LOOP = 300;
-const F2   = 300;
+const DESCEND_TICKS = 300; // 12s descendo visível
+const RESET_TICKS   = 35;  // 1.4s apagado para voltar ao tilt inicial
+
+const LOOP = DESCEND_TICKS + RESET_TICKS;
 
 
-// ── Posições de referência dos Movings ──────────────────────────────────────
-// Moving Head Beam — posições medidas
-// PAN_C=centro simétrico, TILT_F=nivelado frente, TILT_A=ponta altar
+const MOVING_SPEED_DESCEND = MP_MH_SPEED_SLOW;
+const MOVING_SPEED_RESET   = MP_MH_SPEED_SLOW;
 
-const M1_PAN_C  = 84;
-const M1_TILT_F = 36;
-const M1_TILT_A = 78;
-
-const M2_PAN_C  = 84;
-const M2_TILT_F = 32;
-const M2_TILT_A = 72;
+// Ribaltas em par: mesma velocidade e mesmo tilt logico
+const RIBALTA_SPEED = MP_RIB.SPEED_SLOW;
 
 
-// ── Posições de referência das Ribaltas ─────────────────────────────────────
-// As ribaltas seguem o mesmo progresso dos movings:
-// começa em 100, desce até o limite e volta para 100 quando o ciclo reinicia.
+// ── Valores gerais ──────────────────────────────────────────────────────────
 
-const RIBALTA_TILT_START = 100;
-const RIBALTA_TILT_LIMIT = 190;
+const ON_FULL = 255;
+const OFF = 0;
 
-// Speed das ribaltas — mesma velocidade nas duas (par sincronizado).
 
 // ── Utilitários ─────────────────────────────────────────────────────────────
 
@@ -80,9 +68,28 @@ function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
-// Pulso senoidal contínuo entre min e max com período em ticks.
-function spulse(t, min, max, period) {
-  return min + ((max - min) / 2) * (1 + Math.sin(2 * Math.PI * t / period));
+function setRibaltaLeds(value) {
+  if (r1_leds) {
+    for (let i = 0; i < 8; i++) {
+      ch(r1_leds[i], value);
+    }
+  }
+
+  if (r2_leds) {
+    for (let i = 0; i < 8; i++) {
+      ch(r2_leds[i], value);
+    }
+  }
+}
+
+function blackoutRibaltas() {
+  ch(r1_dimmer, OFF);
+  ch(r2_dimmer, OFF);
+
+  ch(r1_strobo, OFF);
+  ch(r2_strobo, OFF);
+
+  setRibaltaLeds(OFF);
 }
 
 
@@ -133,22 +140,19 @@ function OnStart() {
     r2_leds.push(getChannel(ID_R2, 'led_' + i));
   }
 
-  // Garante modo DMX manual nas ribaltas.
+  // Ribaltas começam apagadas e as duas em tilt 0
   mp_applyRibaltaPair(
     r1_function, r2_function,
     r1_speed, r2_speed,
     r1_tilt, r2_tilt,
-    MP_RIB.SPEED_SLOW,
-    RIBALTA_TILT_START
+    RIBALTA_SPEED,
+    0
   );
 
-  // Fita e Mini Bruts
-  fita = getChannel(ID_FITA, 'dimmer');
+  blackoutRibaltas();
 
-  b01 = getChannel(ID_B01, 'dimmer');
-  b02 = getChannel(ID_B02, 'dimmer');
-  b03 = getChannel(ID_B03, 'dimmer');
-  b04 = getChannel(ID_B04, 'dimmer');
+  // Fita
+  fita = getChannel(ID_FITA, 'dimmer');
 
   mp_resolveParLeds();
 }
@@ -159,62 +163,75 @@ function OnStart() {
 function OnExecute() {
   tick++;
 
-  const t = tick % LOOP;
-  const p = clamp01(t / (F2 - 1));
+  const cycleTick = tick % LOOP;
+  const isDescending = cycleTick < DESCEND_TICKS;
 
   mp_applyParLeds();
 
-  // MOVING HEADS — branco, centralizados, descendo aos poucos.
+  // Mantém configurações base
   ch(m1_cw, 0);
   ch(m2_cw, 0);
-
-  ch(m1_speed, MP_MH_SPEED_SLOW);
-  ch(m2_speed, MP_MH_SPEED_SLOW);
 
   ch(m1_pan, MP_M1.PAN_C);
   ch(m2_pan, MP_M2.PAN_C);
 
-  ch(m1_tilt, lerp(MP_M1.TILT_F, MP_M1.TILT_A, p));
-  ch(m2_tilt, lerp(MP_M2.TILT_F, MP_M2.TILT_A, p));
-
-  ch(m1_fecho, 255);
-  ch(m2_fecho, 255);
-
-  ch(m1_strobo, 255);
-  ch(m2_strobo, 255);
-
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  // RIBALTAS — par sincronizado (mesmo tilt logico; calibracao fisica na engine)
-  const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, p);
-
-  ch(r1_dimmer, 255);
-  ch(r2_dimmer, 255);
+  const ribaltaTilt = isDescending
+    ? lerp(0, MP_RIB.TILT_HIGH, clamp01(cycleTick / (DESCEND_TICKS - 1)))
+    : 0;
 
   mp_applyRibaltaPair(
     r1_function, r2_function,
     r1_speed, r2_speed,
     r1_tilt, r2_tilt,
-    MP_RIB.SPEED_SLOW,
+    RIBALTA_SPEED,
     ribaltaTilt
   );
 
-  ch(r1_strobo, 0);
-  ch(r2_strobo, 0);
+  if (isDescending) {
+    const p = clamp01(cycleTick / (DESCEND_TICKS - 1));
 
-  for (let i = 0; i < 8; i++) {
-    ch(r1_leds[i], 255);
-    ch(r2_leds[i], 255);
+    // MOVINGS — acesos e descendo
+    ch(m1_speed, MOVING_SPEED_DESCEND);
+    ch(m2_speed, MOVING_SPEED_DESCEND);
+
+    ch(m1_tilt, lerp(MP_M1.TILT_F, MP_M1.TILT_A, p));
+    ch(m2_tilt, lerp(MP_M2.TILT_F, MP_M2.TILT_A, p));
+
+    ch(m1_fecho, 255);
+    ch(m2_fecho, 255);
+
+    ch(m1_strobo, 255);
+    ch(m2_strobo, 255);
+
+    ch(r1_dimmer, 255);
+    ch(r2_dimmer, 255);
+
+    ch(r1_strobo, 0);
+    ch(r2_strobo, 0);
+
+    setRibaltaLeds(255);
+  } else {
+    // RESET ESCONDIDO — tilt ja em 0 via mp_applyRibaltaPair
+    blackoutRibaltas();
+
+    // Também fecho os movings durante o reset para esconder o retorno deles.
+    ch(m1_speed, MOVING_SPEED_RESET);
+    ch(m2_speed, MOVING_SPEED_RESET);
+
+    ch(m1_tilt, MP_M1.TILT_F);
+    ch(m2_tilt, MP_M2.TILT_F);
+
+    ch(m1_fecho, 0);
+    ch(m2_fecho, 0);
+
+    ch(m1_strobo, 0);
+    ch(m2_strobo, 0);
   }
 
-  // MINI BRUTS — onda suave em 4 canais.
-  ch(b01, spulse(t, 76, 255, 100));
-  ch(b02, spulse(t + 25, 76, 255, 100));
-  ch(b03, spulse(t + 50, 76, 255, 100));
-  ch(b04, spulse(t + 75, 76, 255, 100));
-
-  // FITA LED — 70% constante.
+  // FITA LED — 70% constante
   ch(fita, 178);
 }
 
@@ -227,18 +244,18 @@ function OnTerminate() {
   ch(m1_fecho, 0);
   ch(m1_prism, 0);
   ch(m1_pan, 0);
-  ch(m1_speed, 0);
   ch(m1_tilt, 0);
+  ch(m1_speed, 0);
 
   ch(m2_cw, 0);
   ch(m2_strobo, 0);
   ch(m2_fecho, 0);
   ch(m2_prism, 0);
   ch(m2_pan, 0);
-  ch(m2_speed, 0);
   ch(m2_tilt, 0);
+  ch(m2_speed, 0);
 
-  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, MP_RIB.TILT_LOW);
+  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, 0);
 
   ch(r1_dimmer, 0);
   ch(r2_dimmer, 0);
@@ -246,24 +263,9 @@ function OnTerminate() {
   ch(r1_strobo, 0);
   ch(r2_strobo, 0);
 
-  if (r1_leds) {
-    for (let i = 0; i < 8; i++) {
-      ch(r1_leds[i], 0);
-    }
-  }
-
-  if (r2_leds) {
-    for (let i = 0; i < 8; i++) {
-      ch(r2_leds[i], 0);
-    }
-  }
+  setRibaltaLeds(0);
 
   ch(fita, 0);
-
-  ch(b01, 0);
-  ch(b02, 0);
-  ch(b03, 0);
-  ch(b04, 0);
 
   mp_zeroParLeds();
 }

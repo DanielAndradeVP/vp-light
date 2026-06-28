@@ -53,22 +53,44 @@ const MP_MH_GAP = 8;
 // virtual_speed padrão — lento/suave nos mov-padrão simples
 const MP_MH_SPEED_SLOW = 210;
 
-// ── Ribaltas — posições e speeds de referência ────────────────────────────────
+// ── Ribaltas — par sincronizado (mesmo tilt logico e mesma speed nas duas) ───
+// Calibracao fisica R1/R2 fica em electron/ribaltaPhysicalCalib.js — scripts
+// NUNCA somam offset manual (+70 etc.) nem usam speed diferente por lado.
 const MP_RIB = {
-  TILT_LOUVOR_1: 110,
-  TILT_LOUVOR_2: 105,
-  TILT_ALTAR:    145,
-  TILT_LOW:      100,
-  TILT_HIGH:     190,
-  R1_SPEED_SLOW: 190,
-  R2_SPEED_SLOW: 90,
-  R1_SPEED_FAST: 20,
-  R2_SPEED_FAST: 20,
-  R1_SPEED_MED:  170,
-  R2_SPEED_MED:  170,
-  DIM_ON:        255,
-  DIM_WASH:      220,
+  TILT_LOUVOR: 105,
+  TILT_ALTAR:  145,
+  TILT_LOW:    100,
+  TILT_HIGH:   190,
+  SPEED_SLOW:  190,
+  SPEED_FAST:  20,
+  SPEED_MED:   170,
+  DIM_ON:      255,
+  DIM_WASH:    220,
 };
+
+/**
+ * Ribaltas motorizadas: function(0) → speed → tilt — mesmo valor nas duas.
+ * Canais = numeros DMX resolvidos via getChannel (ou null).
+ */
+function mp_applyRibaltaPair(r1Fn, r2Fn, r1Spd, r2Spd, r1Tilt, r2Tilt, speed, tilt) {
+  mp_ch(r1Fn, 0);
+  mp_ch(r2Fn, 0);
+  mp_ch(r1Spd, speed);
+  mp_ch(r2Spd, speed);
+  mp_ch(r1Tilt, tilt);
+  mp_ch(r2Tilt, tilt);
+}
+
+/** OnTerminate: function → speed → tilt neutros iguais nas duas. */
+function mp_zeroRibaltaPair(r1Fn, r2Fn, r1Spd, r2Spd, r1Tilt, r2Tilt, neutralTilt) {
+  const tilt = neutralTilt !== undefined && neutralTilt !== null ? neutralTilt : 0;
+  mp_ch(r1Fn, 0);
+  mp_ch(r2Fn, 0);
+  mp_ch(r1Spd, 0);
+  mp_ch(r2Spd, 0);
+  mp_ch(r1Tilt, tilt);
+  mp_ch(r2Tilt, tilt);
+}
 
 // ── ParLeds — canais resolvidos (preenchido no OnStart de cada script) ──────
 let mp_par = [];

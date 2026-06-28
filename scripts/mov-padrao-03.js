@@ -10,8 +10,8 @@ const ID_RIB2 = 'fixture_1780805067518_ribalta_2';
 // ─── Canais resolvidos ────────────────────────────────────────────────────────
 let mh1Fecho, mh1Strobo, mh1ColorWheel, mh1Pan, mh1PanFine, mh1Tilt, mh1Speed;
 let mh2Fecho, mh2Strobo, mh2ColorWheel, mh2Pan, mh2PanFine, mh2Tilt, mh2Speed;
-let rib1Tilt, rib1Speed, rib1Dimmer, rib1Leds = [];
-let rib2Tilt, rib2Speed, rib2Dimmer, rib2Leds = [];
+let rib1Tilt, rib1Speed, rib1Dimmer, rib1Function, rib1Leds = [];
+let rib2Tilt, rib2Speed, rib2Dimmer, rib2Function, rib2Leds = [];
 
 let tick = 0;
 
@@ -91,15 +91,17 @@ function OnStart() {
   mh2Tilt       = getChannel(ID_MH2, 'tilt');
   mh2Speed      = getChannel(ID_MH2, 'virtual_speed');
 
-  rib1Tilt   = getChannel(ID_RIB1, 'tilt');
-  rib1Speed  = getChannel(ID_RIB1, 'speed');
-  rib1Dimmer = getChannel(ID_RIB1, 'dimmer');
+  rib1Tilt     = getChannel(ID_RIB1, 'tilt');
+  rib1Speed    = getChannel(ID_RIB1, 'speed');
+  rib1Dimmer   = getChannel(ID_RIB1, 'dimmer');
+  rib1Function = getChannel(ID_RIB1, 'function');
   rib1Leds   = [];
   for (let i = 1; i <= 8; i++) rib1Leds.push(getChannel(ID_RIB1, 'led_' + i));
 
-  rib2Tilt   = getChannel(ID_RIB2, 'tilt');
-  rib2Speed  = getChannel(ID_RIB2, 'speed');
-  rib2Dimmer = getChannel(ID_RIB2, 'dimmer');
+  rib2Tilt     = getChannel(ID_RIB2, 'tilt');
+  rib2Speed    = getChannel(ID_RIB2, 'speed');
+  rib2Dimmer   = getChannel(ID_RIB2, 'dimmer');
+  rib2Function = getChannel(ID_RIB2, 'function');
   rib2Leds   = [];
   for (let i = 1; i <= 8; i++) rib2Leds.push(getChannel(ID_RIB2, 'led_' + i));
 
@@ -203,32 +205,35 @@ function OnExecute() {
   if (mh1Fecho      !== null) SetChannel(mh1Fecho,      255);
   if (mh1Strobo     !== null) SetChannel(mh1Strobo,     255);
   if (mh1ColorWheel !== null) SetChannel(mh1ColorWheel, 0);
+  if (mh1Speed      !== null) SetChannel(mh1Speed,      mh.spd);
   if (mh1Pan        !== null) SetChannel(mh1Pan,        mh.pan - MP_MH_GAP);
   if (mh1PanFine    !== null) SetChannel(mh1PanFine,    0);
   if (mh1Tilt       !== null) SetChannel(mh1Tilt,       mh.tilt);
-  if (mh1Speed      !== null) SetChannel(mh1Speed,      mh.spd);
 
   if (mh2Fecho      !== null) SetChannel(mh2Fecho,      255);
   if (mh2Strobo     !== null) SetChannel(mh2Strobo,     255);
   if (mh2ColorWheel !== null) SetChannel(mh2ColorWheel, 0);
+  if (mh2Speed      !== null) SetChannel(mh2Speed,      mh.spd);
   if (mh2Pan        !== null) SetChannel(mh2Pan,        mh.pan + MP_MH_GAP);
   if (mh2PanFine    !== null) SetChannel(mh2PanFine,    0);
   if (mh2Tilt       !== null) SetChannel(mh2Tilt,       mh.tilt);
-  if (mh2Speed      !== null) SetChannel(mh2Speed,      mh.spd);
 
-  // ── Ribaltas — em par, mesmo tilt e speed ────────────────────────────────────
+  // ── Ribaltas — par sincronizado (function → speed → tilt) ──
   const ribPhase = tick % RIB_CYCLE;
   const rib = ribStateForPhase(ribPhase);
 
-  if (rib1Tilt   !== null) SetChannel(rib1Tilt,   rib.tilt);
-  if (rib1Speed  !== null) SetChannel(rib1Speed,  rib.spd);
+  mp_applyRibaltaPair(
+    rib1Function, rib2Function,
+    rib1Speed, rib2Speed,
+    rib1Tilt, rib2Tilt,
+    rib.spd,
+    rib.tilt
+  );
   if (rib1Dimmer !== null) SetChannel(rib1Dimmer, MP_RIB.DIM_WASH);
   for (let i = 0; i < rib1Leds.length; i++) {
     if (rib1Leds[i] !== null) SetChannel(rib1Leds[i], 255);
   }
 
-  if (rib2Tilt   !== null) SetChannel(rib2Tilt,   rib.tilt);
-  if (rib2Speed  !== null) SetChannel(rib2Speed,  rib.spd);
   if (rib2Dimmer !== null) SetChannel(rib2Dimmer, MP_RIB.DIM_WASH);
   for (let i = 0; i < rib2Leds.length; i++) {
     if (rib2Leds[i] !== null) SetChannel(rib2Leds[i], 255);
@@ -240,25 +245,22 @@ function OnTerminate() {
   if (mh1Fecho      !== null) SetChannel(mh1Fecho,      0);
   if (mh1Strobo     !== null) SetChannel(mh1Strobo,     0);
   if (mh1ColorWheel !== null) SetChannel(mh1ColorWheel, 0);
+  if (mh1Speed      !== null) SetChannel(mh1Speed,      0);
   if (mh1Pan        !== null) SetChannel(mh1Pan,        MP_M1.PAN_L);
   if (mh1PanFine    !== null) SetChannel(mh1PanFine,    0);
   if (mh1Tilt       !== null) SetChannel(mh1Tilt,       MP_M1.TILT_MID);
-  if (mh1Speed      !== null) SetChannel(mh1Speed,      0);
   if (mh2Fecho      !== null) SetChannel(mh2Fecho,      0);
   if (mh2Strobo     !== null) SetChannel(mh2Strobo,     0);
   if (mh2ColorWheel !== null) SetChannel(mh2ColorWheel, 0);
+  if (mh2Speed      !== null) SetChannel(mh2Speed,      0);
   if (mh2Pan        !== null) SetChannel(mh2Pan,        MP_M2.PAN_L);
   if (mh2PanFine    !== null) SetChannel(mh2PanFine,    0);
   if (mh2Tilt       !== null) SetChannel(mh2Tilt,       MP_M2.TILT_MID);
-  if (mh2Speed      !== null) SetChannel(mh2Speed,      0);
-  if (rib1Tilt   !== null) SetChannel(rib1Tilt,   0);
-  if (rib1Speed  !== null) SetChannel(rib1Speed,  0);
+  mp_zeroRibaltaPair(rib1Function, rib2Function, rib1Speed, rib2Speed, rib1Tilt, rib2Tilt, MP_RIB.TILT_LOW);
   if (rib1Dimmer !== null) SetChannel(rib1Dimmer, 0);
   for (let i = 0; i < rib1Leds.length; i++) {
     if (rib1Leds[i] !== null) SetChannel(rib1Leds[i], 0);
   }
-  if (rib2Tilt   !== null) SetChannel(rib2Tilt,   0);
-  if (rib2Speed  !== null) SetChannel(rib2Speed,  0);
   if (rib2Dimmer !== null) SetChannel(rib2Dimmer, 0);
   for (let i = 0; i < rib2Leds.length; i++) {
     if (rib2Leds[i] !== null) SetChannel(rib2Leds[i], 0);

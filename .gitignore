@@ -29,3 +29,7 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 start-linux.sh
+
+# Skills duplicadas (fonte única: skills/)
+.agents/skills/
+.claude/skills/
