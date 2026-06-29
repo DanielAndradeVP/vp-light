@@ -127,8 +127,6 @@ function OnStart() {
 
   if (mh1ColorWheel !== null) { SetChannel(mh1ColorWheel, 1); SetChannel(mh1ColorWheel, 0); }
   if (mh2ColorWheel !== null) { SetChannel(mh2ColorWheel, 1); SetChannel(mh2ColorWheel, 0); }
-
-  mp_resolveParLeds();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -216,8 +214,6 @@ function ribStateForPhase(phase) {
 function OnExecute() {
   tick++;
 
-  mp_applyParLeds();
-
   // ── Moving Heads — sincronizados na mesma direção ────────────────────────────
   const mhPhase = tick % MH_CYCLE;
   const mh = mhStateForPhase(mhPhase);
@@ -285,6 +281,4 @@ function OnTerminate() {
   for (let i = 0; i < rib2Leds.length; i++) {
     if (rib2Leds[i] !== null) SetChannel(rib2Leds[i], 0);
   }
-
-  mp_zeroParLeds();
 }

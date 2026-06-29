@@ -1,11 +1,9 @@
-// mov-desc-branco — Descida suave branca MH + ribalta + bruts.
+// mov-desc-branco — Descida suave branca MH + bruts + fita.
 // Preset: mov-preset.js
 
 // ── IDs de fixture ──────────────────────────────────────────────────────────
 const ID_M1   = 'fixture_1780805067518_moving_head_beam_1';
 const ID_M2   = 'fixture_1780805067518_moving_head_beam_2';
-const ID_R1   = 'fixture_1780805067518_ribalta_1';
-const ID_R2   = 'fixture_1780805067518_ribalta_2';
 const ID_FITA = 'fixture_1780805067518_fita_led';
 const ID_B01  = 'fixture_1780805067518_mini_brut_01';
 const ID_B02  = 'fixture_1780805067518_mini_brut_02';
@@ -15,9 +13,6 @@ const ID_B04  = 'fixture_1780805067518_mini_brut_04';
 // ── Canais resolvidos ───────────────────────────────────────────────────────
 let m1_cw, m1_strobo, m1_fecho, m1_prism, m1_pan, m1_tilt, m1_speed;
 let m2_cw, m2_strobo, m2_fecho, m2_prism, m2_pan, m2_tilt, m2_speed;
-let r1_tilt, r1_speed, r1_dimmer, r1_strobo, r1_function;
-let r2_tilt, r2_speed, r2_dimmer, r2_strobo, r2_function;
-let r1_leds = null, r2_leds = null;
 let fita, b01, b02, b03, b04;
 
 // ── Estado ──────────────────────────────────────────────────────────────────
@@ -28,8 +23,8 @@ let descendTick = 0;
 // ── Timing: 25fps, 40ms/tick ────────────────────────────────────────────────
 const DESCEND_TICKS = 300; // topo → altar, loop visível (~12s)
 
-// virtual_speed 0 = snap imediato no interpolador; lento só na descida
-const MH_SPEED_SNAP = 0;
+// virtual_speed: maior = mais lento no interpolador
+const MH_SPEED_REPOSITION = MP_MH_SPEED_SLOW;
 
 // ── Posições de referência (banco de conhecimento / medidas no rig) ─────────
 // Moving Head Beam — posições medidas
@@ -76,43 +71,17 @@ function OnStart() {
   m2_tilt   = getChannel(ID_M2, 'tilt');
   m2_speed  = getChannel(ID_M2, 'virtual_speed');
 
-  // Ribalta 1
-  r1_tilt     = getChannel(ID_R1, 'tilt');
-  r1_speed    = getChannel(ID_R1, 'speed');
-  r1_dimmer   = getChannel(ID_R1, 'dimmer');
-  r1_strobo   = getChannel(ID_R1, 'strobo');
-  r1_function = getChannel(ID_R1, 'function');
-  r1_leds = [];
-  for (let i = 1; i <= 8; i++) r1_leds.push(getChannel(ID_R1, 'led_' + i));
-
-  // Ribalta 2
-  r2_tilt     = getChannel(ID_R2, 'tilt');
-  r2_speed    = getChannel(ID_R2, 'speed');
-  r2_dimmer   = getChannel(ID_R2, 'dimmer');
-  r2_strobo   = getChannel(ID_R2, 'strobo');
-  r2_function = getChannel(ID_R2, 'function');
-  r2_leds = [];
-  for (let i = 1; i <= 8; i++) r2_leds.push(getChannel(ID_R2, 'led_' + i));
-
-  // Garante modo DMX manual nas ribaltas (function=0)
-  ch(r1_function, 0);
-  ch(r2_function, 0);
-
   // Fita e Mini Bruts
   fita = getChannel(ID_FITA, 'dimmer');
   b01  = getChannel(ID_B01,  'dimmer');
   b02  = getChannel(ID_B02,  'dimmer');
   b03  = getChannel(ID_B03,  'dimmer');
   b04  = getChannel(ID_B04,  'dimmer');
-
-  mp_resolveParLeds();
 }
 
 
 function OnExecute() {
   tick++;
-
-  mp_applyParLeds();
 
   ch(m1_cw, 0);
   ch(m2_cw, 0);
@@ -124,9 +93,9 @@ function OnExecute() {
   let fechoOn = false;
 
   if (phase === 'reposition') {
-    // Snap instantâneo ao topo — mesmo comportamento no OnStart e após cada volta
-    ch(m1_speed, MH_SPEED_SNAP);
-    ch(m2_speed, MH_SPEED_SNAP);
+    // Volta ao topo sem luz — motor lento (sem snap)
+    ch(m1_speed, MH_SPEED_REPOSITION);
+    ch(m2_speed, MH_SPEED_REPOSITION);
     ch(m1_tilt, MP_M1.TILT_F);
     ch(m2_tilt, MP_M2.TILT_F);
     phase = 'descend';
@@ -150,21 +119,6 @@ function OnExecute() {
   ch(m2_fecho, fechoOn ? 255 : 0);
   ch(m1_strobo, fechoOn ? 255 : 0);
   ch(m2_strobo, fechoOn ? 255 : 0);
-
-  // RIBALTAS — par sincronizado (function → speed → tilt, mesmo valor logico)
-  mp_applyRibaltaPair(
-    r1_function, r2_function,
-    r1_speed, r2_speed,
-    r1_tilt, r2_tilt,
-    MP_RIB.SPEED_SLOW,
-    MP_RIB.TILT_LOUVOR
-  );
-  ch(r1_dimmer, 255); ch(r2_dimmer, 255);
-  ch(r1_strobo, 0); ch(r2_strobo, 0);
-  for (let i = 0; i < 8; i++) {
-    ch(r1_leds[i], 255);
-    ch(r2_leds[i], 255);
-  }
 
   // MINI BRUTS — fase 1: onda suave em 4 canais
   ch(b01, spulse(tick, 76, 255, 100));
@@ -193,14 +147,6 @@ function OnTerminate() {
   ch(m2_speed, 0);
   ch(m2_tilt, 0);
 
-  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, MP_RIB.TILT_LOW);
-  ch(r1_dimmer, 0); ch(r2_dimmer, 0);
-  ch(r1_strobo, 0); ch(r2_strobo, 0);
-  if (r1_leds) { for (let i = 0; i < 8; i++) ch(r1_leds[i], 0); }
-  if (r2_leds) { for (let i = 0; i < 8; i++) ch(r2_leds[i], 0); }
-
   ch(fita, 0);
   ch(b01, 0); ch(b02, 0); ch(b03, 0); ch(b04, 0);
-
-  mp_zeroParLeds();
 }

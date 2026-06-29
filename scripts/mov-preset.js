@@ -1,25 +1,9 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// mov-preset.js — Biblioteca compartilhada (ParLed, pan/tilt MH, helpers ribalta).
+// mov-preset.js — Biblioteca compartilhada (pan/tilt MH, helpers ribalta).
 // Injetado automaticamente em todo mov-*.js exceto este arquivo.
-//    (cor ParLed, pan/tilt MH, helpers de ribalta motorizada).
-// 2) Script standalone — Movings trajetória suave por keyframes + Ribaltas RGB estáticas + Fita LED.
-//    Destino: F10. Sem ParLed, ribalta motorizada nem Mini Bruts.
+// Script standalone — Movings trajetória suave por keyframes + Ribaltas RGB estáticas + Fita LED.
+// Destino: F10. Sem ribalta motorizada nem Mini Bruts.
 // ══════════════════════════════════════════════════════════════════════════════
-
-// ── COR PAR LED — altere R/G/B/DIM para mudar a cor em todos os mov-padrão ───
-const MP_PAR_COLOR = { R: 160, G: 0, B: 220, DIM: 255 };
-
-// ── IDs ParLed Deluxe (grupo ativo no show) ───────────────────────────────────
-const MP_PAR_IDS = [
-  'fixture_1780805067518_parled_deluxe_1',
-  'fixture_1780805067518_parled_deluxe_2',
-  'fixture_1780805067518_parled_deluxe_3',
-  'fixture_1780805067518_parled_deluxe_5',
-  'fixture_1780805067518_parled_deluxe_7',
-  'fixture_1780805067518_parled_deluxe_8',
-  'fixture_1780805067518_parled_deluxe_9',
-  'fixture_1780805067518_parled_deluxe_6', // ParLed_Deluxe_9_extra
-];
 
 // ── Moving Head Beam 1 (esquerda) — posições medidas no rig ─────────────────
 // PAN_C = frente simétrica | PAN_L = lateral esq. | PAN_R = varrida direita
@@ -103,58 +87,12 @@ function mp_zeroRibaltaPair(r1Fn, r2Fn, r1Spd, r2Spd, r1Tilt, r2Tilt, neutralTil
   mp_ch(r2Tilt, tilt);
 }
 
-// ── ParLeds — canais resolvidos (preenchido no OnStart de cada script) ──────
-let mp_par = [];
-
 // ── Ribaltas RGB estáticas — canais resolvidos ───────────────────────────────
 let mp_ribStatic = [];
 
 function mp_ch(c, v) {
   if (c !== null && c !== undefined) {
     SetChannel(c, Math.max(0, Math.min(255, Math.round(v))));
-  }
-}
-
-function mp_resolveParLeds() {
-  mp_par = [];
-  for (let i = 0; i < MP_PAR_IDS.length; i++) {
-    const id = MP_PAR_IDS[i];
-    mp_par.push({
-      macro: getChannel(id, 'macro'),
-      cw:    getChannel(id, 'color_wheel'),
-      speed: getChannel(id, 'speed'),
-      dim:   getChannel(id, 'dimmer'),
-      r:     getChannel(id, 'red'),
-      g:     getChannel(id, 'green'),
-      b:     getChannel(id, 'blue'),
-    });
-  }
-}
-
-function mp_applyParLeds() {
-  const c = MP_PAR_COLOR;
-  for (let i = 0; i < mp_par.length; i++) {
-    const p = mp_par[i];
-    mp_ch(p.macro, 0);
-    mp_ch(p.cw, 0);
-    mp_ch(p.speed, 0);
-    mp_ch(p.dim, c.DIM);
-    mp_ch(p.r, c.R);
-    mp_ch(p.g, c.G);
-    mp_ch(p.b, c.B);
-  }
-}
-
-function mp_zeroParLeds() {
-  for (let i = 0; i < mp_par.length; i++) {
-    const p = mp_par[i];
-    mp_ch(p.macro, 0);
-    mp_ch(p.cw, 0);
-    mp_ch(p.speed, 0);
-    mp_ch(p.dim, 0);
-    mp_ch(p.r, 0);
-    mp_ch(p.g, 0);
-    mp_ch(p.b, 0);
   }
 }
 

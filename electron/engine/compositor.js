@@ -46,8 +46,30 @@ let _mergeMode = 'htp';                        // 'htp' | 'linear'
 let _layerSeq = 0;                             // sequência p/ ids únicos de camadas de macro
 
 // ─── CONFIG / GUARDS ─────────────────────────────────────────────────────────
-/** @deprecated Cenas são base via restoreState; scripts sobrescrevem na mescla. Mantido p/ compat IPC. */
-function setSceneLock(_map) { /* no-op — prioridade script > cena na mescla de camadas */ }
+let _sceneLockMask = new Uint8Array(512);
+let _sceneLockValues = {};
+
+/** Canais da cena ativa que scripts não podem sobrescrever (ex.: cor/prisma do moving). */
+function setSceneLock(mask, values) {
+  _sceneLockMask = mask instanceof Uint8Array ? mask : new Uint8Array(512);
+  _sceneLockValues = values || {};
+}
+
+function isSceneLockedChannel(ch) {
+  const idx = Number(ch) - 1;
+  return idx >= 0 && idx < 512 && _sceneLockMask[idx] === 1;
+}
+
+function applySceneLockToUniverse() {
+  for (let i = 0; i < 512; i++) {
+    if (!_sceneLockMask[i]) continue;
+    const ch = i + 1;
+    const v = _sceneLockValues[ch] ?? _sceneLockValues[String(ch)];
+    if (v === undefined) continue;
+    _writeChannelToUniverse(ch, v);
+  }
+}
+
 function setDisabledChannelsProvider(fn) { if (typeof fn === 'function') _getDisabledChannels = fn; }
 function setMergeMode(mode) { _mergeMode = (mode === 'linear') ? 'linear' : 'htp'; }
 
@@ -235,6 +257,8 @@ function renderFrame() {
     _writeChannelToUniverse(ch, Math.round(out));
   }
 
+  applySceneLockToUniverse();
+
   // 4. remove camadas que terminaram o fade-out neste frame
   for (const layer of arr) {
     if (layer.phase === 'done') _removeLayerInternal(layer, 'fade-out');
@@ -381,7 +405,7 @@ function getActiveMacroStatus() {
 
 module.exports = {
   // config
-  setSceneLock, setDisabledChannelsProvider, setMergeMode,
+  setSceneLock, isSceneLockedChannel, setDisabledChannelsProvider, setMergeMode,
   // camadas (Fase 1 — usado por F-keys e page-scripts)
   addLayer, removeLayer, stopLayer, hasLayer, clearLayers, layerCount, releaseLayer,
   getActiveControlledChannels,

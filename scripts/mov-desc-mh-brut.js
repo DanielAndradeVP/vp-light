@@ -94,8 +94,6 @@ function OnStart() {
   b02 = getChannel(ID_B02, 'dimmer');
   b03 = getChannel(ID_B03, 'dimmer');
   b04 = getChannel(ID_B04, 'dimmer');
-
-  mp_resolveParLeds();
 }
 
 
@@ -106,8 +104,6 @@ function OnExecute() {
 
   const cycleTick = tick % LOOP;
   const isDescending = cycleTick < DESCEND_TICKS;
-
-  mp_applyParLeds();
 
   // Mantém configurações base dos movings
   ch(m1_cw, 0);
@@ -186,6 +182,4 @@ function OnTerminate() {
   ch(b02, 0);
   ch(b03, 0);
   ch(b04, 0);
-
-  mp_zeroParLeds();
 }

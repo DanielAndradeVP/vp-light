@@ -246,8 +246,6 @@ function OnStart() {
   m1_tilt_end = travelEnd(m1_tilt_start, MP_M1.TILT_A);
   m2_tilt_end = travelEnd(m2_tilt_start, MP_M2.TILT_A);
   rib_tilt_end = travelEnd(rib_tilt_start, MP_RIB.TILT_HIGH);
-
-  mp_resolveParLeds();
 }
 
 
@@ -256,7 +254,6 @@ function OnStart() {
 function OnExecute() {
   tick++;
 
-  mp_applyParLeds();
   applyMovingBase();
 
   if (phase === 'mh_descend') {
@@ -351,6 +348,4 @@ function OnTerminate() {
   setRibaltaLeds(0);
 
   ch(fita, 0);
-
-  mp_zeroParLeds();
 }

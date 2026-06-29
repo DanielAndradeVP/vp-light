@@ -798,7 +798,18 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   useEffect(() => {
     if (!existingScriptsModal) return;
-    window.vp.listScripts().then(r => setExistingScripts(r.ok ? r.files : []));
+    window.vp.listScripts().then(r => {
+      const files = r.ok ? r.files : [];
+      setExistingScripts(files);
+      const current = scriptsRef.current[existingScriptsModal.fkey];
+      if (!current) {
+        setSelectedExisting(null);
+        return;
+      }
+      const match = files.find(s => s.file === current.file || s.name === current.name);
+      setSelectedExisting(match || { name: current.name, file: current.file, color: current.color });
+      setScriptColor(current.color || DEFAULT_SCRIPT_COLOR);
+    });
   }, [existingScriptsModal]);
 
   const assignedScriptKeys = useMemo(() => {
@@ -811,11 +822,18 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     return { files, names };
   }, [scripts]);
 
+  const existingModalAssigned = existingScriptsModal ? scripts[existingScriptsModal.fkey] : null;
+  const canConfirmExistingScript = !!(selectedExisting || existingModalAssigned);
+
   const selectableExistingScripts = useMemo(
-    () => existingScripts.filter(s =>
-      !assignedScriptKeys.files.has(s.file) && !assignedScriptKeys.names.has(s.name),
-    ),
-    [existingScripts, assignedScriptKeys],
+    () => {
+      const current = existingScriptsModal ? scripts[existingScriptsModal.fkey] : null;
+      return existingScripts.filter(s => {
+        if (current && (s.file === current.file || s.name === current.name)) return true;
+        return !assignedScriptKeys.files.has(s.file) && !assignedScriptKeys.names.has(s.name);
+      });
+    },
+    [existingScripts, assignedScriptKeys, existingScriptsModal, scripts],
   );
 
   const groupedExistingScripts = useMemo(
@@ -825,10 +843,14 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   useEffect(() => {
     if (!existingScriptsModal || !selectedExisting) return;
+    const assigned = scripts[existingScriptsModal.fkey];
+    if (assigned && (assigned.file === selectedExisting.file || assigned.name === selectedExisting.name)) {
+      return;
+    }
     const inUse = assignedScriptKeys.files.has(selectedExisting.file)
       || assignedScriptKeys.names.has(selectedExisting.name);
     if (inUse) setSelectedExisting(null);
-  }, [existingScriptsModal, selectedExisting, assignedScriptKeys]);
+  }, [existingScriptsModal, selectedExisting, assignedScriptKeys, scripts]);
 
   async function handleScriptRightClick(e, fkey) {
     e.preventDefault();
@@ -2428,8 +2450,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                       const maskedByAllOn = ribaltaAllOnActive && /^led_?[2-8]$/.test(normalizedChanName);
                       if (maskedByAllOn) return null;
                       const isHiddenChannel =
-                        (selectedFixture.id === 'fixture_1780805067518_parled_deluxe_1' && i === 0) ||
-                        (/^fixture_1780805067518_parled_deluxe_[2-9]$/.test(selectedFixture.id) && i === 7);
+                        /^fixture_1780805067518_parled_deluxe_[2-9]$/.test(selectedFixture.id) &&
+                        selectedFixture.id !== 'fixture_1780805067518_parled_deluxe_6' &&
+                        i === 7;
                       if (isHiddenChannel) return null;
 
                       const allOnMaster = ribaltaAllOnActive && /^led_?1$/.test(normalizedChanName);
@@ -2584,10 +2607,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         >
           <div
             onClick={() => {
-              const currentScript = scripts[scriptMenu.fkey];
               setExistingScriptsModal({ fkey: scriptMenu.fkey });
-              setSelectedExisting(null);
-              setScriptColor(currentScript?.color || DEFAULT_SCRIPT_COLOR);
               setScriptMenu(null);
             }}
             style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
@@ -2827,38 +2847,42 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               {EXISTING_SCRIPTS_SHOW_VSCODE && (
               <button
                 onClick={async () => {
-                  if (!selectedExisting) return;
-                  const metaResult = await window.vp.createScript(existingScriptsModal.fkey, selectedExisting.name, { skipOpenEditor: true, color: scriptColor });
+                  const assigned = scripts[existingScriptsModal.fkey];
+                  const target = selectedExisting || (assigned ? { name: assigned.name, file: assigned.file } : null);
+                  if (!target) return;
+                  const metaResult = await window.vp.createScript(existingScriptsModal.fkey, target.name, { skipOpenEditor: true, color: scriptColor });
                   if (metaResult?.ok) {
                     setScripts(prev => ({
                       ...prev,
-                      [existingScriptsModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, color: metaResult.color || scriptColor, running: false }
+                      [existingScriptsModal.fkey]: { name: target.name, file: target.file, color: metaResult.color || scriptColor, running: false }
                     }));
                   }
-                  const result = await window.vp.editScript(existingScriptsModal.fkey, selectedExisting.file);
+                  const result = await window.vp.editScript(existingScriptsModal.fkey, target.file);
                   if (!result?.ok) console.warn('[vp] editScript falhou:', result?.error);
                 }}
-                disabled={!selectedExisting}
-                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? 'transparent' : 'rgba(0,0,0,.12)', color: selectedExisting ? theme.colors.primary : theme.colors.textDisabled, border:'none', boxShadow:'none' }}
+                disabled={!canConfirmExistingScript}
+                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: canConfirmExistingScript ? 'pointer' : 'default', background: canConfirmExistingScript ? 'transparent' : 'rgba(0,0,0,.12)', color: canConfirmExistingScript ? theme.colors.primary : theme.colors.textDisabled, border:'none', boxShadow:'none' }}
               >Abrir no VS Code</button>
               )}
 
               <button
                 onClick={async () => {
-                  if (!selectedExisting) return;
-                  const result = await window.vp.createScript(existingScriptsModal.fkey, selectedExisting.name, { skipOpenEditor: true, color: scriptColor });
+                  const assigned = scripts[existingScriptsModal.fkey];
+                  const target = selectedExisting || (assigned ? { name: assigned.name, file: assigned.file } : null);
+                  if (!target) return;
+                  const result = await window.vp.createScript(existingScriptsModal.fkey, target.name, { skipOpenEditor: true, color: scriptColor });
                   if (result.ok) {
                     setScripts(prev => ({
                       ...prev,
-                      [existingScriptsModal.fkey]: { name: selectedExisting.name, file: selectedExisting.file, color: result.color || scriptColor, running: false }
+                      [existingScriptsModal.fkey]: { name: target.name, file: target.file, color: result.color || scriptColor, running: false }
                     }));
                   }
                   setExistingScriptsModal(null);
                   setScriptColor(DEFAULT_SCRIPT_COLOR);
                   setSelectedExisting(null);
                 }}
-                disabled={!selectedExisting}
-                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: selectedExisting ? 'pointer' : 'default', background: selectedExisting ? theme.colors.primary : 'rgba(0,0,0,.12)', color: selectedExisting ? '#ffffff' : theme.colors.textDisabled, border:'none', boxShadow: selectedExisting ? theme.elevation.z2 : 'none' }}
+                disabled={!canConfirmExistingScript}
+                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: canConfirmExistingScript ? 'pointer' : 'default', background: canConfirmExistingScript ? theme.colors.primary : 'rgba(0,0,0,.12)', color: canConfirmExistingScript ? '#ffffff' : theme.colors.textDisabled, border:'none', boxShadow: canConfirmExistingScript ? theme.elevation.z2 : 'none' }}
               >Confirmar</button>
             </div>
           </div>

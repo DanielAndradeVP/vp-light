@@ -16,7 +16,7 @@ function OnStart() {
 }
 
 function OnExecute() {
-  dimmers.forEach((channel) => SetChannel(channel, 255));
+  dimmers.forEach((channel) => SetChannel(channel, 200));
 }
 
 function OnTerminate() {

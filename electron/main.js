@@ -446,12 +446,12 @@ ipcMain.handle('dmx:getConflicts', () => {
 });
 
 // Mapa de canais das cenas ativas — usado pelo renderer para restoreState e conflitos.
-// Scripts têm prioridade temporária: cena é base (restoreState), compositor sobrescreve
-// nos canais que o script toca a cada frame; ao parar o script, restoreState reaplica a cena.
+// color_wheel / prisma do moving com valor ≠ 0 na cena ficam lockados: scripts não sobrescrevem.
 let activeSceneChannels = {}; // { [canal]: valor }
 
 ipcMain.handle('dmx:setActiveSceneChannels', (_, channels, _parLedChs) => {
   activeSceneChannels = filterDisabledFixtureChannels(channels);
+  _applySceneLock();
   return { ok: true };
 });
 
@@ -833,6 +833,58 @@ function filterDisabledFixtureChannels(channelMap) {
   return filtered;
 }
 
+function findFixtureOwningChannel(ch, fixtures) {
+  const target = Number(ch);
+  for (const fixture of fixtures || []) {
+    if (!isFixtureEnabled(fixture)) continue;
+    const start = Number(fixture.startChannel) || 1;
+    const count = Number(fixture.channelCount ?? (fixture.channels || []).length) || 0;
+    if (target >= start && target < start + count) return fixture;
+  }
+  return null;
+}
+
+function getChannelAliasAt(fixture, ch) {
+  const start = Number(fixture.startChannel) || 1;
+  const idx = Number(ch) - start;
+  const channels = fixture.channels || [];
+  if (idx < 0 || idx >= channels.length) return null;
+  return channels[idx];
+}
+
+/** Cena com valor ≠ 0 em color_wheel ou prisma do moving head → script não sobrescreve. */
+function buildMovingHeadSceneLockState(channelMap) {
+  const mask = new Uint8Array(512);
+  const values = {};
+  const fixtures = show.getShow()?.fixtures || [];
+
+  for (const [channel, value] of Object.entries(channelMap || {})) {
+    const ch = Number(channel);
+    const v = Number(value);
+    if (ch < 1 || ch > 512 || v === 0) continue;
+
+    const fixture = findFixtureOwningChannel(ch, fixtures);
+    if (!fixture || getFixtureType(fixture) !== 'moving_head_beam') continue;
+
+    const aliasNorm = normalizeAlias(getChannelAliasAt(fixture, ch));
+    if (!aliasNorm) continue;
+
+    const isColor = aliasNorm === 'color_wheel';
+    const isPrism = getFixtureAliasCandidates(fixture, 'prism').includes(aliasNorm);
+    if (!isColor && !isPrism) continue;
+
+    mask[ch - 1] = 1;
+    values[ch] = v;
+  }
+
+  return { mask, values };
+}
+
+function _applySceneLock() {
+  const { mask, values } = buildMovingHeadSceneLockState(activeSceneChannels);
+  compositor.setSceneLock(mask, values);
+}
+
 function setDmxChannelRuntime(channel, value, origin = 'runtime') {
   const ch = Number(channel);
   if (!isDmxChannelEnabled(ch)) return false;
@@ -999,6 +1051,7 @@ function resolveAdapterValue(fixtureId, alias, adapterKey, logicalValue) {
 // API exposta na sandbox de scripts ao lado de SetChannel e getChannel.
 function buildScriptSandbox(buffer, touched, controlledMask) {
   const SetChannel = (ch, val) => {
+    if (compositor.isSceneLockedChannel(ch)) return;
     if (ch < 1 || ch > 512) return;
     const idx = ch - 1;
     buffer[idx] = Math.max(0, Math.min(255, Math.round(Number(val))));
