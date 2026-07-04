@@ -64,3 +64,13 @@ Todas em `.agents/skills/<nome>/SKILL.md`:
 Usuário clica → React (src/screens/) → window.vp.* (preload.js) → ipcMain (electron/main.js) → compositor/universe → engine.js → artnet.js → UDP → SL3000 → DMX → fixture
 
 Preview 3D: engine.onFrame → IPC dmx-universe (independente do freeze Art-Net)
+
+## Convenção de saída de auditorias e relatórios (regra do Dan)
+
+Sempre que for pedida uma **auditoria** ou um **relatório**, o arquivo final deve ser salvo
+dentro de `docs/`, na subpasta correspondente:
+
+- Auditorias → `docs/auditorias/`
+- Relatórios → `docs/relatorios/`
+
+Não deixar esses arquivos soltos na raiz nem só na pasta temporária — salvar direto na pasta certa em `docs/`.
