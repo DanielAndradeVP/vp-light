@@ -9,7 +9,7 @@ Engenheiro backend sênior do vp-light — software DMX da Igreja Vida e Paz. St
 
 **Regra de output:** sempre no formato "No arquivo X, localize Y, substitua por Z". Nunca altere o que não foi pedido. Nunca adicione dependências sem ser solicitado.
 
-**Fonte da verdade estrutural:** `README_SKILL.md` vence em divergência com esta skill.
+**Fonte da verdade estrutural:** a árvore real do projeto e o código atual vencem. Use `README_SKILL.md` como referência estrutural, mas se ele divergir do filesystem/código, o projeto está certo e a documentação precisa ser sincronizada.
 
 ---
 
@@ -30,26 +30,54 @@ Consulte `shows/vp.show.json` e `banco-de-conhecimento/` para fixtures e canais 
 
 ---
 
-## Estrutura de Pastas (backend)
+## Estrutura de Pastas e Arquivos (backend)
 
 ```
-electron/
-├── main.js           → IPC handlers, engine, show, scripts, macros
-├── preload.js        → window.vp.* (contextBridge)
-├── show.js           → lê/salva .show.json
-├── fixtureOffsets.js → offsets pan/tilt por fixture
-└── engine/
-    ├── engine.js     → loop 40ms: interpolator → compositor.renderFrame → sendArtDMX
-    ├── compositor.js → camadas de scripts/macros, merge HTP/linear, guards
-    ├── universe.js   → Uint8Array(512), offsets pan/tilt nos aliases pan/tilt
-    ├── artnet.js     → loopback + broadcast dirigido + freeze
-    └── interpolator.js → interpolação de movimento (speed virtual pan/tilt)
-
-scripts/              → efeitos DMX (OnStart/OnExecute/OnTerminate)
-shows/vp.show.json    → show padrão
+C:\vp-light\
+├── electron/
+│   ├── main.js          → IPC, ciclo de vida, show, scripts, macros, aliases, offsets e janela 3D
+│   ├── preload.js       → contextBridge: expõe window.vp.* para renderer
+│   ├── show.js          → load/save .show.json, validação no save, cena default e startupChannels
+│   ├── adapter.js       → resolve alias lógico/adapters de fixture para canal/valor DMX
+│   ├── fixtureOffsets.js→ offsets pan/tilt por canal no universo lógico/físico
+│   ├── ribaltaPhysicalCalib.js → calibração física das ribaltas antes do envio Art-Net
+│   └── engine/
+│       ├── engine.js    → loop 40ms: ribaltaDebug + interpolator + compositor + Art-Net + onFrame
+│       ├── compositor.js→ camadas de scripts/macros, envelopes, merge HTP/linear, guards e scene-lock
+│       ├── universe.js  → Uint8Array(512), offsets, snapshot lógico e detectConflicts
+│       ├── artnet.js    → UDP Art-Net 6454, sockets por interface, fallback e freeze
+│       ├── interpolator.js → speed virtual pan/tilt; canal virtual não sai no DMX
+│       └── ribaltaDebug.js → logs da Ribalta_2 via VP_RIBALTA_DEBUG=1
+│
+├── scripts/
+│   ├── *.js             → scripts ativos F1–F12 e page_scripts (OnStart/OnExecute/OnTerminate)
+│   ├── mov-preset.js    → preset injetado automaticamente quando o script começa com mov-
+│   ├── fire-base.js     → biblioteca de helpers atualmente inerte/não injetada
+│   ├── backlog/         → protótipos fora do runtime; macros antigas podem apontar para nomes daqui
+│   └── casamento/       → área separada para scripts de casamento
+│
+├── shows/
+│   ├── vp.show.json     → show padrão carregado no boot
+│   ├── fixture_template.json → template/base de fixture
+│   ├── arquivo_migracao_lumikit.json → referência de migração Lumikit
+│   └── vp.show_backup.json / *.bak_offset_* → backups manuais, sem rotação automática
+│
+├── tools/
+│   ├── sync-scripts.js  → associa/sincroniza scripts com F-keys no show
+│   └── run/setup/kill   → auxiliares de dev/instalação
+│
+├── banco-de-conhecimento/
+│   └── *.md             → notas por tipo de fixture injetadas em scripts novos
+│
+└── src/                 → renderer; não acessa hardware direto
+    ├── store/showStore.js → estado global usado para show, páginas, cenas e seleção
+    ├── screens/Main.jsx → mesa, faders, cenas, F-keys, blackout, freeze e 3D
+    ├── screens/PainelOperacao.jsx → operação ao vivo: macros, scripts e cenas
+    ├── screens/Viewer3D.jsx + viewer3d-main.jsx + viewer3d/* → preview 3D via IPC dmx-universe
+    └── screens/FixturePanel.jsx / FixtureEditor.jsx / SceneEditor.jsx → CRUD e edição; SceneEditor existe mas não está roteado no App.jsx
 ```
 
-Telas com impacto backend: `Main.jsx` (resolveUniverseState, IPC), `PainelOperacao.jsx` (macros/scripts ao vivo). Viewer 3D: janela separada via `window:open3DViewer`, universo via evento `dmx-universe`.
+Fronteiras com impacto backend: `Main.jsx` (resolveUniverseState, IPC, F-keys, cenas), `PainelOperacao.jsx` (macros/scripts ao vivo), `showStore.js` (estado global e persistência), `Viewer3D.jsx`/`src/viewer3d/*` (janela separada via `window:open3DViewer`, universo via evento `dmx-universe`). Alteração em `electron/**` exige reiniciar `npm run dev`; alteração em `src/**` tem hot reload.
 
 ---
 
