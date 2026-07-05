@@ -110,7 +110,7 @@ Toda leitura de auditorias existentes ou escrita de novas auditorias deve seguir
 * **Conceito:** Reservado exclusivamente para a auditoria "maior e mais robusta", centralizando o relatório principal, mais denso e de maior impacto do projeto.
 
 ### 3. Auditorias de Médio Porte (Pepitas)
-* **Diretório:** `docs/auditorias/exploracao/[nome-da-mina]/pepita-1/`, `docs/auditorias/exploracao/[nome-da-mina]/pepita-2/` ...
+* **Diretório:** `docs/auditorias/exploracao/[nome-da-mina]/pepita-01/`, `docs/auditorias/exploracao/[nome-da-mina]/pepita-02/` ...
 * **Conceito:** Destinado a relatórios sólidos e visíveis de forma isolada, mas de menor escala que o bloco principal, representando entregas valiosas, porém segmentadas.
 
 ---
