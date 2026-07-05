@@ -25,8 +25,11 @@ deles** — porque toda escrita da base passa pelo adapter.
 
 1. **Contagem de scripts:** o bruto fala em "todos os 50 scripts"; a mina
    adapter-universal fala em "14 scripts atuais". Contagem real em 05/07/2026:
-   15 arquivos `.js` em `scripts/`, sendo 1 scripts-fire.
-   Se a contagem for usada como critério de aceite, prevalece a contagem real.
+   15 arquivos `.js` em `scripts/` — 14 scripts ativos (mov-*/brut-*) mais a
+   biblioteca `fire-base.js`. Nenhum script-fire consumidor existe ainda: os
+   "50 scripts" do bruto são projeção futura, e os "14 scripts atuais" da mina
+   adapter-universal batem com a contagem real. Se a contagem for usada como
+   critério de aceite, prevalece a contagem real.
 2. **"Byte a byte equivalente à v1"** deve ser lido como equivalência de
    writes/DMX (diff de `SetChannel` vazio no teste de identidade), não como
    identidade literal do arquivo fonte.
