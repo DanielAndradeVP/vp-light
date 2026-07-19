@@ -322,6 +322,11 @@ function MacroEditorModal({ macro, onSave, onClose }) {
     if (macro) {
       const steps = macro.steps?.map(s => ({
         scriptName: s.script || s.scriptName || '',
+        _orig: {
+          fadeInMs: Number(s.fadeInMs) || 0,
+          fadeOutMs: Number(s.fadeOutMs) || 0,
+          overlapMs: Number(s.overlapMs) || 0,
+        },
       })) ?? [{ ...STEP_DEFAULTS }];
       const firstDur = macro.steps?.[0]?.durationMs ?? macro.steps?.[0]?.duration;
       return {
@@ -356,7 +361,7 @@ function MacroEditorModal({ macro, onSave, onClose }) {
   function setStep(i, value) {
     setDraft(d => {
       const steps = [...d.steps];
-      steps[i] = { scriptName: value };
+      steps[i] = { ...steps[i], scriptName: value };
       return { ...d, steps };
     });
   }
@@ -364,6 +369,11 @@ function MacroEditorModal({ macro, onSave, onClose }) {
   function removeStep(i){ setDraft(d => ({ ...d, steps: d.steps.filter((_, idx) => idx !== i) })); }
 
   const canSave = draft.name.trim() && draft.steps.length > 0 && draft.steps.every(s => s.scriptName.trim());
+  const hasAdvancedFields = !!macro && (
+    macro.loop === true
+    || macro.mergeMode === 'linear'
+    || macro.steps?.some(s => Number(s.fadeInMs) > 0 || Number(s.fadeOutMs) > 0 || Number(s.overlapMs) > 0)
+  );
 
   return (
     <div style={{
@@ -428,6 +438,12 @@ function MacroEditorModal({ macro, onSave, onClose }) {
               Tempo que cada script fica ativo antes de passar para o próximo.
             </div>
           </div>
+
+          {hasAdvancedFields && (
+            <div style={{ ...ty.tooltip, color: C.warn, marginBottom: sp.md }}>
+              Esta macro usa campos avançados (fade, overlap, loop ou mergeMode linear) que este editor simples não exibe. Esses campos serão preservados automaticamente ao salvar — apenas nome, scripts e duração comum podem ser alterados aqui.
+            </div>
+          )}
 
           <div style={{
             ...ty.compact,
@@ -539,14 +555,14 @@ function MacroPanel() {
     const intervalMs = Math.max(500, Number(draft.stepIntervalMs) || DEFAULT_STEP_INTERVAL_MS);
     const def = {
       name: isEdit ? (editingMacro.name || id) : id,
-      mergeMode: 'htp',
-      loop: false,
+      mergeMode: isEdit ? (editingMacro.mergeMode === 'linear' ? 'linear' : 'htp') : 'htp',
+      loop: isEdit ? !!editingMacro.loop : false,
       steps: draft.steps.map(s => ({
         script: s.scriptName.trim(),
         durationMs: intervalMs,
-        fadeInMs: 0,
-        fadeOutMs: 0,
-        overlapMs: 0,
+        fadeInMs: s._orig?.fadeInMs || 0,
+        fadeOutMs: s._orig?.fadeOutMs || 0,
+        overlapMs: s._orig?.overlapMs || 0,
       })),
     };
 
@@ -567,7 +583,10 @@ function MacroPanel() {
     setEditorOpen(true);
   }
 
-  async function handleStart(id)  { await window.vp.startMacro?.(id); }
+  async function handleStart(id) {
+    const result = await window.vp.startMacro?.(id);
+    if (result && result.ok === false) window.alert(result.error || 'Falha ao iniciar macro.');
+  }
   async function handleStop(id)   { await window.vp.stopMacro?.(id); }
   async function handleNext(id)   { await window.vp.nextMacroStep?.(id); }
   async function handleRemove(id) {
@@ -660,11 +679,23 @@ function MacroPanel() {
                 }} title="Remover macro">✕</button>
               </div>
 
+              {macro.invalid && (
+                <div style={{ ...ty.tooltip, color: C.warn, marginBottom: sp.md }}>
+                  ⚠ Script(s) inexistente(s): {macro.invalidSteps?.map(s => `passo ${s.index + 1} (${s.script || 'vazio'})`).join(', ')}
+                </div>
+              )}
+              {macro.lastError && (
+                <div style={{ ...ty.tooltip, color: C.warn, marginBottom: sp.md }}>
+                  ⚠ Erro no passo {macro.lastError.stepIndex + 1}: {macro.lastError.error}
+                </div>
+              )}
+
               {/* Transport */}
               <div style={{ display: 'flex', gap: sp.sm }}>
                 <Btn
                   onClick={() => isActive ? handleStop(macroId) : handleStart(macroId)}
                   active={isActive}
+                  disabled={!isActive && macro.invalid}
                   touch
                   style={{ flex: 1, ...ty.toolbar }}
                 >

@@ -426,8 +426,7 @@ function filterSceneMapByActiveScripts(channelMap) {
 
 ipcMain.handle('dmx:restoreState', (_, channels) => {
   const filtered = filterDisabledFixtureChannels(channels);
-  const anyScriptRunning = Object.keys(runningScripts).length > 0
-    || Object.keys(runningPageScripts).length > 0;
+  const anyScriptRunning = compositor.hasActiveControlLayers();
 
   ribaltaDebug.logRestoreState('restoreState:before', filtered, { anyScriptRunning });
 
@@ -492,6 +491,7 @@ ipcMain.handle('show:load', async (_, filePath) => {
     stopAllRunningScripts('show:load');
     const data = show.loadShow(targetPath);
     loadPageScriptMeta();
+    loadMacros();
     initializeOffsets();
     const startupChannels = show.getStartupChannels();
     Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
@@ -1916,6 +1916,7 @@ function msToFrames(ms) { return Math.max(0, Math.round((Number(ms) || 0) / FRAM
 // def = { id, name, mergeMode: 'htp'|'linear', loop, steps: [ { script, durationMs|null, fadeInMs, fadeOutMs, overlapMs } ] }
 // durationMs null/'infinite' = passo segura até nextMacroStep.
 const macroDefs = {};
+const macroStepErrors = new Map(); // macroId -> {stepIndex, error, timestamp}
 
 function normalizeMacroDef(id, def) {
   return {
@@ -1948,6 +1949,16 @@ function instantiateMacro(norm) {
   compositor.createMacro(norm.id, steps, { mergeMode: norm.mergeMode, loop: norm.loop });
 }
 
+function validateMacroReferences(norm) {
+  const invalidSteps = [];
+  norm.steps.forEach((step, index) => {
+    if (!step.script || !fs.existsSync(path.join(SCRIPTS_DIR, step.script + '.js'))) {
+      invalidSteps.push({ index, script: step.script });
+    }
+  });
+  return { valid: invalidSteps.length === 0, invalidSteps };
+}
+
 function saveMacros() {
   const current = show.getShow();
   if (!current) return;
@@ -1957,6 +1968,9 @@ function saveMacros() {
 
 // Carrega as macros do show na inicialização e as recria no compositor (sem disparar).
 function loadMacros() {
+  compositor.clearMacros();
+  for (const id of Object.keys(macroDefs)) delete macroDefs[id];
+  macroStepErrors.clear();
   const current = show.getShow();
   if (!current || !Array.isArray(current.macros)) return;
   for (const def of current.macros) {
@@ -1984,6 +1998,7 @@ ipcMain.handle('macro:create', (_, id, def = {}) => {
 ipcMain.handle('macro:update', (_, id, def = {}) => {
   try {
     if (!id || !macroDefs[id]) return { ok: false, error: 'macro não encontrada' };
+    macroStepErrors.delete(id);
     compositor.stopMacro(id);
     compositor.removeMacro(id);
     const norm = normalizeMacroDef(id, def);
@@ -1996,10 +2011,20 @@ ipcMain.handle('macro:update', (_, id, def = {}) => {
   }
 });
 
-ipcMain.handle('macro:start',  (_, id) => ({ ok: compositor.startMacro(id) }));
+ipcMain.handle('macro:start', (_, id) => {
+  const norm = macroDefs[id];
+  if (!norm) return { ok: false, error: 'macro não encontrada' };
+  const validation = validateMacroReferences(norm);
+  if (!validation.valid) {
+    return { ok: false, error: 'Macro com script(s) inexistente(s): ' + validation.invalidSteps.map(s => `passo ${s.index+1} (${s.script||'vazio'})`).join(', ') };
+  }
+  macroStepErrors.delete(id);
+  return compositor.startMacro(id);
+});
 ipcMain.handle('macro:stop',   (_, id) => ({ ok: compositor.stopMacro(id) }));
 ipcMain.handle('macro:next',   (_, id) => ({ ok: compositor.triggerNextStep(id) }));
 ipcMain.handle('macro:remove', (_, id) => {
+  macroStepErrors.delete(id);
   const ok = compositor.removeMacro(id);
   delete macroDefs[id];
   saveMacros();
@@ -2007,7 +2032,16 @@ ipcMain.handle('macro:remove', (_, id) => {
 });
 
 // Lista as macros definidas (para a UI) e o status da macro ativa (para polling).
-ipcMain.handle('macro:list',   () => Object.values(macroDefs));
+ipcMain.handle('macro:list', () => Object.values(macroDefs).map(def => {
+  const v = validateMacroReferences(def);
+  return {
+    ...def,
+    valid: v.valid,
+    invalid: !v.valid,
+    invalidSteps: v.invalidSteps,
+    lastError: macroStepErrors.get(def.id) || null,
+  };
+}));
 ipcMain.handle('macro:status', () => compositor.getActiveMacroStatus());
 
 // ─────────────────────────────────────────────────────────────
@@ -2066,6 +2100,9 @@ app.whenReady().then(() => {
 
   // Guard de fixture desabilitado aplicado na composição (uma vez por frame).
   compositor.setDisabledChannelsProvider(getDisabledFixtureChannelSet);
+  compositor.setMacroStepErrorHandler((macroId, stepIndex, err) => {
+    macroStepErrors.set(macroId, { stepIndex, error: err?.message || String(err), timestamp: Date.now() });
+  });
   ribaltaDebug.configure({
     getUniverse: () => universe.getUniverse(),
     getFixtureChannel: (fixtureId, alias) => getFixtureChannel(fixtureId, alias),
