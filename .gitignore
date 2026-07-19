@@ -28,6 +28,9 @@ pnpm-debug.log*
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Backups locais de rollback (auditoria/implementação scripts-pages-hotreload)
+backups/
 start-linux.sh
 
 # Skills locais do agente (fonte única: .agents/skills/)

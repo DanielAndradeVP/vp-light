@@ -911,6 +911,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       if (!result.running) {
         resolveUniverseState(activeScenes, scripts);
       }
+    } else {
+      console.error('[vp] togglePageScript falhou:', sceneKey, result?.error);
     }
   }
 
@@ -1162,6 +1164,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       target?.isContentEditable;
 
     if (isEditableTarget) return;
+    if (e.repeat) return;
     if (!e.ctrlKey && !e.altKey && !e.metaKey && /^[0-9]$/.test(e.key)) {
       const pageId = e.key === '0' ? '10' : e.key;
       if (pageId !== currentPageId && pages[pageId]) {

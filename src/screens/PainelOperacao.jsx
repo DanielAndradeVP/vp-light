@@ -762,16 +762,20 @@ function QuickDispatchPanel({ currentPage }) {
   async function handleToggleScript(fkey) {
     if (!scripts[fkey]) return;
     const result = await window.vp.toggleScript?.(fkey);
-    if (result?.ok != null) {
+    if (result?.ok === true) {
       setScripts(prev => ({ ...prev, [fkey]: { ...prev[fkey], running: result.running } }));
+    } else {
+      console.error('[vp] toggleScript falhou:', fkey, result?.error);
     }
   }
 
   async function handleTogglePageScript(sceneKey) {
     if (!pageScripts[sceneKey]) return;
     const result = await window.vp.togglePageScript?.(currentPage, sceneKey);
-    if (result?.ok != null) {
+    if (result?.ok === true) {
       setPageScripts(prev => ({ ...prev, [sceneKey]: { ...prev[sceneKey], running: result.running } }));
+    } else {
+      console.error('[vp] togglePageScript falhou:', sceneKey, result?.error);
     }
   }
 

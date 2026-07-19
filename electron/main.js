@@ -695,6 +695,9 @@ function saveScriptMeta() {
 }
 
 function loadScriptMeta() {
+  for (const fkey of Object.keys(scriptMeta)) {
+    delete scriptMeta[fkey];
+  }
   const current = show.getShow();
   if (!current?.scripts) return;
   for (const [fkey, meta] of Object.entries(current.scripts)) {
