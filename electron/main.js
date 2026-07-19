@@ -10,6 +10,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const chokidar = require('chokidar');
+const crypto = require('crypto');
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const { execFile, spawn } = require('child_process');
 
@@ -19,6 +21,7 @@ const compositor   = require('./engine/compositor');
 const artnet       = require('./engine/artnet');
 const show         = require('./show');
 const scriptLibraryLogic = require('./scriptLibrary');
+const scriptWatcherLogic = require('./scriptWatcherLogic');
 const interpolator = require('./engine/interpolator');
 const {
   buildChannelOffsetMap: buildFixtureChannelOffsetMap,
@@ -1547,65 +1550,201 @@ ipcMain.handle('script:stopAll', () => {
 // ─── WATCH em tempo real do diretório de scripts ─────────────────────────────
 // Reage a criar/modificar/remover .js em SCRIPTS_DIR sem reiniciar o app.
 let scriptsWatcher = null;
-const scriptWatchTimers = {};
+const RENAME_CORRELATION_WINDOW_MS = 2000;
+const scriptFileRegistry = new Map();       // canonicalPath -> { size, mtimeMs, hash }
+const scriptGenerationCounters = new Map(); // canonicalPath -> number (infra para o Checkpoint 6)
+const pendingRemovals = new Map();           // canonicalPath -> { size, mtimeMs, hash, timer }
 
-function handleScriptFileEvent(filename) {
-  if (!filename || !filename.endsWith('.js')) return;
-  // filename pode incluir subdiretório (ex: casamento\explosao-dourada.js) quando recursive=true
-  const file = path.join(SCRIPTS_DIR, filename);
-  const exists = fs.existsSync(file);
-  const current = show.getShow();
-  const library = current?.scriptLibrary || {};
+function statSafe(absPath) {
+  try { return fs.statSync(absPath); } catch (e) { return null; }
+}
 
-  if (!exists) {
-    // REMOÇÃO: para a execução, mas preserva biblioteca e associação.
-    for (const [id, entry] of Object.entries(library)) {
-      if (path.join(SCRIPTS_DIR, entry.entry) === file) {
-        if (runningScripts[id]) stopScriptById(id, 'arquivo removido');
-      }
-    }
-    emitScriptsChanged();
+function hashFileSafe(absPath) {
+  try { return crypto.createHash('sha1').update(fs.readFileSync(absPath)).digest('hex'); }
+  catch (e) { return null; }
+}
+
+function bumpScriptGeneration(canonicalPath) {
+  const next = (scriptGenerationCounters.get(canonicalPath) || 0) + 1;
+  scriptGenerationCounters.set(canonicalPath, next);
+  return next;
+}
+
+function updateScriptFileRegistry(canonicalPath, absPath) {
+  const stat = statSafe(absPath);
+  if (!stat) {
+    scriptFileRegistry.delete(canonicalPath);
     return;
   }
+  scriptFileRegistry.set(canonicalPath, {
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    hash: hashFileSafe(absPath),
+  });
+}
 
-  // Preset mov-preset recarrega todos os mov-* ativos que usam preset.
-  if (filename === 'mov-preset.js') {
-    for (const [id, entry] of Object.entries(library)) {
-      const entryFile = path.join(SCRIPTS_DIR, entry.entry);
-      if (scriptPrependsMovPreset(entryFile) && runningScripts[id]) {
-        stopScriptById(id, 'preset modificado');
-        startScriptById(id);
-      }
-    }
-  } else {
-    for (const [id, entry] of Object.entries(library)) {
-      if (path.basename(entry.entry) === filename && runningScripts[id]) {
-        stopScriptById(id, 'arquivo modificado');
-        startScriptById(id);
-      }
+function seedScriptFileRegistry() {
+  scriptFileRegistry.clear();
+  for (const script of collectScripts(SCRIPTS_DIR, '')) {
+    const canonicalPath = `${script.name}.js`;
+    updateScriptFileRegistry(canonicalPath, script.file);
+  }
+}
+
+function findLibraryEntriesByEntryPath(canonicalPath) {
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
+  return Object.values(library).filter(
+    entry => (entry.entry || '').replace(/\\/g, '/') === canonicalPath
+  );
+}
+
+function stopRunningConsumersOfEntry(canonicalPath, reason) {
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
+  for (const [id, entry] of Object.entries(library)) {
+    const entryPath = (entry.entry || '').replace(/\\/g, '/');
+    if (entryPath === canonicalPath && runningScripts[id]) {
+      stopScriptById(id, reason);
     }
   }
+}
+
+function reloadRunningConsumersOfEntry(canonicalPath) {
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
+  for (const [id, entry] of Object.entries(library)) {
+    const entryPath = (entry.entry || '').replace(/\\/g, '/');
+    const file = path.join(SCRIPTS_DIR, entry.entry);
+    const isDirectMatch = entryPath === canonicalPath;
+    const isPresetCascade = canonicalPath === 'mov-preset.js' && scriptPrependsMovPreset(file);
+    if ((isDirectMatch || isPresetCascade) && runningScripts[id]) {
+      stopScriptById(id, isPresetCascade ? 'preset modificado' : 'arquivo modificado');
+      startScriptById(id);
+    }
+  }
+}
+
+function correlateScriptRename(oldCanonicalPath, newCanonicalPath) {
+  if (!show.isSafeRelativeEntry(newCanonicalPath)) return;
+  const current = show.getShow();
+  if (!current) return;
+  const entries = findLibraryEntriesByEntryPath(oldCanonicalPath);
+  if (entries.length === 0) return;
+  for (const entry of entries) entry.entry = newCanonicalPath;
+  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+  show.saveShow(current);
+  console.log(`[scripts:watch] rename correlacionado: "${oldCanonicalPath}" -> "${newCanonicalPath}" (${entries.length} entrada(s) atualizada(s))`);
+}
+
+function handleScriptAddOrChange(absPath) {
+  const canonicalPath = scriptWatcherLogic.canonicalScriptPath(SCRIPTS_DIR, absPath);
+  bumpScriptGeneration(canonicalPath);
+
+  // Se o arquivo voltou no mesmo caminho, cancela a remoção anterior antes do reload.
+  const stalePending = pendingRemovals.get(canonicalPath);
+  if (stalePending) {
+    clearTimeout(stalePending.timer);
+    pendingRemovals.delete(canonicalPath);
+  }
+
+  const newHash = hashFileSafe(absPath);
+  const pendingList = [...pendingRemovals.entries()].map(([canonicalPathKey, value]) => ({
+    canonicalPath: canonicalPathKey,
+    hash: value.hash,
+  }));
+  const correlation = scriptWatcherLogic.correlateRenameCandidate(pendingList, canonicalPath, newHash);
+
+  let wasRenameCorrelated = false;
+  if (correlation.status === 'matched') {
+    const pending = pendingRemovals.get(correlation.oldCanonicalPath);
+    if (pending) clearTimeout(pending.timer);
+    pendingRemovals.delete(correlation.oldCanonicalPath);
+    correlateScriptRename(correlation.oldCanonicalPath, canonicalPath);
+    wasRenameCorrelated = true;
+  } else if (correlation.status === 'ambiguous') {
+    console.warn(`[scripts:watch] correlação de rename ambígua para "${canonicalPath}" (${correlation.candidates.length} candidatos) — nenhuma associação automática.`);
+  }
+
+  updateScriptFileRegistry(canonicalPath, absPath);
+
+  if (!wasRenameCorrelated) {
+    reloadRunningConsumersOfEntry(canonicalPath);
+  }
+
+  emitScriptsChanged();
+}
+
+function handleScriptUnlink(absPath) {
+  const canonicalPath = scriptWatcherLogic.canonicalScriptPath(SCRIPTS_DIR, absPath);
+  bumpScriptGeneration(canonicalPath);
+  const cached = scriptFileRegistry.get(canonicalPath);
+  scriptFileRegistry.delete(canonicalPath);
+
+  if (cached?.hash) {
+    const existingPending = pendingRemovals.get(canonicalPath);
+    if (existingPending) clearTimeout(existingPending.timer);
+    const timer = setTimeout(() => {
+      pendingRemovals.delete(canonicalPath);
+      // Janela expirou sem correlação de rename — agora sim é remoção genuína.
+      stopRunningConsumersOfEntry(canonicalPath, 'arquivo removido');
+      emitScriptsChanged();
+    }, RENAME_CORRELATION_WINDOW_MS);
+    if (timer.unref) timer.unref();
+    pendingRemovals.set(canonicalPath, { ...cached, timer });
+  } else {
+    // Sem hash em cache, não há base para correlacionar rename.
+    stopRunningConsumersOfEntry(canonicalPath, 'arquivo removido');
+  }
+
   emitScriptsChanged();
 }
 
 function startScriptsWatch() {
   if (scriptsWatcher) return;
   try {
-    scriptsWatcher = fs.watch(SCRIPTS_DIR, { recursive: true }, (_eventType, filename) => {
-      if (!filename) return;
-      const key = String(filename);
-      // debounce: fs.watch dispara múltiplos eventos por alteração
-      clearTimeout(scriptWatchTimers[key]);
-      scriptWatchTimers[key] = setTimeout(() => {
-        delete scriptWatchTimers[key];
-        try { handleScriptFileEvent(key); }
-        catch (e) { console.error('[scripts:watch] erro ao processar', key, e.message); }
-      }, 150);
+    seedScriptFileRegistry();
+    scriptsWatcher = chokidar.watch(SCRIPTS_DIR, {
+      ignored: (filePath) => path.relative(SCRIPTS_DIR, filePath).split(path.sep).includes('backlog'),
+      ignoreInitial: true,
+      persistent: true,
+      awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
     });
-    console.log('[scripts:watch] monitorando', SCRIPTS_DIR);
+    scriptsWatcher.on('add', (filePath) => {
+      if (!filePath.endsWith('.js')) return;
+      try { handleScriptAddOrChange(filePath); }
+      catch (e) { console.error('[scripts:watch] erro (add):', e.message); }
+    });
+    scriptsWatcher.on('change', (filePath) => {
+      if (!filePath.endsWith('.js')) return;
+      try { handleScriptAddOrChange(filePath); }
+      catch (e) { console.error('[scripts:watch] erro (change):', e.message); }
+    });
+    scriptsWatcher.on('unlink', (filePath) => {
+      if (!filePath.endsWith('.js')) return;
+      try { handleScriptUnlink(filePath); }
+      catch (e) { console.error('[scripts:watch] erro (unlink):', e.message); }
+    });
+    scriptsWatcher.on('error', (e) => console.error('[scripts:watch] erro do watcher:', e.message));
+    console.log('[scripts:watch] monitorando (chokidar)', SCRIPTS_DIR);
   } catch (e) {
     console.error('[scripts:watch] não foi possível iniciar:', e.message);
   }
+}
+
+async function stopScriptsWatch() {
+  if (!scriptsWatcher) return;
+  try {
+    await Promise.race([
+      scriptsWatcher.close(),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  } catch (e) {
+    console.error('[scripts:watch] erro ao fechar:', e.message);
+  }
+  scriptsWatcher = null;
+  for (const pending of pendingRemovals.values()) clearTimeout(pending.timer);
+  pendingRemovals.clear();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1868,7 +2007,8 @@ app.whenReady().then(() => {
   startScriptsWatch();
 });
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
+  await stopScriptsWatch();
   engine.stop();
   app.quit();
 });
