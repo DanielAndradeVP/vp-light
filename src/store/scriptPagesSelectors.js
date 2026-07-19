@@ -17,6 +17,8 @@ export function getScriptsForPage(scriptLibrarySnapshot, pageId) {
         category: entry.category || '',
         speed: entry.speed || 'medio',
         intensity: entry.intensity || 'moderado',
+        status: entry.status || (entry.running ? 'running' : 'stopped'),
+        lastError: entry.lastError || null,
       };
     }
   }

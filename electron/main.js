@@ -1381,9 +1381,13 @@ function buildScriptLibrarySnapshot() {
   const view = scriptLibraryLogic.buildLibraryView(library, scriptPages, diskEntries, runningLibraryIds);
   const registered = view.registered.map(entry => {
     const lastError = scriptReloadErrors.get(entry.id) || null;
-    if (entry.missingFile) return { ...entry, compileError: null, lastError };
-    const file = path.join(SCRIPTS_DIR, entry.entry);
-    return { ...entry, compileError: checkScriptCompileError(file), lastError };
+    const withLastError = entry.missingFile
+      ? { ...entry, compileError: null, lastError }
+      : { ...entry, compileError: checkScriptCompileError(path.join(SCRIPTS_DIR, entry.entry)), lastError };
+    return {
+      ...withLastError,
+      status: scriptLibraryLogic.computeScriptStatus(withLastError, withLastError.running),
+    };
   });
   return { registered, unregisteredFiles: view.unregisteredFiles, pages: scriptPages.pages || [] };
 }
@@ -1687,6 +1691,9 @@ function reloadRunningConsumersOfEntry(canonicalPath) {
     const isPresetCascade = canonicalPath === 'mov-preset.js' && scriptPrependsMovPreset(file);
     if ((isDirectMatch || isPresetCascade) && runningScripts[id]) {
       swapRunningScript(id, file, isPresetCascade ? 'preset modificado' : 'arquivo modificado');
+    }
+    if (isDirectMatch && !runningScripts[id] && scriptReloadErrors.has(id) && checkScriptCompileError(file) === null) {
+      scriptReloadErrors.delete(id);
     }
   }
 }

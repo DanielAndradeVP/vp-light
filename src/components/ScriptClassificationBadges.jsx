@@ -1,6 +1,8 @@
 import React from 'react';
 import { getCategoryIcon, getSpeedLevel, getIntensityStripe } from '../store/scriptClassification.js';
 
+const ERROR_STATUSES = ['compile-error', 'onstart-error', 'reload-error', 'missing-file', 'last-valid-running'];
+
 /**
  * Selos de classificação posicionados dentro de um contêiner position:relative.
  */
@@ -22,6 +24,18 @@ export default function ScriptClassificationBadges({ script, iconSize = 9, barMa
           }}
         >
           {icon}
+        </span>
+      )}
+      {ERROR_STATUSES.includes(script.status) && (
+        <span
+          aria-hidden="true"
+          title={script.lastError?.error || (script.missingFile ? 'Arquivo não encontrado' : 'Erro no script')}
+          style={{
+            position: 'absolute', top: 2, right: 3,
+            fontSize: iconSize + 1, lineHeight: 1, color: '#ff5252',
+          }}
+        >
+          ⚠
         </span>
       )}
       <span

@@ -703,6 +703,26 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
   const legacyScriptCreationSupported = activeScriptPageId === 'page-1';
   const activeScriptPageIdRef = useRef(activeScriptPageId);
   useEffect(() => { activeScriptPageIdRef.current = activeScriptPageId; }, [activeScriptPageId]);
+  const erroredScriptIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    const ERROR_STATUSES = ['compile-error', 'onstart-error', 'reload-error', 'missing-file'];
+    const currentErrored = new Set(
+      (scriptLibrarySnapshot.registered || [])
+        .filter(entry => ERROR_STATUSES.includes(entry.status))
+        .map(entry => entry.id)
+    );
+    for (const entry of (scriptLibrarySnapshot.registered || [])) {
+      if (ERROR_STATUSES.includes(entry.status) && !erroredScriptIdsRef.current.has(entry.id)) {
+        const label = entry.label || entry.id;
+        const msg = entry.lastError?.error || (entry.missingFile ? 'arquivo não encontrado' : 'erro desconhecido');
+        setToast(`Script "${label}": ${msg}`);
+        setTimeout(() => setToast(null), 4000);
+      }
+    }
+    erroredScriptIdsRef.current = currentErrored;
+  }, [scriptLibrarySnapshot]);
+
   const FIXTURE_GROUPS = [
     { key: 'par-led',  label: 'Par LEDs',      fixtures: ['ParLed_Deluxe_1','ParLed_Deluxe_2','ParLed_Deluxe_3','ParLed_Deluxe_5','ParLed_Deluxe_6','ParLed_Deluxe_7','ParLed_Deluxe_8','ParLed_Deluxe_9'] },
     { key: 'ribalta',  label: 'Ribaltas',       fixtures: ['Ribalta_1','Ribalta_2'] },

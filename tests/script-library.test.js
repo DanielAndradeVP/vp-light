@@ -447,3 +447,30 @@ describe('scriptLibrary.removePage', () => {
     expect(error?.code).toBe('PAGE_HAS_ACTIVE_SCRIPTS');
   });
 });
+
+describe('scriptLibrary.computeScriptStatus', () => {
+  const status = (entry, running = false) => scriptLibrary.computeScriptStatus(entry, running);
+
+  it('classifica arquivo ausente conforme a execução', () => {
+    expect(status({ missingFile: true }, false)).toBe('missing-file');
+    expect(status({ missingFile: true }, true)).toBe('last-valid-running');
+  });
+
+  it('classifica erros registrados por estágio quando parado', () => {
+    expect(status({ lastError: { stage: 'onstart' } })).toBe('onstart-error');
+    expect(status({ lastError: { stage: 'compile' } })).toBe('compile-error');
+    expect(status({ lastError: { stage: 'validate' } })).toBe('compile-error');
+    expect(status({ lastError: { stage: 'read' } })).toBe('reload-error');
+  });
+
+  it('preserva o estado last-valid-running quando há erro mas a camada segue ativa', () => {
+    expect(status({ lastError: { stage: 'compile' } }, true)).toBe('last-valid-running');
+    expect(status({ compileError: 'Erro de sintaxe' }, true)).toBe('last-valid-running');
+  });
+
+  it('classifica compileError sem lastError e os estados normais', () => {
+    expect(status({ compileError: 'Erro de sintaxe' })).toBe('compile-error');
+    expect(status({}, true)).toBe('running');
+    expect(status({}, false)).toBe('stopped');
+  });
+});

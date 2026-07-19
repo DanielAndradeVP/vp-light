@@ -28,10 +28,12 @@ describe('scriptPagesSelectors', () => {
       F1: {
         scriptId: 'alpha', name: 'Alpha', color: '#112233', running: true,
         missingFile: false, compileError: null, category: '', speed: 'medio', intensity: 'moderado',
+        status: 'running', lastError: null,
       },
       F3: {
         scriptId: 'beta', name: 'beta', color: '#000000', running: false,
         missingFile: true, compileError: null, category: '', speed: 'medio', intensity: 'moderado',
+        status: 'stopped', lastError: null,
       },
     });
     expect(getScriptsForPage(snapshot, 'page-1')).not.toHaveProperty('F2');

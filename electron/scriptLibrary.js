@@ -131,6 +131,18 @@ function unassignEntry(scriptLibrary, scriptPages, id) {
   return _clearAssociation(scriptPages, id);
 }
 
+function computeScriptStatus(entry, isRunning) {
+  if (entry.missingFile) return isRunning ? 'last-valid-running' : 'missing-file';
+  if (entry.lastError) {
+    if (isRunning) return 'last-valid-running';
+    if (entry.lastError.stage === 'onstart') return 'onstart-error';
+    if (entry.lastError.stage === 'compile' || entry.lastError.stage === 'validate') return 'compile-error';
+    return 'reload-error';
+  }
+  if (entry.compileError) return isRunning ? 'last-valid-running' : 'compile-error';
+  return isRunning ? 'running' : 'stopped';
+}
+
 function buildLibraryView(scriptLibrary, scriptPages, diskEntries, runningLibraryIds) {
   const diskSet = new Set((diskEntries || []).map(entry => entry.replace(/\\/g, '/')));
   const registeredSet = new Set(Object.values(scriptLibrary).map(entry => (entry.entry || '').replace(/\\/g, '/')));
@@ -260,5 +272,6 @@ module.exports = {
   associateEntry, moveEntry, unassignEntry, buildLibraryView,
   scriptLayerId, resolveScriptSlot, forceAssociateEntry, buildPageScriptsView,
   addPage, renamePage, reorderPages, removePage,
+  computeScriptStatus,
   SLOT_PATTERN,
 };
