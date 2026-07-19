@@ -153,4 +153,31 @@ describe('adapter semântico contra shows/vp.show.json real', () => {
     const { deps } = makeRealDeps();
     expect(adapter.setColor(deps, 'Fixture Que Nao Existe', 'green').code).toBe('FIXTURE_NOT_FOUND');
   });
+
+  it('setDimmer/setMovementSpeed funcionam em Ribalta sem profile registrado (ADR-3)', () => {
+    const { deps, writes } = makeRealDeps();
+    // Ribalta_1: startChannel 258, channels [tilt,speed,dimmer,...] — speed é canal FISICO real (não virtual_speed).
+    expect(adapter.setDimmer(deps, 'Ribalta_1', 1)).toMatchObject({ ok: true, channel: 260, value: 255 });
+    expect(adapter.setMovementSpeed(deps, 'Ribalta_1', 0.5)).toMatchObject({ ok: true, channel: 259, value: 128 });
+    expect(writes).toEqual([[260, 255], [259, 128]]);
+  });
+
+  it('setDimmer funciona em Mini Brut e Fita LED (fixtures de 1 canal, sem profile)', () => {
+    const { deps, writes } = makeRealDeps();
+    expect(adapter.setDimmer(deps, 'Mini_Brut_01', 1)).toMatchObject({ ok: true, channel: 400, value: 255 });
+    expect(adapter.setDimmer(deps, 'Fita_Led', 0.5)).toMatchObject({ ok: true, channel: 404, value: 128 });
+    expect(writes).toEqual([[400, 255], [404, 128]]);
+  });
+
+  it('setDimmer/setMovementSpeed no Moving_Wosh falham honestamente (sem alias dimmer/speed, tipo diferente de moving_head_beam)', () => {
+    const { deps, writes } = makeRealDeps();
+    // Moving_Wosh e fixtureType 'moving_head' (nao 'moving_head_beam'), sem alias
+    // "dimmer" nem "speed" literal (so "pan_tilt_speed") — os fallbacks de
+    // moving_head_beam nao se aplicam. Comportamento correto: falhar de forma
+    // explicita, nao inventar um canal. Moving Wosh fica fora do nucleo do P0
+    // por decisao do projeto (nao bloqueia esta implementacao).
+    expect(adapter.setDimmer(deps, 'Moving_Wosh', 1).code).toBe('CAPABILITY_NOT_SUPPORTED');
+    expect(adapter.setMovementSpeed(deps, 'Moving_Wosh', 0.5).code).toBe('CAPABILITY_NOT_SUPPORTED');
+    expect(writes).toEqual([]);
+  });
 });
