@@ -33,11 +33,12 @@ function makeLibrary() {
   };
 }
 
-function makePages(slots1 = {}, slots2 = {}) {
+function makePages(slots1 = {}, slots2 = {}, slots3 = {}) {
   return {
     pages: [
       { id: 'page-1', name: 'Página 1', order: 1, slots: slots1 },
       { id: 'page-2', name: 'Página 2', order: 2, slots: slots2 },
+      { id: 'page-3', name: 'Página 3', order: 3, slots: slots3 },
     ],
   };
 }
@@ -161,14 +162,9 @@ describe('scriptLibrary.associateEntry', () => {
     expect(pages.pages[0].slots.F5).toEqual({ type: 'script', id: 'alpha' });
   });
 
-  it('rejeita páginas diferentes da página 1', () => {
-    let error;
-    try {
-      scriptLibrary.associateEntry(makeLibrary(), makePages(), 'alpha', 'page-2', 'F1');
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error?.code).toBe('PAGE_NOT_SUPPORTED');
+  it('aceita qualquer página existente', () => {
+    const next = scriptLibrary.associateEntry(makeLibrary(), makePages(), 'alpha', 'page-3', 'F1');
+    expect(next.pages[2].slots.F1).toEqual({ type: 'script', id: 'alpha' });
   });
 
   it('rejeita slots fora de F1-F12', () => {
@@ -225,14 +221,11 @@ describe('scriptLibrary.moveEntry', () => {
     expect(next.pages[0].slots.F4).toEqual({ type: 'script', id: 'alpha' });
   });
 
-  it('rejeita destino fora da página 1', () => {
-    let error;
-    try {
-      scriptLibrary.moveEntry(makeLibrary(), makePages(), 'alpha', 'page-2', 'F1');
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error?.code).toBe('PAGE_NOT_SUPPORTED');
+  it('aceita destino em qualquer página existente', () => {
+    const pages = makePages({ F2: { type: 'script', id: 'alpha' } });
+    const next = scriptLibrary.moveEntry(makeLibrary(), pages, 'alpha', 'page-3', 'F1');
+    expect(next.pages[0].slots).not.toHaveProperty('F2');
+    expect(next.pages[2].slots.F1).toEqual({ type: 'script', id: 'alpha' });
   });
 });
 
@@ -275,5 +268,74 @@ describe('scriptLibrary.findAssociation', () => {
 
   it('retorna null quando não há associação', () => {
     expect(scriptLibrary.findAssociation(makePages(), 'alpha')).toBeNull();
+  });
+});
+
+describe('scriptLibrary.scriptLayerId', () => {
+  it('gera uma identidade de camada estável a partir do id', () => {
+    expect(scriptLibrary.scriptLayerId('alpha')).toBe('script:alpha');
+  });
+});
+
+describe('scriptLibrary.resolveScriptSlot', () => {
+  it('resolve página e slot preenchidos', () => {
+    const pages = makePages({}, {}, { F9: { type: 'script', id: 'beta' } });
+    expect(scriptLibrary.resolveScriptSlot(makeLibrary(), pages, 'page-3', 'F9')).toEqual({
+      scriptId: 'beta',
+      entry: makeLibrary().beta,
+    });
+  });
+
+  it('retorna null para slot vazio, id ausente e página ausente', () => {
+    const pages = makePages({ F2: { type: 'script', id: 'inexistente' } });
+    expect(scriptLibrary.resolveScriptSlot(makeLibrary(), pages, 'page-1', 'F1')).toBeNull();
+    expect(scriptLibrary.resolveScriptSlot(makeLibrary(), pages, 'page-1', 'F2')).toBeNull();
+    expect(scriptLibrary.resolveScriptSlot(makeLibrary(), pages, 'page-99', 'F1')).toBeNull();
+  });
+});
+
+describe('scriptLibrary.forceAssociateEntry', () => {
+  it('substitui o ocupante do destino e remove a associação anterior do id', () => {
+    const pages = makePages(
+      { F1: { type: 'script', id: 'alpha' } },
+      {},
+      { F5: { type: 'script', id: 'beta' } }
+    );
+
+    const next = scriptLibrary.forceAssociateEntry(makeLibrary(), pages, 'alpha', 'page-3', 'F5');
+
+    expect(next.pages[0].slots).not.toHaveProperty('F1');
+    expect(next.pages[2].slots.F5).toEqual({ type: 'script', id: 'alpha' });
+  });
+
+  it('não lança conflitos de associação e valida apenas id, página e slot', () => {
+    const pages = makePages({ F1: { type: 'script', id: 'beta' } });
+    expect(() => scriptLibrary.forceAssociateEntry(makeLibrary(), pages, 'alpha', 'page-1', 'F1'))
+      .not.toThrow();
+    expect(() => scriptLibrary.forceAssociateEntry(makeLibrary(), pages, 'ausente', 'page-1', 'F1'))
+      .toThrow('não existe na biblioteca');
+    expect(() => scriptLibrary.forceAssociateEntry(makeLibrary(), pages, 'alpha', 'page-99', 'F1'))
+      .toThrow('não existe');
+    expect(() => scriptLibrary.forceAssociateEntry(makeLibrary(), pages, 'alpha', 'page-1', 'F13'))
+      .toThrow('Slot inválido');
+  });
+});
+
+describe('scriptLibrary.buildPageScriptsView', () => {
+  it('monta somente a página pedida com metadados e estado running por scriptId', () => {
+    const pages = makePages(
+      { F1: { type: 'script', id: 'alpha' } },
+      { F4: { type: 'script', id: 'beta' } }
+    );
+
+    expect(scriptLibrary.buildPageScriptsView(makeLibrary(), pages, 'page-2', ['beta'])).toEqual({
+      F4: {
+        name: 'beta',
+        entry: 'sub/beta.js',
+        color: '#445566',
+        scriptId: 'beta',
+        running: true,
+      },
+    });
   });
 });

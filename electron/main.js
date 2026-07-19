@@ -246,8 +246,9 @@ function createViewer3DWindow() {
 // Nomes dos scripts em execução (F-keys, page-scripts, passo atual de macro).
 function getActiveScriptLabelsForViewer3D() {
   const labels = [];
-  for (const [fkey, running] of Object.entries(runningScripts)) {
-    if (running && scriptMeta[fkey]?.name) labels.push(scriptMeta[fkey].name);
+  const library = show.getShow()?.scriptLibrary || {};
+  for (const [scriptId, running] of Object.entries(runningScripts)) {
+    if (running && library[scriptId]?.label) labels.push(library[scriptId].label);
   }
   for (const [k, running] of Object.entries(runningPageScripts)) {
     if (!running) continue;
@@ -474,8 +475,11 @@ ipcMain.handle('show:load', async (_, filePath) => {
       targetPath = filePaths[0];
     }
 
+    // Para F-Keys, page-scripts e macros do show anterior — evita camadas fantasmas
+    // do show antigo sobrevivendo sobre o universo do show novo.
+    stopAllRunningScripts('show:load');
     const data = show.loadShow(targetPath);
-    loadScriptMeta(); loadPageScriptMeta();
+    loadPageScriptMeta();
     initializeOffsets();
     const startupChannels = show.getStartupChannels();
     Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
@@ -501,7 +505,7 @@ ipcMain.handle('show:save', (_, showData) => {
       ),
       '| scriptLibrary:', Object.keys(showData.scriptLibrary || {})
     );
-    console.log('[show:save] scriptMeta no main:', Object.keys(scriptMeta));
+    console.log('[show:save] runningScripts no main:', Object.keys(runningScripts));
     console.log('[show:save] currentShow no disco:',
       'fixtures:', currentShow?.fixtures?.length,
       '| páginas:', Object.keys(currentShow?.pages || {}),
@@ -542,7 +546,6 @@ ipcMain.handle('show:saveAs', async (_, showData) => {
     if (canceled || !filePath) return { ok: false, error: 'Cancelado' };
     const merged = buildMergedShow(showData);
     show.saveShowAs(filePath, merged);
-    loadScriptMeta();
     loadPageScriptMeta();
     loadMacros();
     initializeOffsets();
@@ -566,8 +569,7 @@ ipcMain.handle('show:updateScene', (_, pageId, sceneKey, sceneData) => {
 });
 
 // ─── SCRIPTS ─────────────────────────────────────────────────────────────────
-const runningScripts = {}; // { [fkey]: { interval, context } }
-const scriptMeta = {};     // { [fkey]: { name, file } }
+const runningScripts = {}; // { [scriptId]: { context } }
 
 // ─── PAGE SCRIPTS (teclas de cena) ──────────────────────────────────────────
 const pageScriptMeta    = {}; // { [pageId]: { [sceneKey]: { name, file } } }
@@ -579,45 +581,14 @@ function normalizePageId(pageId) {
 
 function psKey(pageId, sceneKey) { return `${normalizePageId(pageId)}:${sceneKey}`; }
 
-function buildScriptLibraryAndPagesFromRuntime(currentShow) {
-  const library = { ...(currentShow?.scriptLibrary || {}) };
-  const basePages = show.normalizeScriptPages(currentShow?.scriptPages).pages;
-  const pages = basePages.map(page => ({ ...page, slots: { ...(page.slots || {}) } }));
-  const page1 = pages[0];
-  page1.slots = {};
-
-  for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    const id = meta.libraryId || show.slugifyScriptId(meta.name);
-    const prev = library[id] || {};
-    // Preserva o entry completo já conhecido (pode ter subpasta); só deriva do
-    // basename quando não há nenhum registro anterior (ex.: associação nova).
-    const entry = meta.entry || prev.entry || `${meta.name}.js`;
-    library[id] = {
-      ...prev,
-      id,
-      entry: show.isSafeRelativeEntry(entry) ? entry : (prev.entry || `${meta.name}.js`),
-      label: prev.label || meta.name,
-      category: prev.category ?? '',
-      speed: prev.speed || 'medio',
-      intensity: prev.intensity || 'moderado',
-      status: prev.status || 'estavel',
-      description: prev.description || '',
-      tags: prev.tags || [],
-      color: meta.color || prev.color || '#000000',
-    };
-    page1.slots[fkey] = { type: 'script', id };
-  }
-
-  return { scriptLibrary: library, scriptPages: { pages } };
-}
-
 /**
  * Mescla showData do renderer com metadados runtime do main (scripts, page_scripts, páginas, macros).
  * Usado por show:save e show:saveAs.
  */
 function buildMergedShow(showData) {
   const currentShow = show.getShow();
-  const { scriptLibrary, scriptPages } = buildScriptLibraryAndPagesFromRuntime(currentShow);
+  const scriptLibrary = currentShow?.scriptLibrary || {};
+  const scriptPages = show.normalizeScriptPages(currentShow?.scriptPages);
 
   const mergedPages = {};
   const allPageIds = new Set([
@@ -696,86 +667,15 @@ function savePageScriptMeta() {
   show.saveShow(current);
 }
 
-function stopRunningScript(fkey, reason) {
-  const running = runningScripts[fkey];
-  if (!running) return false;
-  compositor.stopLayer(fkey);
-  delete runningScripts[fkey];
-  return true;
-}
-
 function stopAllRunningScripts(reason) {
-  for (const fkey of Object.keys(runningScripts)) {
-    stopRunningScript(fkey, reason);
+  for (const scriptId of Object.keys(runningScripts)) {
+    stopScriptById(scriptId, reason);
   }
   for (const k of Object.keys(runningPageScripts)) {
     const colonIdx = k.indexOf(':');
     stopRunningPageScript(k.slice(0, colonIdx), k.slice(colonIdx + 1), reason);
   }
   compositor.stopAllMacros(); // blackout/shutdown também encerra macros e suas camadas
-}
-
-function saveScriptMeta() {
-  const current = show.getShow();
-  if (!current) return;
-  const { scriptLibrary, scriptPages } = buildScriptLibraryAndPagesFromRuntime(current);
-  current.scriptLibrary = scriptLibrary;
-  current.scriptPages = scriptPages;
-  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
-  delete current.scripts;
-  show.saveShow(current);
-}
-
-function persistScriptLibraryAndPages(nextLibrary, nextPages) {
-  const current = show.getShow();
-  if (!current) throw new Error('Nenhum show carregado.');
-  if (nextLibrary) current.scriptLibrary = nextLibrary;
-  if (nextPages) current.scriptPages = nextPages;
-  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
-  show.saveShow(current);
-}
-
-function loadScriptMeta() {
-  for (const fkey of Object.keys(scriptMeta)) {
-    delete scriptMeta[fkey];
-  }
-  const current = show.getShow();
-  if (!current) return;
-
-  const page1 = current.scriptPages?.pages?.[0];
-  if (page1?.slots && current.scriptLibrary) {
-    for (const [fkey, slotRef] of Object.entries(page1.slots)) {
-      if (!slotRef || slotRef.type !== 'script' || !slotRef.id) continue;
-      const entry = current.scriptLibrary[slotRef.id];
-      if (!entry || !entry.entry) continue;
-      const file = path.join(SCRIPTS_DIR, entry.entry);
-      if (fs.existsSync(file)) {
-        scriptMeta[fkey] = {
-          name: path.basename(entry.entry).replace(/\.js$/i, ''),
-          file,
-          color: entry.color || '#000000',
-          libraryId: entry.id,
-          entry: entry.entry, // caminho relativo completo (preserva subpasta) — ver buildScriptLibraryAndPagesFromRuntime
-        };
-      }
-    }
-    return;
-  }
-
-  // Fallback legado — usado somente se a migração ainda não rodou ou falhou nesta sessão.
-  if (!current.scripts) return;
-  for (const [fkey, meta] of Object.entries(current.scripts)) {
-    let file = null;
-    if (meta.file && fs.existsSync(meta.file)) {
-      file = meta.file;
-    } else {
-      const fallback = path.join(SCRIPTS_DIR, `${meta.name}.js`);
-      if (fs.existsSync(fallback)) file = fallback;
-    }
-    if (file) {
-      scriptMeta[fkey] = { name: meta.name, file, color: meta.color || '#000000', entry: `${meta.name}.js` };
-    }
-  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1238,35 +1138,76 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
       `}`,
     ].join('\n'), 'utf-8');
   }
-  scriptMeta[fkey] = { name, file, color };
-  saveScriptMeta();
+  const current = show.getShow();
+  if (!current) return { ok: false, error: 'Nenhum show carregado.' };
+  const id = show.slugifyScriptId(name);
+  let library = current.scriptLibrary || {};
+  if (!library[id]) {
+    library = scriptLibraryLogic.registerEntry(library, id, `${name}.js`, { label: name, color });
+  } else if (color) {
+    library = scriptLibraryLogic.updateEntry(library, id, { color });
+  }
+  const previous = scriptLibraryLogic.resolveScriptSlot(
+    library, current.scriptPages, 'page-1', fkey
+  );
+  // Evita deixar uma camada DMX órfã quando a associação forçada substitui o slot.
+  if (previous && previous.scriptId !== id && runningScripts[previous.scriptId]) {
+    stopScriptById(previous.scriptId, 'script:create substituiu o slot');
+  }
+  let pages;
+  try {
+    pages = scriptLibraryLogic.forceAssociateEntry(library, current.scriptPages, id, 'page-1', fkey);
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+  current.scriptLibrary = library;
+  current.scriptPages = pages;
+  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+  show.saveShow(current);
   emitScriptsChanged(); // avisa o renderer na hora — nao depende do fs.watch (que nao dispara se o .js ja existia)
   if (!options.skipOpenEditor && !fileAlreadyExists) { await openScriptInVSCode(file); }
   return { ok: true, name, file, color };
 });
 
 ipcMain.handle('script:edit', async (_, fkey, filePath) => {
-  const meta = scriptMeta[fkey];
   if (filePath) return openScriptInVSCode(filePath);
-  if (!meta) return { ok: false, error: 'Nenhum script neste botão' };
-  return openScriptInVSCode(meta.file);
+  const current = show.getShow();
+  const resolved = scriptLibraryLogic.resolveScriptSlot(
+    current?.scriptLibrary || {}, current?.scriptPages || { pages: [] }, 'page-1', fkey
+  );
+  if (!resolved) return { ok: false, error: 'Nenhum script neste botão' };
+  return openScriptInVSCode(path.join(SCRIPTS_DIR, resolved.entry.entry));
 });
 
 ipcMain.handle('script:clear', (_, fkey) => {
-  stopRunningScript(fkey, 'limpar');
-  delete scriptMeta[fkey];
-  saveScriptMeta();
+  const current = show.getShow();
+  if (!current) return { ok: true };
+  const resolved = scriptLibraryLogic.resolveScriptSlot(
+    current.scriptLibrary || {}, current.scriptPages || { pages: [] }, 'page-1', fkey
+  );
+  if (!resolved) return { ok: true };
+  stopScriptById(resolved.scriptId, 'limpar');
+  current.scriptPages = scriptLibraryLogic.unassignEntry(
+    current.scriptLibrary || {}, current.scriptPages || { pages: [] }, resolved.scriptId
+  );
+  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+  show.saveShow(current);
+  emitScriptsChanged();
   return { ok: true };
 });
 
-// Inicia (ou reinicia) o script de uma F-key: lê o arquivo do disco, compila e
-// agenda o loop de 40ms. Reutilizado pelo toggle e pelo watch (reload em tempo real).
-function startScript(fkey) {
-  const meta = scriptMeta[fkey];
-  if (!meta) return { ok: false, error: 'Nenhum script neste botão' };
+function scriptLayerId(scriptId) {
+  return `script:${scriptId}`;
+}
+
+function startScriptById(scriptId) {
+  const current = show.getShow();
+  const entry = current?.scriptLibrary?.[scriptId];
+  if (!entry) return { ok: false, error: 'Script não encontrado na biblioteca.' };
+  const file = path.join(SCRIPTS_DIR, entry.entry);
   let code;
   try {
-    code = readScriptCode(meta.file);
+    code = readScriptCode(file);
   } catch (e) {
     return { ok: false, error: 'Arquivo não encontrado' };
   }
@@ -1284,29 +1225,54 @@ function startScript(fkey) {
     try { ctx.OnStart(); } catch (e) {}
   }
   // Registra a camada — o relógio único (engine → compositor) roda o OnExecute por frame.
-  compositor.addLayer(fkey, {
+  const layerId = scriptLayerId(scriptId);
+  compositor.addLayer(layerId, {
     buffer, touched, controlledMask, context: ctx,
-    onError: () => { delete runningScripts[fkey]; emitScriptsChanged(); },
+    onError: () => { delete runningScripts[scriptId]; emitScriptsChanged(); },
   });
-  runningScripts[fkey] = { context: ctx };
+  runningScripts[scriptId] = { context: ctx };
   return { ok: true, running: true };
 }
 
-ipcMain.handle('script:toggle', (_, fkey) => {
-  if (runningScripts[fkey]) {
-    // Parar
-    stopRunningScript(fkey, 'toggle');
-    return { ok: true, running: false };
+function stopScriptById(scriptId, reason) {
+  const running = runningScripts[scriptId];
+  if (!running) return false;
+  compositor.stopLayer(scriptLayerId(scriptId));
+  delete runningScripts[scriptId];
+  return true;
+}
+
+function toggleScriptAtSlot(pageId, slot) {
+  const current = show.getShow();
+  const resolved = scriptLibraryLogic.resolveScriptSlot(
+    current?.scriptLibrary || {}, current?.scriptPages || { pages: [] }, pageId, slot
+  );
+  if (!resolved) return { ok: false, error: 'Slot vazio ou script inválido.' };
+  const { scriptId } = resolved;
+  let result;
+  if (runningScripts[scriptId]) {
+    stopScriptById(scriptId, 'toggle');
+    result = { ok: true, running: false };
+  } else {
+    result = startScriptById(scriptId);
   }
-  const result = startScript(fkey);
-  return result;
-});
+  emitScriptsChanged();
+  return { ...result, scriptId };
+}
+
+ipcMain.handle('script:toggle', (_, fkey) => toggleScriptAtSlot('page-1', fkey));
+ipcMain.handle('script:toggleAt', (_, pageId, slot) => toggleScriptAtSlot(pageId, slot));
 
 function collectScripts(dir, relBase, inheritedColorByName) {
-  const colorByName = inheritedColorByName || {};
-  if (!inheritedColorByName) {
-    for (const meta of Object.values(scriptMeta)) {
-      if (meta?.name && meta?.color) colorByName[meta.name] = meta.color;
+  let colorByName = inheritedColorByName;
+  if (!colorByName) {
+    colorByName = {};
+    const current = show.getShow();
+    for (const entry of Object.values(current?.scriptLibrary || {})) {
+      if (entry?.entry && entry?.color) {
+        const key = entry.entry.replace(/\.js$/i, '').replace(/\\/g, '/');
+        colorByName[key] = entry.color;
+      }
     }
   }
   const results = [];
@@ -1344,9 +1310,7 @@ ipcMain.handle('scriptLibrary:list', () => {
     const library = current?.scriptLibrary || {};
     const pages = current?.scriptPages || { pages: [] };
     const diskEntries = collectDiskScriptEntries();
-    const runningLibraryIds = Object.entries(scriptMeta)
-      .filter(([fkey, meta]) => meta.libraryId && runningScripts[fkey])
-      .map(([, meta]) => meta.libraryId);
+    const runningLibraryIds = Object.keys(runningScripts);
     const view = scriptLibraryLogic.buildLibraryView(library, pages, diskEntries, runningLibraryIds);
     const withCompileStatus = view.registered.map(entry => {
       if (entry.missingFile) return { ...entry, compileError: null };
@@ -1366,7 +1330,9 @@ ipcMain.handle('scriptLibrary:register', (_, id, entry, meta) => {
     const nextLibrary = scriptLibraryLogic.registerEntry(current.scriptLibrary || {}, id, entry, meta || {});
     const file = path.join(SCRIPTS_DIR, entry);
     if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry}`);
-    persistScriptLibraryAndPages(nextLibrary, null);
+    current.scriptLibrary = nextLibrary;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
     return { ok: true, id };
   } catch (e) {
     return { ok: false, error: e.message, code: e.code };
@@ -1377,28 +1343,15 @@ ipcMain.handle('scriptLibrary:update', (_, id, patch) => {
   try {
     const current = show.getShow();
     if (!current) throw new Error('Nenhum show carregado.');
-    const nextLibrary = scriptLibraryLogic.updateEntry(current.scriptLibrary || {}, id, patch || {});
     if (patch?.entry !== undefined) {
       const file = path.join(SCRIPTS_DIR, patch.entry);
       if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${patch.entry}`);
     }
-    const affectedFkeys = Object.entries(scriptMeta).filter(([, meta]) => meta.libraryId === id);
-
-    if (affectedFkeys.length > 0) {
-      current.scriptLibrary = nextLibrary;
-      const updatedEntry = nextLibrary[id];
-      for (const [fkey] of affectedFkeys) {
-        if (patch?.color !== undefined) scriptMeta[fkey].color = updatedEntry.color;
-        if (patch?.entry !== undefined) {
-          scriptMeta[fkey].file = path.join(SCRIPTS_DIR, updatedEntry.entry);
-          scriptMeta[fkey].entry = updatedEntry.entry;
-          scriptMeta[fkey].name = path.basename(updatedEntry.entry).replace(/\.js$/i, '');
-        }
-      }
-      saveScriptMeta();
-    } else {
-      persistScriptLibraryAndPages(nextLibrary, null);
-    }
+    const nextLibrary = scriptLibraryLogic.updateEntry(current.scriptLibrary || {}, id, patch || {});
+    current.scriptLibrary = nextLibrary;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
     return { ok: true, id };
   } catch (e) {
     return { ok: false, error: e.message, code: e.code };
@@ -1409,28 +1362,16 @@ ipcMain.handle('scriptLibrary:remove', (_, id) => {
   try {
     const current = show.getShow();
     if (!current) throw new Error('Nenhum show carregado.');
-    const runningFkey = Object.entries(scriptMeta)
-      .find(([fkey, meta]) => meta.libraryId === id && runningScripts[fkey]);
-    if (runningFkey) {
-      throw new Error(`Não é possível remover "${id}": está ativo na tecla ${runningFkey[0]}. Pare antes de remover.`);
-    }
+    if (runningScripts[id]) throw new Error(`Não é possível remover "${id}": está ativo. Pare antes de remover.`);
     const { scriptLibrary: nextLibrary, scriptPages: nextPages } = scriptLibraryLogic.removeEntry(
       current.scriptLibrary || {},
       current.scriptPages || { pages: [] },
       id
     );
-    const affectedFkeys = Object.entries(scriptMeta)
-      .filter(([, meta]) => meta.libraryId === id)
-      .map(([fkey]) => fkey);
-
-    if (affectedFkeys.length > 0) {
-      current.scriptLibrary = nextLibrary;
-      current.scriptPages = nextPages;
-      for (const fkey of affectedFkeys) delete scriptMeta[fkey];
-      saveScriptMeta();
-    } else {
-      persistScriptLibraryAndPages(nextLibrary, nextPages);
-    }
+    current.scriptLibrary = nextLibrary;
+    current.scriptPages = nextPages;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
     emitScriptsChanged();
     return { ok: true, id };
   } catch (e) {
@@ -1443,26 +1384,16 @@ ipcMain.handle('scriptLibrary:associate', (_, id, pageId, slot) => {
     const current = show.getShow();
     if (!current) throw new Error('Nenhum show carregado.');
     const library = current.scriptLibrary || {};
-    const nextPages = scriptLibraryLogic.associateEntry(
-      library,
-      current.scriptPages || { pages: [] },
-      id,
-      pageId,
-      slot
-    );
     const entry = library[id];
+    if (!entry) throw new Error(`Script "${id}" não existe na biblioteca.`);
     const file = path.join(SCRIPTS_DIR, entry.entry);
     if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry.entry}`);
-
+    const nextPages = scriptLibraryLogic.associateEntry(
+      library, current.scriptPages || { pages: [] }, id, pageId, slot
+    );
     current.scriptPages = nextPages;
-    scriptMeta[slot] = {
-      name: path.basename(entry.entry).replace(/\.js$/i, ''),
-      file,
-      color: entry.color || '#000000',
-      libraryId: id,
-      entry: entry.entry,
-    };
-    saveScriptMeta();
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
     emitScriptsChanged();
     return { ok: true };
   } catch (e) {
@@ -1482,32 +1413,16 @@ ipcMain.handle('scriptLibrary:move', (_, id, pageId, slot) => {
     const current = show.getShow();
     if (!current) throw new Error('Nenhum show carregado.');
     const library = current.scriptLibrary || {};
-    const nextPages = scriptLibraryLogic.moveEntry(
-      library,
-      current.scriptPages || { pages: [] },
-      id,
-      pageId,
-      slot
-    );
     const entry = library[id];
+    if (!entry) throw new Error(`Script "${id}" não existe na biblioteca.`);
     const file = path.join(SCRIPTS_DIR, entry.entry);
     if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry.entry}`);
-
-    for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (meta.libraryId === id) {
-        if (runningScripts[fkey]) stopRunningScript(fkey, 'scriptLibrary:move');
-        delete scriptMeta[fkey];
-      }
-    }
+    const nextPages = scriptLibraryLogic.moveEntry(
+      library, current.scriptPages || { pages: [] }, id, pageId, slot
+    );
     current.scriptPages = nextPages;
-    scriptMeta[slot] = {
-      name: path.basename(entry.entry).replace(/\.js$/i, ''),
-      file,
-      color: entry.color || '#000000',
-      libraryId: id,
-      entry: entry.entry,
-    };
-    saveScriptMeta();
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
     emitScriptsChanged();
     return { ok: true };
   } catch (e) {
@@ -1524,20 +1439,9 @@ ipcMain.handle('scriptLibrary:unassign', (_, id) => {
       current.scriptPages || { pages: [] },
       id
     );
-    const affectedFkeys = Object.entries(scriptMeta)
-      .filter(([, meta]) => meta.libraryId === id)
-      .map(([fkey]) => fkey);
-
-    if (affectedFkeys.length > 0) {
-      current.scriptPages = nextPages;
-      for (const fkey of affectedFkeys) {
-        if (runningScripts[fkey]) stopRunningScript(fkey, 'scriptLibrary:unassign');
-        delete scriptMeta[fkey];
-      }
-      saveScriptMeta();
-    } else {
-      persistScriptLibraryAndPages(null, nextPages);
-    }
+    current.scriptPages = nextPages;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
     emitScriptsChanged();
     return { ok: true };
   } catch (e) {
@@ -1547,11 +1451,17 @@ ipcMain.handle('scriptLibrary:unassign', (_, id) => {
 
 // Monta o mapa de scripts F-key com flag running — usado pelo IPC e pelo watch.
 function buildAllScripts() {
-  const result = {};
-  for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    result[fkey] = { ...meta, running: !!runningScripts[fkey] };
-  }
-  return result;
+  const current = show.getShow();
+  const view = scriptLibraryLogic.buildPageScriptsView(
+    current?.scriptLibrary || {},
+    current?.scriptPages || { pages: [] },
+    'page-1',
+    Object.keys(runningScripts)
+  );
+  return Object.fromEntries(Object.entries(view).map(([slot, meta]) => [
+    slot,
+    { ...meta, file: path.join(SCRIPTS_DIR, meta.entry) },
+  ]));
 }
 
 // Notifica o renderer que o conjunto de scripts mudou (watch em tempo real).
@@ -1579,41 +1489,37 @@ function handleScriptFileEvent(filename) {
   // filename pode incluir subdiretório (ex: casamento\explosao-dourada.js) quando recursive=true
   const file = path.join(SCRIPTS_DIR, filename);
   const exists = fs.existsSync(file);
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
 
   if (!exists) {
-    // REMOÇÃO: para o script se estiver rodando e limpa do scriptMeta.
-    let changed = false;
-    for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (meta.file === file) {
-        stopRunningScript(fkey, 'arquivo removido');
-        delete scriptMeta[fkey];
-        changed = true;
+    // REMOÇÃO: para a execução, mas preserva biblioteca e associação.
+    for (const [id, entry] of Object.entries(library)) {
+      if (path.join(SCRIPTS_DIR, entry.entry) === file) {
+        if (runningScripts[id]) stopScriptById(id, 'arquivo removido');
       }
     }
-    if (changed) saveScriptMeta();
     emitScriptsChanged();
     return;
   }
 
   // Preset mov-preset recarrega todos os mov-* ativos que usam preset.
   if (filename === 'mov-preset.js') {
-    for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (scriptPrependsMovPreset(meta.file) && runningScripts[fkey]) {
-        stopRunningScript(fkey, 'preset modificado');
-        startScript(fkey);
+    for (const [id, entry] of Object.entries(library)) {
+      const entryFile = path.join(SCRIPTS_DIR, entry.entry);
+      if (scriptPrependsMovPreset(entryFile) && runningScripts[id]) {
+        stopScriptById(id, 'preset modificado');
+        startScriptById(id);
       }
     }
   } else {
-    for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (path.basename(meta.file) === filename && runningScripts[fkey]) {
-        stopRunningScript(fkey, 'arquivo modificado');
-        startScript(fkey);
+    for (const [id, entry] of Object.entries(library)) {
+      if (path.basename(entry.entry) === filename && runningScripts[id]) {
+        stopScriptById(id, 'arquivo modificado');
+        startScriptById(id);
       }
     }
   }
-  // CRIAÇÃO: scriptMeta é indexado por F-key, então um arquivo novo não recebe
-  // associação automática (não há F-key) nem sobrescreve associação existente.
-  // Apenas notifica o renderer para a lista de scripts existentes refletir.
   emitScriptsChanged();
 }
 
@@ -1870,12 +1776,12 @@ app.whenReady().then(() => {
     try {
       show.loadShow(DEFAULT_SHOW);
       console.log('[main] show padrao carregado');
-      loadScriptMeta(); loadPageScriptMeta(); loadMacros();
+      loadPageScriptMeta(); loadMacros();
       initializeOffsets();
       const startupChannels = show.getStartupChannels();
       Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
       applyDefaultStartupScene();
-      console.log('[main] scripts carregados:', Object.keys(scriptMeta));
+      console.log('[main] scripts na biblioteca:', Object.keys(show.getShow()?.scriptLibrary || {}).length);
     } catch (e) {
       console.warn('[main] falha ao carregar show padrao:', e.message);
     }

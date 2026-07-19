@@ -91,17 +91,8 @@ function assertSlot(slot) {
   if (!SLOT_PATTERN.test(slot)) throw new Error(`Slot inválido: "${slot}" (esperado F1-F12).`);
 }
 
-function assertPage1(pageId) {
-  if (pageId !== 'page-1') {
-    const err = new Error('Associações fora da página 1 ainda não são suportadas nesta versão (aguardam o Checkpoint 3 — runtime paginado).');
-    err.code = 'PAGE_NOT_SUPPORTED';
-    throw err;
-  }
-}
-
 function associateEntry(scriptLibrary, scriptPages, id, pageId, slot) {
   if (!scriptLibrary[id]) throw new Error(`Script "${id}" não existe na biblioteca.`);
-  assertPage1(pageId);
   assertSlot(slot);
   const existing = findAssociation(scriptPages, id);
   if (existing && !(existing.pageId === pageId && existing.slot === slot)) {
@@ -123,7 +114,6 @@ function associateEntry(scriptLibrary, scriptPages, id, pageId, slot) {
 
 function moveEntry(scriptLibrary, scriptPages, id, toPageId, toSlot) {
   if (!scriptLibrary[id]) throw new Error(`Script "${id}" não existe na biblioteca.`);
-  assertPage1(toPageId);
   assertSlot(toSlot);
   const occupant = _slotOccupant(scriptPages, toPageId, toSlot);
   if (occupant && occupant !== id) {
@@ -158,8 +148,50 @@ function buildLibraryView(scriptLibrary, scriptPages, diskEntries, runningLibrar
   return { registered, unregisteredFiles };
 }
 
+function scriptLayerId(scriptId) {
+  return `script:${scriptId}`;
+}
+
+function resolveScriptSlot(scriptLibrary, scriptPages, pageId, slot) {
+  const page = (scriptPages?.pages || []).find(candidate => candidate.id === pageId);
+  const ref = page?.slots?.[slot];
+  if (!ref || ref.type !== 'script' || !ref.id) return null;
+  const entry = scriptLibrary?.[ref.id];
+  if (!entry) return null;
+  return { scriptId: ref.id, entry };
+}
+
+function forceAssociateEntry(scriptLibrary, scriptPages, id, pageId, slot) {
+  if (!scriptLibrary[id]) throw new Error(`Script "${id}" não existe na biblioteca.`);
+  assertSlot(slot);
+  const clearedSource = _clearAssociation(scriptPages, id);
+  const page = clearedSource.pages.find(candidate => candidate.id === pageId);
+  if (!page) throw new Error(`Página "${pageId}" não existe.`);
+  return _setSlot(clearedSource, pageId, slot, { type: 'script', id });
+}
+
+function buildPageScriptsView(scriptLibrary, scriptPages, pageId, runningScriptIds) {
+  const page = (scriptPages?.pages || []).find(candidate => candidate.id === pageId);
+  const result = {};
+  if (!page) return result;
+  for (const [slot, ref] of Object.entries(page.slots || {})) {
+    if (ref?.type !== 'script' || !ref.id) continue;
+    const entry = scriptLibrary?.[ref.id];
+    if (!entry) continue;
+    result[slot] = {
+      name: (entry.entry || '').split('/').pop().replace(/\.js$/i, ''),
+      entry: entry.entry,
+      color: entry.color || '#000000',
+      scriptId: entry.id,
+      running: (runningScriptIds || []).includes(entry.id),
+    };
+  }
+  return result;
+}
+
 module.exports = {
   findAssociation, registerEntry, updateEntry, removeEntry,
   associateEntry, moveEntry, unassignEntry, buildLibraryView,
+  scriptLayerId, resolveScriptSlot, forceAssociateEntry, buildPageScriptsView,
   SLOT_PATTERN,
 };
