@@ -1037,9 +1037,35 @@ function buildScriptSandbox(buffer, touched, controlledMask) {
     if (controlledMask) controlledMask[idx] = 1;
   };
   const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
+  // Dependencias injetadas na API semantica do adapter (Checkpoint 2/3 do
+  // adapter semantico) — reusa exatamente a mesma resolucao de fixture/canal
+  // e a mesma SetChannel desta camada, sem duplicar offset/calibracao/
+  // interpolador (tudo isso ja acontece depois, no compositor/universe).
+  const semanticDeps = {
+    getFixture: getShowFixture,
+    getChannelByAlias: getFixtureChannelByAlias,
+    isEnabled: isFixtureEnabled,
+    writeChannel: SetChannel,
+  };
   const adapter = {
     resolve: (fixtureId, alias, adapterKey, logicalValue) =>
       resolveAdapterValue(fixtureId, alias, adapterKey, logicalValue),
+    setColor: (fixtureId, colorName) =>
+      fixtureAdapter.setColor(semanticDeps, fixtureId, colorName),
+    setDimmer: (fixtureId, intensity) =>
+      fixtureAdapter.setDimmer(semanticDeps, fixtureId, intensity),
+    setMovementSpeed: (fixtureId, speed) =>
+      fixtureAdapter.setMovementSpeed(semanticDeps, fixtureId, speed),
+    setPanTilt: (fixtureId, panTilt) =>
+      fixtureAdapter.setPanTilt(semanticDeps, fixtureId, panTilt),
+    setStrobe: (fixtureId, intent) =>
+      fixtureAdapter.setStrobe(semanticDeps, fixtureId, intent),
+    setPrism: (fixtureId, intent) =>
+      fixtureAdapter.setPrism(semanticDeps, fixtureId, intent),
+    setGobo: (fixtureId, value) =>
+      fixtureAdapter.setGobo(semanticDeps, fixtureId, value),
+    getCapabilities: (fixtureId) =>
+      fixtureAdapter.getCapabilities(semanticDeps, fixtureId),
   };
   return { SetChannel, getChannel, adapter };
 }
