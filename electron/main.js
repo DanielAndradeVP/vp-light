@@ -18,6 +18,7 @@ const engine       = require('./engine/engine');
 const compositor   = require('./engine/compositor');
 const artnet       = require('./engine/artnet');
 const show         = require('./show');
+const scriptLibraryLogic = require('./scriptLibrary');
 const interpolator = require('./engine/interpolator');
 const {
   buildChannelOffsetMap: buildFixtureChannelOffsetMap,
@@ -725,6 +726,15 @@ function saveScriptMeta() {
   show.saveShow(current);
 }
 
+function persistScriptLibraryAndPages(nextLibrary, nextPages) {
+  const current = show.getShow();
+  if (!current) throw new Error('Nenhum show carregado.');
+  if (nextLibrary) current.scriptLibrary = nextLibrary;
+  if (nextPages) current.scriptPages = nextPages;
+  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+  show.saveShow(current);
+}
+
 function loadScriptMeta() {
   for (const fkey of Object.keys(scriptMeta)) {
     delete scriptMeta[fkey];
@@ -1153,6 +1163,22 @@ function compileScriptContext(code, buffer, touched, controlledMask) {
   return ctx;
 }
 
+function checkScriptCompileError(file) {
+  try {
+    const code = readScriptCode(file);
+    // Construído, mas nunca invocado: detecta apenas erros de sintaxe.
+    new Function('SetChannel', 'getChannel', 'adapter', 'ctx', `
+    ${code}
+    ctx.OnStart = typeof OnStart === 'function' ? OnStart : null;
+    ctx.OnExecute = typeof OnExecute === 'function' ? OnExecute : null;
+    ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
+  `);
+    return null;
+  } catch (e) {
+    return e.message;
+  }
+}
+
 // Compila um arquivo de script numa CAMADA { buffer, touched, context } pronta para o compositor.
 // SetChannel escreve no buffer da camada (guards aplicados na composição). Lança se o arquivo
 // não existir ou não compilar. Reutilizado pelas macros (factory por passo).
@@ -1276,32 +1302,246 @@ ipcMain.handle('script:toggle', (_, fkey) => {
   return result;
 });
 
-ipcMain.handle('script:list', () => {
-  try {
-    const colorByName = {};
+function collectScripts(dir, relBase, inheritedColorByName) {
+  const colorByName = inheritedColorByName || {};
+  if (!inheritedColorByName) {
     for (const meta of Object.values(scriptMeta)) {
       if (meta?.name && meta?.color) colorByName[meta.name] = meta.color;
     }
-    function collectScripts(dir, relBase) {
-      const results = [];
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (entry.isDirectory()) {
-          if (entry.name === 'backlog') continue;
-          const sub = relBase ? `${relBase}/${entry.name}` : entry.name;
-          results.push(...collectScripts(path.join(dir, entry.name), sub));
-        } else if (entry.name.endsWith('.js')) {
-          const baseName = entry.name.replace('.js', '');
-          const relName  = relBase ? `${relBase}/${baseName}` : baseName;
-          const file     = path.join(dir, entry.name);
-          results.push({ name: relName, file, color: colorByName[relName] || colorByName[baseName] || '#000000' });
-        }
-      }
-      return results;
+  }
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name === 'backlog') continue;
+      const sub = relBase ? `${relBase}/${entry.name}` : entry.name;
+      results.push(...collectScripts(path.join(dir, entry.name), sub, colorByName));
+    } else if (entry.name.endsWith('.js')) {
+      const baseName = entry.name.replace('.js', '');
+      const relName = relBase ? `${relBase}/${baseName}` : baseName;
+      const file = path.join(dir, entry.name);
+      results.push({ name: relName, file, color: colorByName[relName] || colorByName[baseName] || '#000000' });
     }
+  }
+  return results;
+}
+
+function collectDiskScriptEntries() {
+  return collectScripts(SCRIPTS_DIR, '').map(file => `${file.name}.js`);
+}
+
+ipcMain.handle('script:list', () => {
+  try {
     const files = collectScripts(SCRIPTS_DIR, '');
     return { ok: true, files };
   } catch (e) {
     return { ok: false, files: [] };
+  }
+});
+
+ipcMain.handle('scriptLibrary:list', () => {
+  try {
+    const current = show.getShow();
+    const library = current?.scriptLibrary || {};
+    const pages = current?.scriptPages || { pages: [] };
+    const diskEntries = collectDiskScriptEntries();
+    const runningLibraryIds = Object.entries(scriptMeta)
+      .filter(([fkey, meta]) => meta.libraryId && runningScripts[fkey])
+      .map(([, meta]) => meta.libraryId);
+    const view = scriptLibraryLogic.buildLibraryView(library, pages, diskEntries, runningLibraryIds);
+    const withCompileStatus = view.registered.map(entry => {
+      if (entry.missingFile) return { ...entry, compileError: null };
+      const file = path.join(SCRIPTS_DIR, entry.entry);
+      return { ...entry, compileError: checkScriptCompileError(file) };
+    });
+    return { ok: true, registered: withCompileStatus, unregisteredFiles: view.unregisteredFiles };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('scriptLibrary:register', (_, id, entry, meta) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const nextLibrary = scriptLibraryLogic.registerEntry(current.scriptLibrary || {}, id, entry, meta || {});
+    const file = path.join(SCRIPTS_DIR, entry);
+    if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry}`);
+    persistScriptLibraryAndPages(nextLibrary, null);
+    return { ok: true, id };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptLibrary:update', (_, id, patch) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const nextLibrary = scriptLibraryLogic.updateEntry(current.scriptLibrary || {}, id, patch || {});
+    if (patch?.entry !== undefined) {
+      const file = path.join(SCRIPTS_DIR, patch.entry);
+      if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${patch.entry}`);
+    }
+    const affectedFkeys = Object.entries(scriptMeta).filter(([, meta]) => meta.libraryId === id);
+
+    if (affectedFkeys.length > 0) {
+      current.scriptLibrary = nextLibrary;
+      const updatedEntry = nextLibrary[id];
+      for (const [fkey] of affectedFkeys) {
+        if (patch?.color !== undefined) scriptMeta[fkey].color = updatedEntry.color;
+        if (patch?.entry !== undefined) {
+          scriptMeta[fkey].file = path.join(SCRIPTS_DIR, updatedEntry.entry);
+          scriptMeta[fkey].entry = updatedEntry.entry;
+          scriptMeta[fkey].name = path.basename(updatedEntry.entry).replace(/\.js$/i, '');
+        }
+      }
+      saveScriptMeta();
+    } else {
+      persistScriptLibraryAndPages(nextLibrary, null);
+    }
+    return { ok: true, id };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptLibrary:remove', (_, id) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const runningFkey = Object.entries(scriptMeta)
+      .find(([fkey, meta]) => meta.libraryId === id && runningScripts[fkey]);
+    if (runningFkey) {
+      throw new Error(`Não é possível remover "${id}": está ativo na tecla ${runningFkey[0]}. Pare antes de remover.`);
+    }
+    const { scriptLibrary: nextLibrary, scriptPages: nextPages } = scriptLibraryLogic.removeEntry(
+      current.scriptLibrary || {},
+      current.scriptPages || { pages: [] },
+      id
+    );
+    const affectedFkeys = Object.entries(scriptMeta)
+      .filter(([, meta]) => meta.libraryId === id)
+      .map(([fkey]) => fkey);
+
+    if (affectedFkeys.length > 0) {
+      current.scriptLibrary = nextLibrary;
+      current.scriptPages = nextPages;
+      for (const fkey of affectedFkeys) delete scriptMeta[fkey];
+      saveScriptMeta();
+    } else {
+      persistScriptLibraryAndPages(nextLibrary, nextPages);
+    }
+    emitScriptsChanged();
+    return { ok: true, id };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptLibrary:associate', (_, id, pageId, slot) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const library = current.scriptLibrary || {};
+    const nextPages = scriptLibraryLogic.associateEntry(
+      library,
+      current.scriptPages || { pages: [] },
+      id,
+      pageId,
+      slot
+    );
+    const entry = library[id];
+    const file = path.join(SCRIPTS_DIR, entry.entry);
+    if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry.entry}`);
+
+    current.scriptPages = nextPages;
+    scriptMeta[slot] = {
+      name: path.basename(entry.entry).replace(/\.js$/i, ''),
+      file,
+      color: entry.color || '#000000',
+      libraryId: id,
+      entry: entry.entry,
+    };
+    saveScriptMeta();
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.message,
+      code: e.code,
+      currentPageId: e.currentPageId,
+      currentSlot: e.currentSlot,
+      occupiedById: e.occupiedById,
+    };
+  }
+});
+
+ipcMain.handle('scriptLibrary:move', (_, id, pageId, slot) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const library = current.scriptLibrary || {};
+    const nextPages = scriptLibraryLogic.moveEntry(
+      library,
+      current.scriptPages || { pages: [] },
+      id,
+      pageId,
+      slot
+    );
+    const entry = library[id];
+    const file = path.join(SCRIPTS_DIR, entry.entry);
+    if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry.entry}`);
+
+    for (const [fkey, meta] of Object.entries(scriptMeta)) {
+      if (meta.libraryId === id) {
+        if (runningScripts[fkey]) stopRunningScript(fkey, 'scriptLibrary:move');
+        delete scriptMeta[fkey];
+      }
+    }
+    current.scriptPages = nextPages;
+    scriptMeta[slot] = {
+      name: path.basename(entry.entry).replace(/\.js$/i, ''),
+      file,
+      color: entry.color || '#000000',
+      libraryId: id,
+      entry: entry.entry,
+    };
+    saveScriptMeta();
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code, occupiedById: e.occupiedById };
+  }
+});
+
+ipcMain.handle('scriptLibrary:unassign', (_, id) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const nextPages = scriptLibraryLogic.unassignEntry(
+      current.scriptLibrary || {},
+      current.scriptPages || { pages: [] },
+      id
+    );
+    const affectedFkeys = Object.entries(scriptMeta)
+      .filter(([, meta]) => meta.libraryId === id)
+      .map(([fkey]) => fkey);
+
+    if (affectedFkeys.length > 0) {
+      current.scriptPages = nextPages;
+      for (const fkey of affectedFkeys) {
+        if (runningScripts[fkey]) stopRunningScript(fkey, 'scriptLibrary:unassign');
+        delete scriptMeta[fkey];
+      }
+      saveScriptMeta();
+    } else {
+      persistScriptLibraryAndPages(null, nextPages);
+    }
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
   }
 });
 

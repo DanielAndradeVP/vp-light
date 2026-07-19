@@ -111,6 +111,13 @@ contextBridge.exposeInMainWorld('vp', {
   toggleScript:  (fkey)       => ipcRenderer.invoke('script:toggle', fkey),
   getAllScripts:  ()           => ipcRenderer.invoke('script:getAll'),
   stopAllScripts: ()           => ipcRenderer.invoke('script:stopAll'),
+  scriptLibraryList: () => ipcRenderer.invoke('scriptLibrary:list'),
+  scriptLibraryRegister: (id, entry, meta) => ipcRenderer.invoke('scriptLibrary:register', id, entry, meta),
+  scriptLibraryUpdate: (id, patch) => ipcRenderer.invoke('scriptLibrary:update', id, patch),
+  scriptLibraryRemove: (id) => ipcRenderer.invoke('scriptLibrary:remove', id),
+  scriptLibraryAssociate: (id, pageId, slot) => ipcRenderer.invoke('scriptLibrary:associate', id, pageId, slot),
+  scriptLibraryMove: (id, pageId, slot) => ipcRenderer.invoke('scriptLibrary:move', id, pageId, slot),
+  scriptLibraryUnassign: (id) => ipcRenderer.invoke('scriptLibrary:unassign', id),
   // Watch em tempo real: o main avisa quando um .js muda no disco.
   // Retorna uma função para remover o listener.
   onScriptsChanged: (callback) => {
