@@ -34,11 +34,23 @@
 const universe = require('./universe');
 const interpolator = require('./interpolator');
 const ribaltaDebug = require('./ribaltaDebug');
+const perfStats = require('./perfStats');
 
 // id -> camada
 const _layers = new Map();
 // id -> macro (definição + runtime)
 const _macros = new Map();
+const _layerStats = new Map(); // layerId -> tracker; preserva histórico após stop/restart
+const _frameStats = perfStats.createStatTracker();
+
+function _getLayerTracker(layerId) {
+  let tracker = _layerStats.get(layerId);
+  if (!tracker) {
+    tracker = perfStats.createStatTracker(60);
+    _layerStats.set(layerId, tracker);
+  }
+  return tracker;
+}
 
 const _EMPTY_SET = new Set();
 let _getDisabledChannels = () => _EMPTY_SET;  // provider injetado pelo main
@@ -213,10 +225,12 @@ function _tickEnvelope(layer) {
 
 // ─── FRAME ───────────────────────────────────────────────────────────────────
 function renderFrame() {
+  const _frameStart = performance.now();
+
   // 1. avança macros (pode adicionar/release camadas para este frame)
   if (_macros.size) { for (const macro of _macros.values()) _advanceMacro(macro); }
 
-  if (_layers.size === 0) return;
+  if (_layers.size === 0) { _frameStats.record(performance.now() - _frameStart); return; }
 
   const arr = [..._layers.values()];
 
@@ -227,6 +241,7 @@ function renderFrame() {
     layer.touched.fill(0);
     const fn = layer.context && layer.context.OnExecute;
     if (typeof fn !== 'function') continue;
+    const _execStart = performance.now();
     try {
       fn();
     } catch (e) {
@@ -234,9 +249,15 @@ function renderFrame() {
       if (typeof layer.onError === 'function') { try { layer.onError(e); } catch (_) {} }
       console.error(`[compositor] OnExecute error (${layer._id}) — camada removida:`, e.message);
     }
+    const _execDuration = performance.now() - _execStart;
+    const _tracker = _getLayerTracker(layer._id);
+    const _result = _tracker.record(_execDuration);
+    if (_execDuration >= perfStats.THRESHOLDS.warn && _tracker.shouldWarn(performance.now())) {
+      console.warn(`[perf] camada "${layer._id}" lenta: ${_execDuration.toFixed(1)}ms (média ${_result.avg.toFixed(1)}ms, ${_result.overruns} estouro(s) registrado(s))`);
+    }
   }
 
-  if (_layers.size === 0) return;
+  if (_layers.size === 0) { _frameStats.record(performance.now() - _frameStart); return; }
 
   // 3. mescla (weight + modo) só nos canais tocados + guards + escreve no universe
   const disabled = _getDisabledChannels();
@@ -263,6 +284,14 @@ function renderFrame() {
   for (const layer of arr) {
     if (layer.phase === 'done') _removeLayerInternal(layer, 'fade-out');
   }
+
+  _frameStats.record(performance.now() - _frameStart);
+}
+
+function getPerformanceSnapshot() {
+  const layers = {};
+  for (const [layerId, tracker] of _layerStats.entries()) layers[layerId] = tracker.snapshot();
+  return { frame: _frameStats.snapshot(), layers };
 }
 
 // ─── MACRO (sequenciador) ─────────────────────────────────────────────────────
@@ -410,7 +439,7 @@ module.exports = {
   addLayer, removeLayer, stopLayer, hasLayer, clearLayers, layerCount, releaseLayer,
   getActiveControlledChannels,
   // frame
-  renderFrame,
+  renderFrame, getPerformanceSnapshot,
   // macro (Fase 2)
   createMacro, removeMacro, startMacro, stopMacro, triggerNextStep, stopAllMacros,
   getActiveMacroStatus,

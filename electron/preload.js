@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('vp', {
   startEngine: () => ipcRenderer.invoke('engine:start'),
   stopEngine:  () => ipcRenderer.invoke('engine:stop'),
   getEngineStatus: () => ipcRenderer.invoke('engine:status'),
+  getPerformanceSnapshot: () => ipcRenderer.invoke('performance:getSnapshot'),
 
   // ─── DMX ──────────────────────────────────────────────────
   /**

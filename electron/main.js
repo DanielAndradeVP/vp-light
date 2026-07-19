@@ -319,6 +319,14 @@ ipcMain.handle('engine:stop', () => {
   return { running: false };
 });
 
+ipcMain.handle('performance:getSnapshot', () => {
+  return {
+    ok: true,
+    frame: engine.getPerformanceSnapshot(),
+    layers: compositor.getPerformanceSnapshot(),
+  };
+});
+
 // Retorna as interfaces de rede ativas usadas para envio Art-Net.
 // Útil para diagnóstico e seleção manual de interface no renderer.
 ipcMain.handle('artnet:getInterfaces', () => artnet.getActiveInterfaces());
