@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { activeSceneMatches, useShow } from '../store/showStore.js';
 import { getPageActivitySummary, getScriptPagesList, getScriptsForPage } from '../store/scriptPagesSelectors.js';
+import ScriptClassificationBadges from '../components/ScriptClassificationBadges.jsx';
 import theme, { getContrastTextColor } from '../theme.js';
 
 const C = {
@@ -156,7 +157,7 @@ function TabStrip({ tabs, active, onChange }) {
 }
 
 /** Botão de disparo — espelha barras de cena/F-key da mesa principal */
-function DispatchPad({ label, name, active, running, empty, color, onClick, variant, pageScript }) {
+function DispatchPad({ label, name, active, running, empty, color, onClick, variant, pageScript, script }) {
   const isScene = variant === 'scene';
   const minH = isScene ? TOUCH.scene : TOUCH.fKey;
 
@@ -192,6 +193,7 @@ function DispatchPad({ label, name, active, running, empty, color, onClick, vari
       onClick={empty ? undefined : onClick}
       style={{
         ...theme.components[isScene ? 'sceneButton' : 'fKeyButton'],
+        position: 'relative',
         minHeight: minH,
         height: minH,
         padding: `${sp.xs}px ${sp.sm}px`,
@@ -257,6 +259,9 @@ function DispatchPad({ label, name, active, running, empty, color, onClick, vari
           color: getContrastTextColor(bg) === '#000000' ? '#333333' : C.borderStrong,
           fontWeight: 700,
         }}>● ATIVA</span>
+      )}
+      {variant === 'fkey' && script && (
+        <ScriptClassificationBadges script={script} iconSize={11} barMaxHeight={10} />
       )}
     </button>
   );
@@ -847,6 +852,7 @@ function QuickDispatchPanel({ currentPage }) {
                     color={script?.color || theme.components.fKeyButton.background}
                     onClick={() => handleToggleScript(fkey)}
                     variant="fkey"
+                    script={script}
                   />
                 );
               })}

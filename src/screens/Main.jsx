@@ -10,6 +10,7 @@ import {
   getScriptPagesList,
   getScriptsForPage,
 } from '../store/scriptPagesSelectors.js';
+import ScriptClassificationBadges from '../components/ScriptClassificationBadges.jsx';
 import theme, { getContrastTextColor, getPaletteSelectionBorder, normalizeHexColor, resolvePaletteColor } from '../theme.js';
 
 const SCENE_KEYS = ['A','S','D','F','G','H','J','K','L','Z','X','C','V'];
@@ -2607,6 +2608,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               onClick={(e) => { e.stopPropagation(); handleToggleScript(fkey); }}
               onContextMenu={(e) => handleScriptRightClick(e, fkey)}
               style={{
+                position:'relative',
                 flex:1,
                 fontFamily:'Arial, Helvetica, sans-serif',
                 fontSize:12,
@@ -2623,11 +2625,12 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 color: fKeyTextColor,
                 boxShadow:'none',
                 outline:'none',
-                display:'flex', flexDirection:'column', alignItems:'center', gap:1, minWidth:0,
+                display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:1, minWidth:0,
               }}
             >
               <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, color:'inherit' }}>{fkey}</span>
               {script && <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, overflow:'hidden', maxWidth:'100%', color:'inherit' }}>{script.name}</span>}
+              <ScriptClassificationBadges script={script} />
             </button>
           );
         })}
@@ -2797,6 +2800,54 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                 />
               </div>
               <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
+
+              {currentPageScripts[createModal.fkey] && (
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted }}>Classificação</div>
+                  <div style={{ display:'flex', gap:8 }}>
+                    <select
+                      value={currentPageScripts[createModal.fkey].category || ''}
+                      onChange={async (e) => {
+                        const scriptId = currentPageScripts[createModal.fkey].scriptId;
+                        await window.vp.scriptLibraryUpdate(scriptId, { category: e.target.value });
+                      }}
+                      style={{ flex:1, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, background:theme.colors.surface, color:theme.colors.text, border:`1px solid ${theme.colors.textSecondary}`, padding:4 }}
+                    >
+                      <option value="">Categoria...</option>
+                      <option value="movimento">Movimento</option>
+                      <option value="strobe">Strobe</option>
+                      <option value="estatico">Estático</option>
+                      <option value="transicao">Transição</option>
+                      <option value="sequencia">Sequência</option>
+                      <option value="utilitario">Utilitário</option>
+                    </select>
+                    <select
+                      value={currentPageScripts[createModal.fkey].speed || 'medio'}
+                      onChange={async (e) => {
+                        const scriptId = currentPageScripts[createModal.fkey].scriptId;
+                        await window.vp.scriptLibraryUpdate(scriptId, { speed: e.target.value });
+                      }}
+                      style={{ flex:1, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, background:theme.colors.surface, color:theme.colors.text, border:`1px solid ${theme.colors.textSecondary}`, padding:4 }}
+                    >
+                      <option value="lento">Lento</option>
+                      <option value="medio">Médio</option>
+                      <option value="rapido">Rápido</option>
+                    </select>
+                    <select
+                      value={currentPageScripts[createModal.fkey].intensity || 'moderado'}
+                      onChange={async (e) => {
+                        const scriptId = currentPageScripts[createModal.fkey].scriptId;
+                        await window.vp.scriptLibraryUpdate(scriptId, { intensity: e.target.value });
+                      }}
+                      style={{ flex:1, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, background:theme.colors.surface, color:theme.colors.text, border:`1px solid ${theme.colors.textSecondary}`, padding:4 }}
+                    >
+                      <option value="suave">Suave</option>
+                      <option value="moderado">Moderado</option>
+                      <option value="intenso">Intenso</option>
+                    </select>
+                  </div>
+                </div>
+              )}
 
               {/* Banco de conhecimento — só exibe para script novo */}
               {!currentPageScripts[createModal.fkey] && (
