@@ -574,6 +574,7 @@ ipcMain.handle('show:updateScene', (_, pageId, sceneKey, sceneData) => {
 
 // ─── SCRIPTS ─────────────────────────────────────────────────────────────────
 const runningScripts = {}; // { [scriptId]: { context } }
+const scriptReloadErrors = new Map(); // scriptId -> { stage, error, timestamp }
 
 // ─── PAGE SCRIPTS (teclas de cena) ──────────────────────────────────────────
 const pageScriptMeta    = {}; // { [pageId]: { [sceneKey]: { name, file } } }
@@ -1204,18 +1205,13 @@ function scriptLayerId(scriptId) {
   return `script:${scriptId}`;
 }
 
-function startScriptById(scriptId) {
-  const current = show.getShow();
-  const entry = current?.scriptLibrary?.[scriptId];
-  if (!entry) return { ok: false, error: 'Script não encontrado na biblioteca.' };
-  const file = path.join(SCRIPTS_DIR, entry.entry);
+function compileScriptForSwap(absPath) {
   let code;
   try {
-    code = readScriptCode(file);
+    code = readScriptCode(absPath);
   } catch (e) {
-    return { ok: false, error: 'Arquivo não encontrado' };
+    return { ok: false, stage: 'read', error: e.message || 'Arquivo não encontrado' };
   }
-  // Buffer próprio da camada (pré-alocado, reusado por frame) + máscara de canais tocados.
   const buffer = new Uint8Array(512);
   const touched = new Uint8Array(512);
   const controlledMask = new Uint8Array(512);
@@ -1223,19 +1219,79 @@ function startScriptById(scriptId) {
   try {
     ctx = compileScriptContext(code, buffer, touched, controlledMask);
   } catch (e) {
-    return { ok: false, error: `Erro ao compilar: ${e.message}` };
+    return { ok: false, stage: 'compile', error: e.message };
+  }
+  if (!ctx.OnStart && !ctx.OnExecute && !ctx.OnTerminate) {
+    return {
+      ok: false,
+      stage: 'validate',
+      error: 'Nenhum hook (OnStart/OnExecute/OnTerminate) definido no script.',
+    };
   }
   if (typeof ctx.OnStart === 'function') {
-    try { ctx.OnStart(); } catch (e) {}
+    try {
+      ctx.OnStart();
+    } catch (e) {
+      return { ok: false, stage: 'onstart', error: e.message };
+    }
   }
+  return { ok: true, buffer, touched, controlledMask, context: ctx };
+}
+
+function startScriptById(scriptId) {
+  const current = show.getShow();
+  const entry = current?.scriptLibrary?.[scriptId];
+  if (!entry) return { ok: false, error: 'Script não encontrado na biblioteca.' };
+  const file = path.join(SCRIPTS_DIR, entry.entry);
+  const compiled = compileScriptForSwap(file);
+  if (!compiled.ok) {
+    scriptReloadErrors.set(scriptId, {
+      stage: compiled.stage,
+      error: compiled.error,
+      timestamp: Date.now(),
+    });
+    return { ok: false, error: compiled.error, stage: compiled.stage };
+  }
+  scriptReloadErrors.delete(scriptId);
   // Registra a camada — o relógio único (engine → compositor) roda o OnExecute por frame.
   const layerId = scriptLayerId(scriptId);
   compositor.addLayer(layerId, {
-    buffer, touched, controlledMask, context: ctx,
+    buffer: compiled.buffer,
+    touched: compiled.touched,
+    controlledMask: compiled.controlledMask,
+    context: compiled.context,
     onError: () => { delete runningScripts[scriptId]; emitScriptsChanged(); },
   });
-  runningScripts[scriptId] = { context: ctx };
+  runningScripts[scriptId] = { context: compiled.context };
   return { ok: true, running: true };
+}
+
+function swapRunningScript(scriptId, absPath, reason) {
+  const compiled = compileScriptForSwap(absPath);
+  if (!compiled.ok) {
+    scriptReloadErrors.set(scriptId, {
+      stage: compiled.stage,
+      error: compiled.error,
+      timestamp: Date.now(),
+    });
+    console.error(`[hot-reload] ${scriptId}: falha ao recarregar (${compiled.stage}): ${compiled.error} — mantendo versão anterior em execução.`);
+    emitScriptsChanged();
+    return false;
+  }
+  scriptReloadErrors.delete(scriptId);
+  // A nova versão já foi validada; stop + add são síncronos e sem frame intermediário.
+  stopScriptById(scriptId, reason);
+  const layerId = scriptLayerId(scriptId);
+  compositor.addLayer(layerId, {
+    buffer: compiled.buffer,
+    touched: compiled.touched,
+    controlledMask: compiled.controlledMask,
+    context: compiled.context,
+    onError: () => { delete runningScripts[scriptId]; emitScriptsChanged(); },
+  });
+  runningScripts[scriptId] = { context: compiled.context };
+  emitScriptsChanged();
+  return true;
 }
 
 function stopScriptById(scriptId, reason) {
@@ -1316,9 +1372,10 @@ function buildScriptLibrarySnapshot() {
   const runningLibraryIds = Object.keys(runningScripts);
   const view = scriptLibraryLogic.buildLibraryView(library, scriptPages, diskEntries, runningLibraryIds);
   const registered = view.registered.map(entry => {
-    if (entry.missingFile) return { ...entry, compileError: null };
+    const lastError = scriptReloadErrors.get(entry.id) || null;
+    if (entry.missingFile) return { ...entry, compileError: null, lastError };
     const file = path.join(SCRIPTS_DIR, entry.entry);
-    return { ...entry, compileError: checkScriptCompileError(file) };
+    return { ...entry, compileError: checkScriptCompileError(file), lastError };
   });
   return { registered, unregisteredFiles: view.unregisteredFiles, pages: scriptPages.pages || [] };
 }
@@ -1380,6 +1437,7 @@ ipcMain.handle('scriptLibrary:remove', (_, id) => {
     current.scriptPages = nextPages;
     current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
     show.saveShow(current);
+    scriptReloadErrors.delete(id);
     emitScriptsChanged();
     return { ok: true, id };
   } catch (e) {
@@ -1606,6 +1664,7 @@ function stopRunningConsumersOfEntry(canonicalPath, reason) {
     const entryPath = (entry.entry || '').replace(/\\/g, '/');
     if (entryPath === canonicalPath && runningScripts[id]) {
       stopScriptById(id, reason);
+      scriptReloadErrors.delete(id);
     }
   }
 }
@@ -1619,8 +1678,7 @@ function reloadRunningConsumersOfEntry(canonicalPath) {
     const isDirectMatch = entryPath === canonicalPath;
     const isPresetCascade = canonicalPath === 'mov-preset.js' && scriptPrependsMovPreset(file);
     if ((isDirectMatch || isPresetCascade) && runningScripts[id]) {
-      stopScriptById(id, isPresetCascade ? 'preset modificado' : 'arquivo modificado');
-      startScriptById(id);
+      swapRunningScript(id, file, isPresetCascade ? 'preset modificado' : 'arquivo modificado');
     }
   }
 }
