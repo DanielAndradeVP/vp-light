@@ -339,3 +339,111 @@ describe('scriptLibrary.buildPageScriptsView', () => {
     });
   });
 });
+
+describe('scriptLibrary.addPage', () => {
+  it('cria página com nome informado e order maior que o máximo existente', () => {
+    const pages = { pages: [{ id: 'page-1', name: 'Primeira', order: 8, slots: {} }] };
+    const next = scriptLibrary.addPage(pages, '  Nova página  ');
+
+    expect(next.pages.at(-1)).toEqual({ id: 'page-2', name: 'Nova página', order: 9, slots: {} });
+  });
+
+  it('usa o nome default Página N quando o nome é vazio ou ausente', () => {
+    expect(scriptLibrary.addPage({ pages: [] }, '').pages[0].name).toBe('Página 1');
+    expect(scriptLibrary.addPage(makePages()).pages.at(-1).name).toBe('Página 4');
+  });
+
+  it('gera id sem colidir mesmo quando o próximo número já existe', () => {
+    const pages = {
+      pages: [1, 2, 3, 4, 5, 7].map((n, idx) => ({
+        id: `page-${n}`, name: `Página ${n}`, order: idx === 5 ? 20 : idx + 1, slots: {},
+      })),
+    };
+    const next = scriptLibrary.addPage(pages, 'Nova');
+
+    expect(next.pages.at(-1)).toMatchObject({ id: 'page-8', order: 21 });
+  });
+});
+
+describe('scriptLibrary.renamePage', () => {
+  it('renomeia a página e remove espaços externos', () => {
+    const next = scriptLibrary.renamePage(makePages(), 'page-2', '  Operação  ');
+    expect(next.pages[1].name).toBe('Operação');
+  });
+
+  it('rejeita página inexistente', () => {
+    expect(() => scriptLibrary.renamePage(makePages(), 'page-99', 'Nome')).toThrow('não existe');
+  });
+
+  it('rejeita nome vazio ou composto apenas por espaços', () => {
+    expect(() => scriptLibrary.renamePage(makePages(), 'page-1', '')).toThrow('não pode ser vazio');
+    expect(() => scriptLibrary.renamePage(makePages(), 'page-1', '   ')).toThrow('não pode ser vazio');
+  });
+});
+
+describe('scriptLibrary.reorderPages', () => {
+  it('reordena e atualiza order sequencialmente', () => {
+    const next = scriptLibrary.reorderPages(makePages(), ['page-3', 'page-1', 'page-2']);
+    expect(next.pages.map(page => [page.id, page.order])).toEqual([
+      ['page-3', 1], ['page-1', 2], ['page-2', 3],
+    ]);
+  });
+
+  it('rejeita lista com tamanho diferente', () => {
+    expect(() => scriptLibrary.reorderPages(makePages(), ['page-1', 'page-2']))
+      .toThrow('exatamente as páginas existentes');
+  });
+
+  it('rejeita id desconhecido', () => {
+    expect(() => scriptLibrary.reorderPages(makePages(), ['page-1', 'page-2', 'page-99']))
+      .toThrow('IDs desconhecidos');
+  });
+
+  it('rejeita id duplicado', () => {
+    expect(() => scriptLibrary.reorderPages(makePages(), ['page-1', 'page-2', 'page-2']))
+      .toThrow('ID repetido');
+  });
+});
+
+describe('scriptLibrary.removePage', () => {
+  function sevenPages(targetSlots = {}) {
+    return {
+      pages: Array.from({ length: 7 }, (_, idx) => ({
+        id: `page-${idx + 1}`,
+        name: `Página ${idx + 1}`,
+        order: idx + 1,
+        slots: idx === 2 ? targetSlots : {},
+      })),
+    };
+  }
+
+  it('remove uma página do meio e reordena as restantes sequencialmente', () => {
+    const next = scriptLibrary.removePage(sevenPages(), 'page-3', { minPages: 6 });
+
+    expect(next.pages.map(page => page.id)).toEqual([
+      'page-1', 'page-2', 'page-4', 'page-5', 'page-6', 'page-7',
+    ]);
+    expect(next.pages.map(page => page.order)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('rejeita remoção quando já está no mínimo de páginas', () => {
+    let error;
+    try {
+      scriptLibrary.removePage({ pages: sevenPages().pages.slice(0, 6) }, 'page-1', { minPages: 6 });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error?.code).toBe('MIN_PAGES');
+  });
+
+  it('rejeita página que contém script ativo', () => {
+    const pages = sevenPages({ F4: { type: 'script', id: 'alpha' } });
+    let error;
+    try {
+      scriptLibrary.removePage(pages, 'page-3', { minPages: 6, runningScriptIds: ['alpha'] });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error?.code).toBe('PAGE_HAS_ACTIVE_SCRIPTS');
+  });
+});

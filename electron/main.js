@@ -391,6 +391,7 @@ ipcMain.handle('custom:speed', (_, fixtureId, value) => {
 ipcMain.handle('dmx:blackout', () => {
   stopAllRunningScripts('blackout');
   universe.blackout();
+  emitScriptsChanged();
   return { ok: true };
 });
 
@@ -1304,20 +1305,24 @@ ipcMain.handle('script:list', () => {
   }
 });
 
+function buildScriptLibrarySnapshot() {
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
+  const scriptPages = current?.scriptPages || { pages: [] };
+  const diskEntries = collectDiskScriptEntries();
+  const runningLibraryIds = Object.keys(runningScripts);
+  const view = scriptLibraryLogic.buildLibraryView(library, scriptPages, diskEntries, runningLibraryIds);
+  const registered = view.registered.map(entry => {
+    if (entry.missingFile) return { ...entry, compileError: null };
+    const file = path.join(SCRIPTS_DIR, entry.entry);
+    return { ...entry, compileError: checkScriptCompileError(file) };
+  });
+  return { registered, unregisteredFiles: view.unregisteredFiles, pages: scriptPages.pages || [] };
+}
+
 ipcMain.handle('scriptLibrary:list', () => {
   try {
-    const current = show.getShow();
-    const library = current?.scriptLibrary || {};
-    const pages = current?.scriptPages || { pages: [] };
-    const diskEntries = collectDiskScriptEntries();
-    const runningLibraryIds = Object.keys(runningScripts);
-    const view = scriptLibraryLogic.buildLibraryView(library, pages, diskEntries, runningLibraryIds);
-    const withCompileStatus = view.registered.map(entry => {
-      if (entry.missingFile) return { ...entry, compileError: null };
-      const file = path.join(SCRIPTS_DIR, entry.entry);
-      return { ...entry, compileError: checkScriptCompileError(file) };
-    });
-    return { ok: true, registered: withCompileStatus, unregisteredFiles: view.unregisteredFiles };
+    return { ok: true, ...buildScriptLibrarySnapshot() };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1449,6 +1454,65 @@ ipcMain.handle('scriptLibrary:unassign', (_, id) => {
   }
 });
 
+ipcMain.handle('scriptPages:add', (_, name) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    current.scriptPages = scriptLibraryLogic.addPage(current.scriptPages || { pages: [] }, name);
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true, pages: current.scriptPages.pages };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptPages:rename', (_, pageId, name) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    current.scriptPages = scriptLibraryLogic.renamePage(current.scriptPages || { pages: [] }, pageId, name);
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptPages:reorder', (_, orderedIds) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    current.scriptPages = scriptLibraryLogic.reorderPages(current.scriptPages || { pages: [] }, orderedIds);
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptPages:remove', (_, pageId) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    current.scriptPages = scriptLibraryLogic.removePage(current.scriptPages || { pages: [] }, pageId, {
+      minPages: show.MIN_SCRIPT_PAGES,
+      runningScriptIds: Object.keys(runningScripts),
+    });
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
 // Monta o mapa de scripts F-key com flag running — usado pelo IPC e pelo watch.
 function buildAllScripts() {
   const current = show.getShow();
@@ -1468,6 +1532,7 @@ function buildAllScripts() {
 function emitScriptsChanged() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('scripts:changed', buildAllScripts());
+    mainWindow.webContents.send('scriptLibrary:changed', buildScriptLibrarySnapshot());
   }
 }
 

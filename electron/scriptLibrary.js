@@ -189,9 +189,76 @@ function buildPageScriptsView(scriptLibrary, scriptPages, pageId, runningScriptI
   return result;
 }
 
+function generatePageId(pages) {
+  const existing = new Set(pages.map(page => page.id));
+  let n = pages.length + 1;
+  let id = `page-${n}`;
+  while (existing.has(id)) {
+    n += 1;
+    id = `page-${n}`;
+  }
+  return id;
+}
+
+function addPage(scriptPages, name) {
+  const pages = (scriptPages?.pages || []).slice();
+  const maxOrder = pages.reduce((max, page) => Math.max(max, Number(page.order) || 0), 0);
+  const id = generatePageId(pages);
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  pages.push({ id, name: trimmed || `Página ${pages.length + 1}`, order: maxOrder + 1, slots: {} });
+  return { pages };
+}
+
+function renamePage(scriptPages, pageId, name) {
+  const pages = scriptPages?.pages || [];
+  if (!pages.some(page => page.id === pageId)) throw new Error(`Página "${pageId}" não existe.`);
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  if (!trimmed) throw new Error('Nome da página não pode ser vazio.');
+  return { pages: pages.map(page => (page.id === pageId ? { ...page, name: trimmed } : page)) };
+}
+
+function reorderPages(scriptPages, orderedIds) {
+  const pages = scriptPages?.pages || [];
+  if (!Array.isArray(orderedIds) || orderedIds.length !== pages.length) {
+    throw new Error('A lista de reordenação precisa conter exatamente as páginas existentes, uma vez cada.');
+  }
+  const byId = new Map(pages.map(page => [page.id, page]));
+  const missing = orderedIds.filter(id => !byId.has(id));
+  if (missing.length > 0) throw new Error(`IDs desconhecidos na reordenação: ${missing.join(', ')}`);
+  const seen = new Set();
+  for (const id of orderedIds) {
+    if (seen.has(id)) throw new Error(`ID repetido na reordenação: ${id}`);
+    seen.add(id);
+  }
+  return { pages: orderedIds.map((id, idx) => ({ ...byId.get(id), order: idx + 1 })) };
+}
+
+function removePage(scriptPages, pageId, options = {}) {
+  const { minPages = 6, runningScriptIds = [] } = options;
+  const pages = scriptPages?.pages || [];
+  const target = pages.find(page => page.id === pageId);
+  if (!target) throw new Error(`Página "${pageId}" não existe.`);
+  if (pages.length <= minPages) {
+    const err = new Error(`Não é possível remover: é preciso manter ao menos ${minPages} páginas.`);
+    err.code = 'MIN_PAGES';
+    throw err;
+  }
+  const runningSet = new Set(runningScriptIds);
+  const hasActiveScript = Object.values(target.slots || {}).some(
+    ref => ref?.type === 'script' && runningSet.has(ref.id)
+  );
+  if (hasActiveScript) {
+    const err = new Error(`Não é possível remover "${target.name}": há script ativo nesta página. Pare-o antes.`);
+    err.code = 'PAGE_HAS_ACTIVE_SCRIPTS';
+    throw err;
+  }
+  return { pages: pages.filter(page => page.id !== pageId).map((page, idx) => ({ ...page, order: idx + 1 })) };
+}
+
 module.exports = {
   findAssociation, registerEntry, updateEntry, removeEntry,
   associateEntry, moveEntry, unassignEntry, buildLibraryView,
   scriptLayerId, resolveScriptSlot, forceAssociateEntry, buildPageScriptsView,
+  addPage, renamePage, reorderPages, removePage,
   SLOT_PATTERN,
 };

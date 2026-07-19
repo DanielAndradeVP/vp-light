@@ -4,6 +4,7 @@
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { activeSceneMatches, useShow } from '../store/showStore.js';
+import { getPageActivitySummary, getScriptPagesList, getScriptsForPage } from '../store/scriptPagesSelectors.js';
 import theme, { getContrastTextColor } from '../theme.js';
 
 const C = {
@@ -730,23 +731,23 @@ const DISPATCH_TABS = [
 ];
 
 function QuickDispatchPanel({ currentPage }) {
-  const { show, activeScenes, toggleScene } = useShow();
+  const {
+    show, activeScenes, toggleScene,
+    scriptLibrarySnapshot, activeScriptPageId, setActiveScriptPageId, toggleScriptAtActivePage,
+  } = useShow();
   const [tab, setTab]       = useState('scripts');
-  const [scripts, setScripts] = useState({});
   const [pageScripts, setPageScripts] = useState({});
 
   const scenes = show?.pages?.[currentPage]?.scenes ?? {};
-
-  useEffect(() => {
-    if (!window.vp?.getAllScripts) return;
-    window.vp.getAllScripts().then(s => setScripts(s || {}));
-    let alive = true;
-    const id = setInterval(async () => {
-      const s = await window.vp.getAllScripts?.();
-      if (alive && s) setScripts(s);
-    }, 300);
-    return () => { alive = false; clearInterval(id); };
-  }, []);
+  const scriptPagesList = useMemo(() => getScriptPagesList(scriptLibrarySnapshot), [scriptLibrarySnapshot]);
+  const currentPageScripts = useMemo(
+    () => getScriptsForPage(scriptLibrarySnapshot, activeScriptPageId),
+    [scriptLibrarySnapshot, activeScriptPageId]
+  );
+  const scriptPageActivity = useMemo(
+    () => getPageActivitySummary(scriptLibrarySnapshot),
+    [scriptLibrarySnapshot]
+  );
 
   useEffect(() => {
     if (!window.vp?.getAllPageScripts) return;
@@ -760,11 +761,9 @@ function QuickDispatchPanel({ currentPage }) {
   }, [currentPage]);
 
   async function handleToggleScript(fkey) {
-    if (!scripts[fkey]) return;
-    const result = await window.vp.toggleScript?.(fkey);
-    if (result?.ok === true) {
-      setScripts(prev => ({ ...prev, [fkey]: { ...prev[fkey], running: result.running } }));
-    } else {
+    if (!currentPageScripts[fkey]) return;
+    const result = await toggleScriptAtActivePage(fkey);
+    if (result?.ok !== true) {
       console.error('[vp] toggleScript falhou:', fkey, result?.error);
     }
   }
@@ -800,29 +799,58 @@ function QuickDispatchPanel({ currentPage }) {
 
         {/* ── Scripts F1-F12 ── */}
         {tab === 'scripts' && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(6, 1fr)',
-            gap: sp.xs,
-            flex: 1,
-            alignContent: 'start',
-          }}>
-            {FKEYS.map(fkey => {
-              const script  = scripts[fkey];
-              const running = script?.running ?? false;
-              return (
-                <DispatchPad
-                  key={fkey}
-                  label={fkey}
-                  name={script?.name}
-                  running={running}
-                  empty={!script}
-                  color={script?.color || theme.components.fKeyButton.background}
-                  onClick={() => handleToggleScript(fkey)}
-                  variant="fkey"
-                />
-              );
-            })}
+          <div style={{ display:'flex', flexDirection:'column', gap:sp.sm, flex:1 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:sp.xs, overflowX:'auto', paddingBottom:sp.xs }}>
+              {scriptPagesList.map(page => {
+                const isActive = page.id === activeScriptPageId;
+                const activity = scriptPageActivity[page.id] || { activeCount:0, hasActive:false };
+                return (
+                  <button
+                    key={page.id}
+                    onClick={() => setActiveScriptPageId(page.id)}
+                    title={`${page.name}${activity.hasActive ? ` — ${activity.activeCount} script(s) ativo(s)` : ''}`}
+                    style={{
+                      position:'relative', flex:'0 0 auto', minWidth:TOUCH.actionW, minHeight:TOUCH.tab,
+                      padding:`${sp.xs}px ${sp.md}px`, borderRadius:0, cursor:'pointer',
+                      fontFamily:ty.fontFamily, fontSize:ty.compact.fontSize, fontWeight:isActive ? 700 : 400,
+                      background:isActive ? theme.colors.accentOverlay : C.btnBg,
+                      border:isActive ? `2px solid ${theme.colors.accent}` : `1px solid ${C.borderStrong}`,
+                      color:isActive ? C.text : C.textMuted,
+                    }}
+                  >
+                    {page.name}
+                    {activity.hasActive && (
+                      <span style={{
+                        position:'absolute', top:2, right:2, minWidth:16, height:16, borderRadius:8,
+                        background:C.warn, color:'#fff', fontSize:9, fontWeight:700,
+                        display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px',
+                      }}>{activity.activeCount}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{
+              display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:sp.xs,
+              flex:1, alignContent:'start',
+            }}>
+              {FKEYS.map(fkey => {
+                const script = currentPageScripts[fkey];
+                const running = script?.running ?? false;
+                return (
+                  <DispatchPad
+                    key={fkey}
+                    label={fkey}
+                    name={script?.name}
+                    running={running}
+                    empty={!script}
+                    color={script?.color || theme.components.fKeyButton.background}
+                    onClick={() => handleToggleScript(fkey)}
+                    variant="fkey"
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
 
