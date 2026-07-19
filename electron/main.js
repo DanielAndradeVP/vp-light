@@ -498,13 +498,13 @@ ipcMain.handle('show:save', (_, showData) => {
       '| cenas por página:', Object.fromEntries(
         Object.entries(showData.pages || {}).map(([k, v]) => [k, Object.keys(v.scenes || {})])
       ),
-      '| scripts:', Object.keys(showData.scripts || {})
+      '| scriptLibrary:', Object.keys(showData.scriptLibrary || {})
     );
     console.log('[show:save] scriptMeta no main:', Object.keys(scriptMeta));
     console.log('[show:save] currentShow no disco:',
       'fixtures:', currentShow?.fixtures?.length,
       '| páginas:', Object.keys(currentShow?.pages || {}),
-      '| scripts:', Object.keys(currentShow?.scripts || {})
+      '| scriptLibrary:', Object.keys(currentShow?.scriptLibrary || {})
     );
 
     // Scripts, páginas, page_scripts e macros: merge via buildMergedShow (fonte runtime do main).
@@ -517,7 +517,7 @@ ipcMain.handle('show:save', (_, showData) => {
       '| cenas por página:', Object.fromEntries(
         Object.entries(merged.pages).map(([k, v]) => [k, Object.keys(v.scenes || {})])
       ),
-      '| scripts:', Object.keys(merged.scripts)
+      '| scriptLibrary:', Object.keys(merged.scriptLibrary || {})
     );
 
     show.saveShow(merged);
@@ -578,18 +578,45 @@ function normalizePageId(pageId) {
 
 function psKey(pageId, sceneKey) { return `${normalizePageId(pageId)}:${sceneKey}`; }
 
+function buildScriptLibraryAndPagesFromRuntime(currentShow) {
+  const library = { ...(currentShow?.scriptLibrary || {}) };
+  const basePages = show.normalizeScriptPages(currentShow?.scriptPages).pages;
+  const pages = basePages.map(page => ({ ...page, slots: { ...(page.slots || {}) } }));
+  const page1 = pages[0];
+  page1.slots = {};
+
+  for (const [fkey, meta] of Object.entries(scriptMeta)) {
+    const id = meta.libraryId || show.slugifyScriptId(meta.name);
+    const prev = library[id] || {};
+    // Preserva o entry completo já conhecido (pode ter subpasta); só deriva do
+    // basename quando não há nenhum registro anterior (ex.: associação nova).
+    const entry = meta.entry || prev.entry || `${meta.name}.js`;
+    library[id] = {
+      ...prev,
+      id,
+      entry: show.isSafeRelativeEntry(entry) ? entry : (prev.entry || `${meta.name}.js`),
+      label: prev.label || meta.name,
+      category: prev.category ?? '',
+      speed: prev.speed || 'medio',
+      intensity: prev.intensity || 'moderado',
+      status: prev.status || 'estavel',
+      description: prev.description || '',
+      tags: prev.tags || [],
+      color: meta.color || prev.color || '#000000',
+    };
+    page1.slots[fkey] = { type: 'script', id };
+  }
+
+  return { scriptLibrary: library, scriptPages: { pages } };
+}
+
 /**
  * Mescla showData do renderer com metadados runtime do main (scripts, page_scripts, páginas, macros).
  * Usado por show:save e show:saveAs.
  */
 function buildMergedShow(showData) {
   const currentShow = show.getShow();
-
-  const mergedScripts = {};
-  for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    mergedScripts[fkey] = { name: meta.name, file: meta.file };
-    if (meta.color) mergedScripts[fkey].color = meta.color;
-  }
+  const { scriptLibrary, scriptPages } = buildScriptLibraryAndPagesFromRuntime(currentShow);
 
   const mergedPages = {};
   const allPageIds = new Set([
@@ -613,13 +640,17 @@ function buildMergedShow(showData) {
     }
   }
 
-  return normalizeRuntimeFixtureFields({
+  const mergedShow = normalizeRuntimeFixtureFields({
     ...showData,
-    scripts: mergedScripts,
+    scriptLibrary,
+    scriptPages,
+    scriptSchemaVersion: show.SCRIPT_SCHEMA_VERSION,
     pages: mergedPages,
     page_scripts: mergedPageScripts,
     macros: currentShow?.macros ?? showData?.macros ?? [],
   });
+  delete mergedShow.scripts;
+  return mergedShow;
 }
 
 function stopRunningPageScript(pageId, sceneKey, reason) {
@@ -686,11 +717,11 @@ function stopAllRunningScripts(reason) {
 function saveScriptMeta() {
   const current = show.getShow();
   if (!current) return;
-  current.scripts = {};
-  for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    current.scripts[fkey] = { name: meta.name, file: meta.file };
-    if (meta.color) current.scripts[fkey].color = meta.color;
-  }
+  const { scriptLibrary, scriptPages } = buildScriptLibraryAndPagesFromRuntime(current);
+  current.scriptLibrary = scriptLibrary;
+  current.scriptPages = scriptPages;
+  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+  delete current.scripts;
   show.saveShow(current);
 }
 
@@ -699,10 +730,31 @@ function loadScriptMeta() {
     delete scriptMeta[fkey];
   }
   const current = show.getShow();
-  if (!current?.scripts) return;
+  if (!current) return;
+
+  const page1 = current.scriptPages?.pages?.[0];
+  if (page1?.slots && current.scriptLibrary) {
+    for (const [fkey, slotRef] of Object.entries(page1.slots)) {
+      if (!slotRef || slotRef.type !== 'script' || !slotRef.id) continue;
+      const entry = current.scriptLibrary[slotRef.id];
+      if (!entry || !entry.entry) continue;
+      const file = path.join(SCRIPTS_DIR, entry.entry);
+      if (fs.existsSync(file)) {
+        scriptMeta[fkey] = {
+          name: path.basename(entry.entry).replace(/\.js$/i, ''),
+          file,
+          color: entry.color || '#000000',
+          libraryId: entry.id,
+          entry: entry.entry, // caminho relativo completo (preserva subpasta) — ver buildScriptLibraryAndPagesFromRuntime
+        };
+      }
+    }
+    return;
+  }
+
+  // Fallback legado — usado somente se a migração ainda não rodou ou falhou nesta sessão.
+  if (!current.scripts) return;
   for (const [fkey, meta] of Object.entries(current.scripts)) {
-    // Tenta o caminho absoluto salvo no show primeiro (suporta subpastas).
-    // Fallback: <name>.js relativo a SCRIPTS_DIR (portabilidade entre PCs).
     let file = null;
     if (meta.file && fs.existsSync(meta.file)) {
       file = meta.file;
@@ -711,7 +763,7 @@ function loadScriptMeta() {
       if (fs.existsSync(fallback)) file = fallback;
     }
     if (file) {
-      scriptMeta[fkey] = { name: meta.name, file, color: meta.color || '#000000' };
+      scriptMeta[fkey] = { name: meta.name, file, color: meta.color || '#000000', entry: `${meta.name}.js` };
     }
   }
 }

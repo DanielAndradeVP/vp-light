@@ -25,6 +25,130 @@ let currentShow = null;
 let currentShowPath = null;
 const FIXTURE_GRID_SIZE = 40;
 const MAX_PAGE = 10;
+const SCRIPT_SCHEMA_VERSION = 1;
+const MIN_SCRIPT_PAGES = 6;
+
+/** Slug estável para id de scriptLibrary. Nunca depende da tecla. */
+function slugifyScriptId(name) {
+  const base = String(name ?? '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return base || 'script';
+}
+
+/**
+ * Valida que `entry` é um caminho relativo seguro dentro de scripts/.
+ * Aceita separadores Windows/Linux na entrada, mas rejeita caminhos absolutos
+ * (incluindo drive-relative "C:foo.js" e UNC), traversal, segmentos vazios,
+ * bytes nulos e qualquer ":" fora de posição (bloqueia também Alternate Data
+ * Streams do NTFS, ex. "foo.js:hidden").
+ */
+function isSafeRelativeEntry(entry) {
+  if (typeof entry !== 'string') return false;
+  const trimmed = entry.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes('\0')) return false;
+  if (trimmed.includes(':')) return false; // nomes de script nunca precisam de ":"
+  if (trimmed.startsWith('/') || trimmed.startsWith('\\')) return false;
+  const normalized = trimmed.replace(/\\/g, '/');
+  const segments = normalized.split('/');
+  if (segments.some(seg => seg === '..' || seg === '.' || seg === '')) return false;
+  return true;
+}
+
+function createDefaultScriptPages() {
+  const pages = [];
+  for (let i = 1; i <= MIN_SCRIPT_PAGES; i += 1) {
+    pages.push({ id: `page-${i}`, name: `Página ${i}`, order: i, slots: {} });
+  }
+  return pages;
+}
+
+/** Garante ao menos MIN_SCRIPT_PAGES páginas sem truncar páginas extras. */
+function normalizeScriptPages(scriptPagesBlock) {
+  let pages = Array.isArray(scriptPagesBlock?.pages) ? scriptPagesBlock.pages.slice() : [];
+  pages = pages.map((p, idx) => ({
+    id: p?.id || `page-${idx + 1}`,
+    name: p?.name || `Página ${idx + 1}`,
+    order: Number.isFinite(p?.order) ? p.order : idx + 1,
+    slots: (p?.slots && typeof p.slots === 'object') ? { ...p.slots } : {},
+  }));
+  if (pages.length < MIN_SCRIPT_PAGES) {
+    const existingIds = new Set(pages.map(p => p.id));
+    let nextOrder = pages.length + 1;
+    while (pages.length < MIN_SCRIPT_PAGES) {
+      let id = `page-${nextOrder}`;
+      while (existingIds.has(id)) {
+        nextOrder += 1;
+        id = `page-${nextOrder}`;
+      }
+      pages.push({ id, name: `Página ${nextOrder}`, order: nextOrder, slots: {} });
+      existingIds.add(id);
+      nextOrder += 1;
+    }
+  }
+  return { pages };
+}
+
+/**
+ * Migra associações legadas F1-F12 para a biblioteca e a primeira página.
+ * Função pura: não lê nem escreve no disco.
+ */
+function migrateLegacyScriptsToLibrary(legacyScripts) {
+  const warnings = [];
+  const scriptLibrary = {};
+  const pages = createDefaultScriptPages();
+  const page1 = pages[0];
+  const idByName = new Map();
+
+  const orderedFkeys = Object.keys(legacyScripts || {}).sort((a, b) => {
+    const na = parseInt(String(a).replace(/\D/g, ''), 10) || 0;
+    const nb = parseInt(String(b).replace(/\D/g, ''), 10) || 0;
+    return na - nb;
+  });
+
+  for (const fkey of orderedFkeys) {
+    const meta = legacyScripts[fkey];
+    if (!meta || !meta.name) continue;
+    const name = String(meta.name);
+
+    if (idByName.has(name)) {
+      const existingId = idByName.get(name);
+      warnings.push(
+        `Associação duplicada detectada na migração: "${fkey}" também aponta para o script "${name}" ` +
+        `(já associado via id "${existingId}" a outra tecla). Mantendo a primeira associação; ` +
+        `"${fkey}" ficou SEM script — resolva manualmente na biblioteca depois que ela existir.`
+      );
+      continue;
+    }
+
+    const id = slugifyScriptId(name);
+    const entry = `${name}.js`;
+    if (!isSafeRelativeEntry(entry)) {
+      warnings.push(`Script "${name}" (tecla ${fkey}) gerou entry inseguro "${entry}" — ignorado na migração.`);
+      continue;
+    }
+
+    scriptLibrary[id] = {
+      id,
+      entry,
+      label: name,
+      category: '',
+      speed: 'medio',
+      intensity: 'moderado',
+      status: 'estavel',
+      description: '',
+      tags: [],
+      color: meta.color || '#000000',
+    };
+    idByName.set(name, id);
+    page1.slots[fkey] = { type: 'script', id };
+  }
+
+  return { scriptLibrary, scriptPages: { pages }, warnings };
+}
 
 function createDefaultPages() {
   const pages = {};
@@ -136,6 +260,45 @@ function loadShow(filePath) {
       show.version === undefined) {
     throw new Error(`Arquivo inválido: "${filePath}" não contém version, fixtures e pages obrigatórios`);
   }
+  if (show.scriptSchemaVersion !== SCRIPT_SCHEMA_VERSION) {
+    if (show.scripts && typeof show.scripts === 'object' && Object.keys(show.scripts).length > 0) {
+      const backupPath = `${filePath}.pre-script-migration.bak`;
+      try {
+        if (!fs.existsSync(backupPath)) {
+          fs.writeFileSync(backupPath, raw, 'utf-8');
+        }
+        const { scriptLibrary, scriptPages, warnings } = migrateLegacyScriptsToLibrary(show.scripts);
+        warnings.forEach(w => console.warn(`[show] migração de scripts: ${w}`));
+
+        const migrated = { ...show };
+        migrated.scriptLibrary = scriptLibrary;
+        migrated.scriptPages = scriptPages;
+        migrated.scriptSchemaVersion = SCRIPT_SCHEMA_VERSION;
+        delete migrated.scripts;
+
+        try {
+          const json = JSON.stringify(migrated, null, 2);
+          const tmpPath = filePath + '.tmp';
+          fs.writeFileSync(tmpPath, json, 'utf-8');
+          fs.renameSync(tmpPath, filePath);
+          console.log(`[show] scripts migrados para o novo schema e persistidos: ${filePath} (backup em ${backupPath})`);
+        } catch (writeErr) {
+          console.error(`[show] migração de scripts calculada, mas FALHOU AO SALVAR no disco (arquivo original preservado): ${writeErr.message}`);
+        }
+
+        show = migrated;
+      } catch (migErr) {
+        console.error(`[show] MIGRAÇÃO DE SCRIPTS FALHOU — mantendo formato legado nesta sessão, arquivo original intacto: ${migErr.message}`);
+      }
+    } else {
+      show.scriptLibrary = show.scriptLibrary && typeof show.scriptLibrary === 'object' ? show.scriptLibrary : {};
+      show.scriptPages = normalizeScriptPages(show.scriptPages);
+      show.scriptSchemaVersion = SCRIPT_SCHEMA_VERSION;
+    }
+  } else {
+    show.scriptLibrary = show.scriptLibrary && typeof show.scriptLibrary === 'object' ? show.scriptLibrary : {};
+    show.scriptPages = normalizeScriptPages(show.scriptPages);
+  }
   show = normalizePages(normalizeFixturePositions(show));
   currentShow = show;
   currentShowPath = filePath;
@@ -153,30 +316,11 @@ function loadShow(filePath) {
 function saveShow(showData) {
   showData = normalizePages(normalizeFixturePositions(showData));
   currentShow = normalizePages(normalizeFixturePositions(currentShow));
+  if (showData) showData = { ...showData, scriptPages: normalizeScriptPages(showData.scriptPages) };
+  if (currentShow) currentShow = { ...currentShow, scriptPages: normalizeScriptPages(currentShow.scriptPages) };
   // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
   validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) {
-    // Fallback defensivo: se showData não trouxer scripts (undefined/null), preserva os do
-    // currentShow. Não aplica quando scripts={} — esse é o estado legítimo após script:clear.
-    if (currentShow?.scripts && showData.scripts == null) {
-      showData = { ...showData, scripts: currentShow.scripts };
-    }
-    // Preserva a cor dos scripts mantida em memória (fonte da verdade: scriptMeta via
-    // saveScriptMeta). O renderer envia um snapshot de scripts que pode estar defasado e
-    // não carregar a cor escolhida nos botões F1–F12 — sem isso, um save de show completo
-    // apagaria a cor recém-definida. Só preenche quando a entrada recebida não traz color.
-    else if (currentShow?.scripts && showData.scripts && typeof showData.scripts === 'object') {
-      const mergedScripts = {};
-      for (const [fkey, entry] of Object.entries(showData.scripts)) {
-        const prev = currentShow.scripts[fkey];
-        if (entry && entry.color == null && prev && prev.color != null) {
-          mergedScripts[fkey] = { ...entry, color: prev.color };
-        } else {
-          mergedScripts[fkey] = entry;
-        }
-      }
-      showData = { ...showData, scripts: mergedScripts };
-    }
     currentShow = showData;
   }
   if (!currentShow || !currentShowPath) {
@@ -196,6 +340,8 @@ function saveShow(showData) {
 function saveShowAs(filePath, showData) {
   showData = normalizePages(normalizeFixturePositions(showData));
   currentShow = normalizePages(normalizeFixturePositions(currentShow));
+  if (showData) showData = { ...showData, scriptPages: normalizeScriptPages(showData.scriptPages) };
+  if (currentShow) currentShow = { ...currentShow, scriptPages: normalizeScriptPages(currentShow.scriptPages) };
   // Valida fixtures antes de aceitar — rejeita sem mutar o estado em memória.
   validateFixtures((showData || currentShow)?.fixtures || []);
   if (showData) currentShow = showData;
@@ -279,4 +425,6 @@ function updateScene(pageId, sceneKey, sceneData) {
 
 module.exports = {
   loadShow, saveShow, saveShowAs, getShow, getStartupChannels, getDefaultStartupScene, updateScene, validateFixtures,
+  SCRIPT_SCHEMA_VERSION, MIN_SCRIPT_PAGES, slugifyScriptId, isSafeRelativeEntry,
+  createDefaultScriptPages, normalizeScriptPages, migrateLegacyScriptsToLibrary,
 };
