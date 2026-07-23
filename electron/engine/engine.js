@@ -50,16 +50,28 @@ function start() {
     ribaltaDebug.tickFrame();
 
     let _t0 = performance.now();
-    interpolator.tick();           // avança interpolação de pan/tilt (speed virtual)
+    try {
+      interpolator.tick();         // avança interpolação de pan/tilt (speed virtual)
+    } catch (e) {
+      console.error('[engine] erro em interpolator.tick:', e.message);
+    }
     _stageStats.interpolator.record(performance.now() - _t0);
 
     _t0 = performance.now();
-    compositor.renderFrame();      // relógio único: compõe as camadas no universo
+    try {
+      compositor.renderFrame();    // relógio único: compõe as camadas no universo
+    } catch (e) {
+      console.error('[engine] erro em compositor.renderFrame:', e.message);
+    }
     _stageStats.compositor.record(performance.now() - _t0);
 
     // Art-Net: tilt físico calibrado; onFrame abaixo usa universo lógico (3D inalterado).
     _t0 = performance.now();
-    sendArtDMX(ribaltaPhysicalCalib.getPhysicalUniverseForArtNet(getUniverse()));
+    try {
+      sendArtDMX(ribaltaPhysicalCalib.getPhysicalUniverseForArtNet(getUniverse()));
+    } catch (e) {
+      console.error('[engine] erro ao enviar Art-Net:', e.message);
+    }
     _stageStats.artnet.record(performance.now() - _t0);
 
     // Universo final já montado neste ponto — notifica listeners (ex.: viewer 3D).

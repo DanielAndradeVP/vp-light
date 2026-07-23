@@ -37,6 +37,16 @@ const RIBALTA_APPLY_ORDER = [
   'strobo', 'tilt',
 ];
 
+// Rede de segurança: um erro não previsto em qualquer parte do processo main
+// (fora dos try/catch já existentes no loop da engine e no compositor) não pode
+// derrubar o app inteiro no meio de um evento ao vivo. Loga e mantém rodando.
+process.on('uncaughtException', (err) => {
+  console.error('[main] uncaughtException — processo continua rodando:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] unhandledRejection — processo continua rodando:', reason);
+});
+
 const isDev = !app.isPackaged;
 const DEFAULT_SHOW = path.join(__dirname, '..', 'shows', 'vp.show.json');
 

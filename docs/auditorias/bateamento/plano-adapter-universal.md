@@ -11,6 +11,19 @@
 
 ## 1. Bugs encontrados (confirmados por teste)
 
+> **Status de risco — auditoria 2026-07-23 (véspera do evento Fire):**
+> BUG 1 confirmado presente no `electron/adapter.js` mesclado em main (linha 378,
+> `hasOwnProperty.call(mapping, logical)` contra chave normalizada). Bug
+> **sem risco para o evento de amanhã**: o único ponto de chamada é
+> `fb_mhColor()` em `scripts/fire-base.js`, e nenhum script `fire-*.js` ativo
+> hoje chama essa função (`fire-base.js` está inerte, só a própria lib existe
+> na pasta `scripts/`). Ressalva: se um script novo `fire-*.js` for criado
+> antes do evento usando `fb_mhColor`/`adapter.resolve` com nome de cor em
+> maiúscula, com acento ou espaço nas pontas, ele vai bater nesse bug (retorno
+> `null` silencioso). Enquanto BUG 1 não for corrigido, usar só chaves de cor
+> já normalizadas (minúsculo, sem acento, `_` no lugar de espaço) — é o formato
+> que os dois moving heads já usam hoje no `vp.show.json`.
+
 ### BUG 1 — ALTO: normalização assimétrica (chave gravada nunca normalizada)
 `resolve()` normaliza a *consulta* (`normalizeKey(logicalValue)` → minúsculas,
 sem acento) mas compara contra as chaves **cruas** do show via `hasOwnProperty`.

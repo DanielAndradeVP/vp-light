@@ -7,6 +7,19 @@
 
 ---
 
+> **Status de risco — auditoria 2026-07-23 (véspera do evento Fire):**
+> O BUG 1 do `plano-adapter-universal.md` (normalização assimétrica em
+> `adapter.resolve`) está confirmado presente no código mesclado em main.
+> **Sem risco para o evento de amanhã** porque `fb_mhColor()` — o único ponto
+> da base que chama `adapter.resolve` — não é chamado por nenhum script
+> `fire-*.js` ativo hoje (a própria `fire-base.js` é a única `fire-*.js` na
+> pasta `scripts/`, e é uma lib inerte, sem `OnStart/OnExecute/OnTerminate`).
+> Ressalva: qualquer script `fire-*.js` novo que use `fb_mhColor` com nome de
+> cor em maiúscula/acento/espaço vai bater no bug (retorno silencioso, canal
+> não escrito). Até o BUG 1 ser corrigido, usar só chaves já normalizadas
+> (minúsculo, `_` no lugar de espaço) — o mesmo formato já usado nos adapters
+> de cor dos dois moving heads no `vp.show.json`.
+
 ## 1. Diagnóstico da base atual (o que impede isso hoje)
 
 A `fire-base.js` v1 está correta, mas o adapter só participa em **um** ponto

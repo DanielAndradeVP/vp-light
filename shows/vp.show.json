@@ -6,9 +6,9 @@
     "notes": "Show base para o Fire. Salvar antes de sair!",
     "viewport": {
       "grid": {
-        "zoom": 2.357947691000006,
-        "panX": 587.8155873555907,
-        "panY": 586.2345427818185
+        "zoom": 1.2100000000000002,
+        "panX": 488.45500000000004,
+        "panY": 405.735
       },
       "grid2": {
         "zoom": 2.143588810000004,
@@ -788,98 +788,38 @@
           "name": "parled_static",
           "color": "#cccc00",
           "channels": {
+            "1": 255,
+            "2": 0,
+            "3": 0,
+            "4": 255,
             "5": 255,
             "6": 255,
-            "7": 255,
+            "7": 0,
             "8": 0,
             "12": 255,
             "13": 255,
             "14": 255,
-            "15": 0,
             "20": 255,
             "21": 255,
             "22": 255,
-            "23": 0,
             "33": 255,
             "36": 255,
             "37": 255,
             "38": 255,
-            "39": 0,
             "49": 255,
             "52": 255,
             "53": 255,
             "54": 255,
-            "55": 0,
             "60": 255,
             "61": 255,
             "62": 255,
-            "63": 0,
             "68": 255,
             "69": 255,
             "70": 255,
-            "71": 0,
+            "74": 255,
             "77": 255,
             "78": 255,
-            "79": 255,
-            "80": 0,
-            "123": 0,
-            "124": 0,
-            "125": 0,
-            "126": 0,
-            "127": 0,
-            "128": 0,
-            "129": 0,
-            "130": 0,
-            "131": 0,
-            "132": 0,
-            "133": 0,
-            "134": 0,
-            "135": 0,
-            "136": 0,
-            "137": 0,
-            "138": 0,
-            "203": 0,
-            "204": 0,
-            "205": 0,
-            "206": 0,
-            "207": 0,
-            "208": 0,
-            "209": 0,
-            "210": 0,
-            "211": 0,
-            "212": 0,
-            "213": 0,
-            "214": 0,
-            "215": 0,
-            "216": 0,
-            "217": 0,
-            "218": 0,
-            "258": 0,
-            "259": 0,
-            "260": 0,
-            "261": 0,
-            "262": 0,
-            "263": 0,
-            "264": 0,
-            "265": 0,
-            "266": 0,
-            "267": 0,
-            "268": 0,
-            "269": 0,
-            "270": 0,
-            "271": 0,
-            "272": 0,
-            "273": 0,
-            "274": 0,
-            "275": 0,
-            "276": 0,
-            "277": 0,
-            "278": 0,
-            "279": 0,
-            "280": 0,
-            "281": 0,
-            "282": 0,
-            "283": 0
+            "79": 255
           },
           "customFunctions": {
             "fixture_1780805067518_moving_head_beam_1": {
@@ -1318,68 +1258,6 @@
   "page_scripts": {
     "1": {}
   },
-  "scripts": {
-    "F10": {
-      "name": "mov-traj-rib-baixo",
-      "file": "C:\\vp-light\\scripts\\mov-traj-rib-baixo.js",
-      "color": "#ff8800"
-    },
-    "F1": {
-      "name": "brut-fita-full",
-      "file": "C:\\vp-light\\scripts\\brut-fita-full.js",
-      "color": "#ff8800"
-    },
-    "F2": {
-      "name": "brut-pisca-combo",
-      "file": "C:\\vp-light\\scripts\\brut-pisca-combo.js",
-      "color": "#ff8800"
-    },
-    "F11": {
-      "name": "mov-desc-seq-fade",
-      "file": "C:\\vp-light\\scripts\\mov-desc-seq-fade.js",
-      "color": "#000000"
-    },
-    "F3": {
-      "name": "brut-pisca-cruz",
-      "file": "C:\\vp-light\\scripts\\brut-pisca-cruz.js",
-      "color": "#ff8800"
-    },
-    "F12": {
-      "name": "mov-desc-sync-loop",
-      "file": "C:\\vp-light\\scripts\\mov-desc-sync-loop.js",
-      "color": "#000000"
-    },
-    "F5": {
-      "name": "mov-desc-branco",
-      "file": "C:\\vp-light\\scripts\\mov-desc-branco.js",
-      "color": "#ff6699"
-    },
-    "F6": {
-      "name": "mov-desc-full-reset",
-      "file": "C:\\vp-light\\scripts\\mov-desc-full-reset.js",
-      "color": "#ff6699"
-    },
-    "F7": {
-      "name": "mov-desc-rib-reset",
-      "file": "C:\\vp-light\\scripts\\mov-desc-rib-reset.js",
-      "color": "#ff6699"
-    },
-    "F4": {
-      "name": "mov-preset",
-      "file": "C:\\vp-light\\scripts\\mov-preset.js",
-      "color": "#ff6699"
-    },
-    "F8": {
-      "name": "mov-traj-mh-rib",
-      "file": "C:\\vp-light\\scripts\\mov-traj-mh-rib.js",
-      "color": "#ff6699"
-    },
-    "F9": {
-      "name": "mov-traj-rib-alto",
-      "file": "C:\\vp-light\\scripts\\mov-traj-rib-alto.js",
-      "color": "#ff8800"
-    }
-  },
   "mode2": {
     "positions": {
       "fixture_1780805067518_ribalta_1": {
@@ -1606,5 +1484,241 @@
         }
       ]
     }
-  ]
+  ],
+  "scriptLibrary": {
+    "brut-fita-full": {
+      "id": "brut-fita-full",
+      "entry": "brut-fita-full.js",
+      "label": "brut-fita-full",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff8800"
+    },
+    "brut-pisca-combo": {
+      "id": "brut-pisca-combo",
+      "entry": "brut-pisca-combo.js",
+      "label": "brut-pisca-combo",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff8800"
+    },
+    "brut-pisca-cruz": {
+      "id": "brut-pisca-cruz",
+      "entry": "brut-pisca-cruz.js",
+      "label": "brut-pisca-cruz",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff8800"
+    },
+    "mov-preset": {
+      "id": "mov-preset",
+      "entry": "mov-preset.js",
+      "label": "mov-preset",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff6699"
+    },
+    "mov-desc-branco": {
+      "id": "mov-desc-branco",
+      "entry": "mov-desc-branco.js",
+      "label": "mov-desc-branco",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff6699"
+    },
+    "mov-desc-full-reset": {
+      "id": "mov-desc-full-reset",
+      "entry": "mov-desc-full-reset.js",
+      "label": "mov-desc-full-reset",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff6699"
+    },
+    "mov-desc-rib-reset": {
+      "id": "mov-desc-rib-reset",
+      "entry": "mov-desc-rib-reset.js",
+      "label": "mov-desc-rib-reset",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff6699"
+    },
+    "mov-traj-mh-rib": {
+      "id": "mov-traj-mh-rib",
+      "entry": "mov-traj-mh-rib.js",
+      "label": "mov-traj-mh-rib",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff6699"
+    },
+    "mov-traj-rib-alto": {
+      "id": "mov-traj-rib-alto",
+      "entry": "mov-traj-rib-alto.js",
+      "label": "mov-traj-rib-alto",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff8800"
+    },
+    "mov-traj-rib-baixo": {
+      "id": "mov-traj-rib-baixo",
+      "entry": "mov-traj-rib-baixo.js",
+      "label": "mov-traj-rib-baixo",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff8800"
+    },
+    "mov-desc-seq-fade": {
+      "id": "mov-desc-seq-fade",
+      "entry": "mov-desc-seq-fade.js",
+      "label": "mov-desc-seq-fade",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#000000"
+    },
+    "mov-desc-sync-loop": {
+      "id": "mov-desc-sync-loop",
+      "entry": "mov-desc-sync-loop.js",
+      "label": "mov-desc-sync-loop",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#000000"
+    }
+  },
+  "scriptPages": {
+    "pages": [
+      {
+        "id": "page-1",
+        "name": "Página 1",
+        "order": 1,
+        "slots": {
+          "F1": {
+            "type": "script",
+            "id": "brut-fita-full"
+          },
+          "F2": {
+            "type": "script",
+            "id": "brut-pisca-combo"
+          },
+          "F3": {
+            "type": "script",
+            "id": "brut-pisca-cruz"
+          },
+          "F4": {
+            "type": "script",
+            "id": "mov-preset"
+          },
+          "F5": {
+            "type": "script",
+            "id": "mov-desc-branco"
+          },
+          "F6": {
+            "type": "script",
+            "id": "mov-desc-full-reset"
+          },
+          "F7": {
+            "type": "script",
+            "id": "mov-desc-rib-reset"
+          },
+          "F8": {
+            "type": "script",
+            "id": "mov-traj-mh-rib"
+          },
+          "F9": {
+            "type": "script",
+            "id": "mov-traj-rib-alto"
+          },
+          "F10": {
+            "type": "script",
+            "id": "mov-traj-rib-baixo"
+          },
+          "F11": {
+            "type": "script",
+            "id": "mov-desc-seq-fade"
+          },
+          "F12": {
+            "type": "script",
+            "id": "mov-desc-sync-loop"
+          }
+        }
+      },
+      {
+        "id": "page-2",
+        "name": "Página 2",
+        "order": 2,
+        "slots": {}
+      },
+      {
+        "id": "page-3",
+        "name": "Página 3",
+        "order": 3,
+        "slots": {}
+      },
+      {
+        "id": "page-4",
+        "name": "Página 4",
+        "order": 4,
+        "slots": {}
+      },
+      {
+        "id": "page-5",
+        "name": "Página 5",
+        "order": 5,
+        "slots": {}
+      },
+      {
+        "id": "page-6",
+        "name": "Página 6",
+        "order": 6,
+        "slots": {}
+      }
+    ]
+  },
+  "scriptSchemaVersion": 1
 }
