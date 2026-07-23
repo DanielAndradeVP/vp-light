@@ -10,6 +10,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const chokidar = require('chokidar');
+const crypto = require('crypto');
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const { execFile, spawn } = require('child_process');
 
@@ -18,6 +20,8 @@ const engine       = require('./engine/engine');
 const compositor   = require('./engine/compositor');
 const artnet       = require('./engine/artnet');
 const show         = require('./show');
+const scriptLibraryLogic = require('./scriptLibrary');
+const scriptWatcherLogic = require('./scriptWatcherLogic');
 const interpolator = require('./engine/interpolator');
 const {
   buildChannelOffsetMap: buildFixtureChannelOffsetMap,
@@ -245,8 +249,9 @@ function createViewer3DWindow() {
 // Nomes dos scripts em execução (F-keys, page-scripts, passo atual de macro).
 function getActiveScriptLabelsForViewer3D() {
   const labels = [];
-  for (const [fkey, running] of Object.entries(runningScripts)) {
-    if (running && scriptMeta[fkey]?.name) labels.push(scriptMeta[fkey].name);
+  const library = show.getShow()?.scriptLibrary || {};
+  for (const [scriptId, running] of Object.entries(runningScripts)) {
+    if (running && library[scriptId]?.label) labels.push(library[scriptId].label);
   }
   for (const [k, running] of Object.entries(runningPageScripts)) {
     if (!running) continue;
@@ -312,6 +317,14 @@ ipcMain.handle('engine:start', () => {
 ipcMain.handle('engine:stop', () => {
   engine.stop();
   return { running: false };
+});
+
+ipcMain.handle('performance:getSnapshot', () => {
+  return {
+    ok: true,
+    frame: engine.getPerformanceSnapshot(),
+    layers: compositor.getPerformanceSnapshot(),
+  };
 });
 
 // Retorna as interfaces de rede ativas usadas para envio Art-Net.
@@ -389,6 +402,7 @@ ipcMain.handle('custom:speed', (_, fixtureId, value) => {
 ipcMain.handle('dmx:blackout', () => {
   stopAllRunningScripts('blackout');
   universe.blackout();
+  emitScriptsChanged();
   return { ok: true };
 });
 
@@ -412,8 +426,7 @@ function filterSceneMapByActiveScripts(channelMap) {
 
 ipcMain.handle('dmx:restoreState', (_, channels) => {
   const filtered = filterDisabledFixtureChannels(channels);
-  const anyScriptRunning = Object.keys(runningScripts).length > 0
-    || Object.keys(runningPageScripts).length > 0;
+  const anyScriptRunning = compositor.hasActiveControlLayers();
 
   ribaltaDebug.logRestoreState('restoreState:before', filtered, { anyScriptRunning });
 
@@ -473,8 +486,12 @@ ipcMain.handle('show:load', async (_, filePath) => {
       targetPath = filePaths[0];
     }
 
+    // Para F-Keys, page-scripts e macros do show anterior — evita camadas fantasmas
+    // do show antigo sobrevivendo sobre o universo do show novo.
+    stopAllRunningScripts('show:load');
     const data = show.loadShow(targetPath);
-    loadScriptMeta(); loadPageScriptMeta();
+    loadPageScriptMeta();
+    loadMacros();
     initializeOffsets();
     const startupChannels = show.getStartupChannels();
     Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
@@ -498,13 +515,13 @@ ipcMain.handle('show:save', (_, showData) => {
       '| cenas por página:', Object.fromEntries(
         Object.entries(showData.pages || {}).map(([k, v]) => [k, Object.keys(v.scenes || {})])
       ),
-      '| scripts:', Object.keys(showData.scripts || {})
+      '| scriptLibrary:', Object.keys(showData.scriptLibrary || {})
     );
-    console.log('[show:save] scriptMeta no main:', Object.keys(scriptMeta));
+    console.log('[show:save] runningScripts no main:', Object.keys(runningScripts));
     console.log('[show:save] currentShow no disco:',
       'fixtures:', currentShow?.fixtures?.length,
       '| páginas:', Object.keys(currentShow?.pages || {}),
-      '| scripts:', Object.keys(currentShow?.scripts || {})
+      '| scriptLibrary:', Object.keys(currentShow?.scriptLibrary || {})
     );
 
     // Scripts, páginas, page_scripts e macros: merge via buildMergedShow (fonte runtime do main).
@@ -517,7 +534,7 @@ ipcMain.handle('show:save', (_, showData) => {
       '| cenas por página:', Object.fromEntries(
         Object.entries(merged.pages).map(([k, v]) => [k, Object.keys(v.scenes || {})])
       ),
-      '| scripts:', Object.keys(merged.scripts)
+      '| scriptLibrary:', Object.keys(merged.scriptLibrary || {})
     );
 
     show.saveShow(merged);
@@ -541,7 +558,6 @@ ipcMain.handle('show:saveAs', async (_, showData) => {
     if (canceled || !filePath) return { ok: false, error: 'Cancelado' };
     const merged = buildMergedShow(showData);
     show.saveShowAs(filePath, merged);
-    loadScriptMeta();
     loadPageScriptMeta();
     loadMacros();
     initializeOffsets();
@@ -565,8 +581,8 @@ ipcMain.handle('show:updateScene', (_, pageId, sceneKey, sceneData) => {
 });
 
 // ─── SCRIPTS ─────────────────────────────────────────────────────────────────
-const runningScripts = {}; // { [fkey]: { interval, context } }
-const scriptMeta = {};     // { [fkey]: { name, file } }
+const runningScripts = {}; // { [scriptId]: { context } }
+const scriptReloadErrors = new Map(); // scriptId -> { stage, error, timestamp }
 
 // ─── PAGE SCRIPTS (teclas de cena) ──────────────────────────────────────────
 const pageScriptMeta    = {}; // { [pageId]: { [sceneKey]: { name, file } } }
@@ -584,12 +600,8 @@ function psKey(pageId, sceneKey) { return `${normalizePageId(pageId)}:${sceneKey
  */
 function buildMergedShow(showData) {
   const currentShow = show.getShow();
-
-  const mergedScripts = {};
-  for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    mergedScripts[fkey] = { name: meta.name, file: meta.file };
-    if (meta.color) mergedScripts[fkey].color = meta.color;
-  }
+  const scriptLibrary = currentShow?.scriptLibrary || {};
+  const scriptPages = show.normalizeScriptPages(currentShow?.scriptPages);
 
   const mergedPages = {};
   const allPageIds = new Set([
@@ -613,13 +625,17 @@ function buildMergedShow(showData) {
     }
   }
 
-  return normalizeRuntimeFixtureFields({
+  const mergedShow = normalizeRuntimeFixtureFields({
     ...showData,
-    scripts: mergedScripts,
+    scriptLibrary,
+    scriptPages,
+    scriptSchemaVersion: show.SCRIPT_SCHEMA_VERSION,
     pages: mergedPages,
     page_scripts: mergedPageScripts,
     macros: currentShow?.macros ?? showData?.macros ?? [],
   });
+  delete mergedShow.scripts;
+  return mergedShow;
 }
 
 function stopRunningPageScript(pageId, sceneKey, reason) {
@@ -664,53 +680,15 @@ function savePageScriptMeta() {
   show.saveShow(current);
 }
 
-function stopRunningScript(fkey, reason) {
-  const running = runningScripts[fkey];
-  if (!running) return false;
-  compositor.stopLayer(fkey);
-  delete runningScripts[fkey];
-  return true;
-}
-
 function stopAllRunningScripts(reason) {
-  for (const fkey of Object.keys(runningScripts)) {
-    stopRunningScript(fkey, reason);
+  for (const scriptId of Object.keys(runningScripts)) {
+    stopScriptById(scriptId, reason);
   }
   for (const k of Object.keys(runningPageScripts)) {
     const colonIdx = k.indexOf(':');
     stopRunningPageScript(k.slice(0, colonIdx), k.slice(colonIdx + 1), reason);
   }
   compositor.stopAllMacros(); // blackout/shutdown também encerra macros e suas camadas
-}
-
-function saveScriptMeta() {
-  const current = show.getShow();
-  if (!current) return;
-  current.scripts = {};
-  for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    current.scripts[fkey] = { name: meta.name, file: meta.file };
-    if (meta.color) current.scripts[fkey].color = meta.color;
-  }
-  show.saveShow(current);
-}
-
-function loadScriptMeta() {
-  const current = show.getShow();
-  if (!current?.scripts) return;
-  for (const [fkey, meta] of Object.entries(current.scripts)) {
-    // Tenta o caminho absoluto salvo no show primeiro (suporta subpastas).
-    // Fallback: <name>.js relativo a SCRIPTS_DIR (portabilidade entre PCs).
-    let file = null;
-    if (meta.file && fs.existsSync(meta.file)) {
-      file = meta.file;
-    } else {
-      const fallback = path.join(SCRIPTS_DIR, `${meta.name}.js`);
-      if (fs.existsSync(fallback)) file = fallback;
-    }
-    if (file) {
-      scriptMeta[fkey] = { name: meta.name, file, color: meta.color || '#000000' };
-    }
-  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1059,14 +1037,41 @@ function buildScriptSandbox(buffer, touched, controlledMask) {
     if (controlledMask) controlledMask[idx] = 1;
   };
   const getChannel = (fixtureId, alias) => getFixtureChannel(fixtureId, alias);
+  // Dependencias injetadas na API semantica do adapter (Checkpoint 2/3 do
+  // adapter semantico) — reusa exatamente a mesma resolucao de fixture/canal
+  // e a mesma SetChannel desta camada, sem duplicar offset/calibracao/
+  // interpolador (tudo isso ja acontece depois, no compositor/universe).
+  const semanticDeps = {
+    getFixture: getShowFixture,
+    getChannelByAlias: getFixtureChannelByAlias,
+    isEnabled: isFixtureEnabled,
+    writeChannel: SetChannel,
+  };
   const adapter = {
     resolve: (fixtureId, alias, adapterKey, logicalValue) =>
       resolveAdapterValue(fixtureId, alias, adapterKey, logicalValue),
+    setColor: (fixtureId, colorName) =>
+      fixtureAdapter.setColor(semanticDeps, fixtureId, colorName),
+    setDimmer: (fixtureId, intensity) =>
+      fixtureAdapter.setDimmer(semanticDeps, fixtureId, intensity),
+    setMovementSpeed: (fixtureId, speed) =>
+      fixtureAdapter.setMovementSpeed(semanticDeps, fixtureId, speed),
+    setPanTilt: (fixtureId, panTilt) =>
+      fixtureAdapter.setPanTilt(semanticDeps, fixtureId, panTilt),
+    setStrobe: (fixtureId, intent) =>
+      fixtureAdapter.setStrobe(semanticDeps, fixtureId, intent),
+    setPrism: (fixtureId, intent) =>
+      fixtureAdapter.setPrism(semanticDeps, fixtureId, intent),
+    setGobo: (fixtureId, value) =>
+      fixtureAdapter.setGobo(semanticDeps, fixtureId, value),
+    getCapabilities: (fixtureId) =>
+      fixtureAdapter.getCapabilities(semanticDeps, fixtureId),
   };
   return { SetChannel, getChannel, adapter };
 }
 
 const MOV_PADRAO_PRESET = path.join(SCRIPTS_DIR, 'mov-preset.js');
+const FIRE_BASE_PRESET = path.join(SCRIPTS_DIR, 'fire-base.js');
 
 /** Scripts mov-* (exceto mov-preset.js) concatenam o preset antes de compilar. */
 function scriptPrependsMovPreset(filePath) {
@@ -1075,11 +1080,22 @@ function scriptPrependsMovPreset(filePath) {
   return base.startsWith('mov-') && base.endsWith('.js');
 }
 
+/** Scripts fire-* (exceto fire-base.js) concatenam a biblioteca fire-base antes de compilar. */
+function scriptPrependsFireBase(filePath) {
+  const base = path.basename(filePath);
+  if (base === 'fire-base.js') return false;
+  return base.startsWith('fire-') && base.endsWith('.js');
+}
+
 function readScriptCode(filePath) {
   let code = fs.readFileSync(filePath, 'utf-8');
   if (scriptPrependsMovPreset(filePath)) {
     if (fs.existsSync(MOV_PADRAO_PRESET)) {
       code = fs.readFileSync(MOV_PADRAO_PRESET, 'utf-8') + '\n\n' + code;
+    }
+  } else if (scriptPrependsFireBase(filePath)) {
+    if (fs.existsSync(FIRE_BASE_PRESET)) {
+      code = fs.readFileSync(FIRE_BASE_PRESET, 'utf-8') + '\n\n' + code;
     }
   }
   return code;
@@ -1096,6 +1112,22 @@ function compileScriptContext(code, buffer, touched, controlledMask) {
   `);
   fn(SetChannel, getChannel, adapter, ctx);
   return ctx;
+}
+
+function checkScriptCompileError(file) {
+  try {
+    const code = readScriptCode(file);
+    // Construído, mas nunca invocado: detecta apenas erros de sintaxe.
+    new Function('SetChannel', 'getChannel', 'adapter', 'ctx', `
+    ${code}
+    ctx.OnStart = typeof OnStart === 'function' ? OnStart : null;
+    ctx.OnExecute = typeof OnExecute === 'function' ? OnExecute : null;
+    ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
+  `);
+    return null;
+  } catch (e) {
+    return e.message;
+  }
 }
 
 // Compila um arquivo de script numa CAMADA { buffer, touched, context } pronta para o compositor.
@@ -1157,39 +1189,75 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
       `}`,
     ].join('\n'), 'utf-8');
   }
-  scriptMeta[fkey] = { name, file, color };
-  saveScriptMeta();
+  const current = show.getShow();
+  if (!current) return { ok: false, error: 'Nenhum show carregado.' };
+  const id = show.slugifyScriptId(name);
+  let library = current.scriptLibrary || {};
+  if (!library[id]) {
+    library = scriptLibraryLogic.registerEntry(library, id, `${name}.js`, { label: name, color });
+  } else if (color) {
+    library = scriptLibraryLogic.updateEntry(library, id, { color });
+  }
+  const previous = scriptLibraryLogic.resolveScriptSlot(
+    library, current.scriptPages, 'page-1', fkey
+  );
+  // Evita deixar uma camada DMX órfã quando a associação forçada substitui o slot.
+  if (previous && previous.scriptId !== id && runningScripts[previous.scriptId]) {
+    stopScriptById(previous.scriptId, 'script:create substituiu o slot');
+  }
+  let pages;
+  try {
+    pages = scriptLibraryLogic.forceAssociateEntry(library, current.scriptPages, id, 'page-1', fkey);
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+  current.scriptLibrary = library;
+  current.scriptPages = pages;
+  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+  show.saveShow(current);
   emitScriptsChanged(); // avisa o renderer na hora — nao depende do fs.watch (que nao dispara se o .js ja existia)
   if (!options.skipOpenEditor && !fileAlreadyExists) { await openScriptInVSCode(file); }
   return { ok: true, name, file, color };
 });
 
 ipcMain.handle('script:edit', async (_, fkey, filePath) => {
-  const meta = scriptMeta[fkey];
   if (filePath) return openScriptInVSCode(filePath);
-  if (!meta) return { ok: false, error: 'Nenhum script neste botão' };
-  return openScriptInVSCode(meta.file);
+  const current = show.getShow();
+  const resolved = scriptLibraryLogic.resolveScriptSlot(
+    current?.scriptLibrary || {}, current?.scriptPages || { pages: [] }, 'page-1', fkey
+  );
+  if (!resolved) return { ok: false, error: 'Nenhum script neste botão' };
+  return openScriptInVSCode(path.join(SCRIPTS_DIR, resolved.entry.entry));
 });
 
 ipcMain.handle('script:clear', (_, fkey) => {
-  stopRunningScript(fkey, 'limpar');
-  delete scriptMeta[fkey];
-  saveScriptMeta();
+  const current = show.getShow();
+  if (!current) return { ok: true };
+  const resolved = scriptLibraryLogic.resolveScriptSlot(
+    current.scriptLibrary || {}, current.scriptPages || { pages: [] }, 'page-1', fkey
+  );
+  if (!resolved) return { ok: true };
+  stopScriptById(resolved.scriptId, 'limpar');
+  current.scriptPages = scriptLibraryLogic.unassignEntry(
+    current.scriptLibrary || {}, current.scriptPages || { pages: [] }, resolved.scriptId
+  );
+  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+  show.saveShow(current);
+  emitScriptsChanged();
   return { ok: true };
 });
 
-// Inicia (ou reinicia) o script de uma F-key: lê o arquivo do disco, compila e
-// agenda o loop de 40ms. Reutilizado pelo toggle e pelo watch (reload em tempo real).
-function startScript(fkey) {
-  const meta = scriptMeta[fkey];
-  if (!meta) return { ok: false, error: 'Nenhum script neste botão' };
+function scriptLayerId(scriptId) {
+  return `script:${scriptId}`;
+}
+
+function compileScriptForSwap(absPath) {
   let code;
   try {
-    code = readScriptCode(meta.file);
+    code = readScriptCode(absPath);
   } catch (e) {
-    return { ok: false, error: 'Arquivo não encontrado' };
+    return { ok: false, stage: 'read', error: e.message || 'Arquivo não encontrado' };
   }
-  // Buffer próprio da camada (pré-alocado, reusado por frame) + máscara de canais tocados.
   const buffer = new Uint8Array(512);
   const touched = new Uint8Array(512);
   const controlledMask = new Uint8Array(512);
@@ -1197,52 +1265,144 @@ function startScript(fkey) {
   try {
     ctx = compileScriptContext(code, buffer, touched, controlledMask);
   } catch (e) {
-    return { ok: false, error: `Erro ao compilar: ${e.message}` };
+    return { ok: false, stage: 'compile', error: e.message };
+  }
+  if (!ctx.OnStart && !ctx.OnExecute && !ctx.OnTerminate) {
+    return {
+      ok: false,
+      stage: 'validate',
+      error: 'Nenhum hook (OnStart/OnExecute/OnTerminate) definido no script.',
+    };
   }
   if (typeof ctx.OnStart === 'function') {
-    try { ctx.OnStart(); } catch (e) {}
+    try {
+      ctx.OnStart();
+    } catch (e) {
+      return { ok: false, stage: 'onstart', error: e.message };
+    }
   }
+  return { ok: true, buffer, touched, controlledMask, context: ctx };
+}
+
+function startScriptById(scriptId) {
+  const current = show.getShow();
+  const entry = current?.scriptLibrary?.[scriptId];
+  if (!entry) return { ok: false, error: 'Script não encontrado na biblioteca.' };
+  const file = path.join(SCRIPTS_DIR, entry.entry);
+  const compiled = compileScriptForSwap(file);
+  if (!compiled.ok) {
+    scriptReloadErrors.set(scriptId, {
+      stage: compiled.stage,
+      error: compiled.error,
+      timestamp: Date.now(),
+    });
+    return { ok: false, error: compiled.error, stage: compiled.stage };
+  }
+  scriptReloadErrors.delete(scriptId);
   // Registra a camada — o relógio único (engine → compositor) roda o OnExecute por frame.
-  compositor.addLayer(fkey, {
-    buffer, touched, controlledMask, context: ctx,
-    onError: () => { delete runningScripts[fkey]; emitScriptsChanged(); },
+  const layerId = scriptLayerId(scriptId);
+  compositor.addLayer(layerId, {
+    buffer: compiled.buffer,
+    touched: compiled.touched,
+    controlledMask: compiled.controlledMask,
+    context: compiled.context,
+    onError: () => { delete runningScripts[scriptId]; emitScriptsChanged(); },
   });
-  runningScripts[fkey] = { context: ctx };
+  runningScripts[scriptId] = { context: compiled.context };
   return { ok: true, running: true };
 }
 
-ipcMain.handle('script:toggle', (_, fkey) => {
-  if (runningScripts[fkey]) {
-    // Parar
-    stopRunningScript(fkey, 'toggle');
-    return { ok: true, running: false };
+function swapRunningScript(scriptId, absPath, reason) {
+  const compiled = compileScriptForSwap(absPath);
+  if (!compiled.ok) {
+    scriptReloadErrors.set(scriptId, {
+      stage: compiled.stage,
+      error: compiled.error,
+      timestamp: Date.now(),
+    });
+    console.error(`[hot-reload] ${scriptId}: falha ao recarregar (${compiled.stage}): ${compiled.error} — mantendo versão anterior em execução.`);
+    emitScriptsChanged();
+    return false;
   }
-  const result = startScript(fkey);
-  return result;
-});
+  scriptReloadErrors.delete(scriptId);
+  // A nova versão já foi validada; stop + add são síncronos e sem frame intermediário.
+  stopScriptById(scriptId, reason);
+  const layerId = scriptLayerId(scriptId);
+  compositor.addLayer(layerId, {
+    buffer: compiled.buffer,
+    touched: compiled.touched,
+    controlledMask: compiled.controlledMask,
+    context: compiled.context,
+    onError: () => { delete runningScripts[scriptId]; emitScriptsChanged(); },
+  });
+  runningScripts[scriptId] = { context: compiled.context };
+  emitScriptsChanged();
+  return true;
+}
+
+function stopScriptById(scriptId, reason) {
+  const running = runningScripts[scriptId];
+  if (!running) return false;
+  compositor.stopLayer(scriptLayerId(scriptId));
+  delete runningScripts[scriptId];
+  return true;
+}
+
+function toggleScriptAtSlot(pageId, slot) {
+  const current = show.getShow();
+  const resolved = scriptLibraryLogic.resolveScriptSlot(
+    current?.scriptLibrary || {}, current?.scriptPages || { pages: [] }, pageId, slot
+  );
+  if (!resolved) return { ok: false, error: 'Slot vazio ou script inválido.' };
+  const { scriptId } = resolved;
+  let result;
+  if (runningScripts[scriptId]) {
+    stopScriptById(scriptId, 'toggle');
+    result = { ok: true, running: false };
+  } else {
+    result = startScriptById(scriptId);
+  }
+  emitScriptsChanged();
+  return { ...result, scriptId };
+}
+
+ipcMain.handle('script:toggle', (_, fkey) => toggleScriptAtSlot('page-1', fkey));
+ipcMain.handle('script:toggleAt', (_, pageId, slot) => toggleScriptAtSlot(pageId, slot));
+
+function collectScripts(dir, relBase, inheritedColorByName) {
+  let colorByName = inheritedColorByName;
+  if (!colorByName) {
+    colorByName = {};
+    const current = show.getShow();
+    for (const entry of Object.values(current?.scriptLibrary || {})) {
+      if (entry?.entry && entry?.color) {
+        const key = entry.entry.replace(/\.js$/i, '').replace(/\\/g, '/');
+        colorByName[key] = entry.color;
+      }
+    }
+  }
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name === 'backlog') continue;
+      const sub = relBase ? `${relBase}/${entry.name}` : entry.name;
+      results.push(...collectScripts(path.join(dir, entry.name), sub, colorByName));
+    } else if (entry.name.endsWith('.js')) {
+      const baseName = entry.name.replace('.js', '');
+      const relName = relBase ? `${relBase}/${baseName}` : baseName;
+      const file = path.join(dir, entry.name);
+      results.push({ name: relName, file, color: colorByName[relName] || colorByName[baseName] || '#000000' });
+    }
+  }
+  return results;
+}
+
+function collectDiskScriptEntries() {
+  return collectScripts(SCRIPTS_DIR, '').map(file => `${file.name}.js`);
+}
 
 ipcMain.handle('script:list', () => {
   try {
-    const colorByName = {};
-    for (const meta of Object.values(scriptMeta)) {
-      if (meta?.name && meta?.color) colorByName[meta.name] = meta.color;
-    }
-    function collectScripts(dir, relBase) {
-      const results = [];
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (entry.isDirectory()) {
-          if (entry.name === 'backlog') continue;
-          const sub = relBase ? `${relBase}/${entry.name}` : entry.name;
-          results.push(...collectScripts(path.join(dir, entry.name), sub));
-        } else if (entry.name.endsWith('.js')) {
-          const baseName = entry.name.replace('.js', '');
-          const relName  = relBase ? `${relBase}/${baseName}` : baseName;
-          const file     = path.join(dir, entry.name);
-          results.push({ name: relName, file, color: colorByName[relName] || colorByName[baseName] || '#000000' });
-        }
-      }
-      return results;
-    }
     const files = collectScripts(SCRIPTS_DIR, '');
     return { ok: true, files };
   } catch (e) {
@@ -1250,19 +1410,240 @@ ipcMain.handle('script:list', () => {
   }
 });
 
+function buildScriptLibrarySnapshot() {
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
+  const scriptPages = current?.scriptPages || { pages: [] };
+  const diskEntries = collectDiskScriptEntries();
+  const runningLibraryIds = Object.keys(runningScripts);
+  const view = scriptLibraryLogic.buildLibraryView(library, scriptPages, diskEntries, runningLibraryIds);
+  const registered = view.registered.map(entry => {
+    const lastError = scriptReloadErrors.get(entry.id) || null;
+    const withLastError = entry.missingFile
+      ? { ...entry, compileError: null, lastError }
+      : { ...entry, compileError: checkScriptCompileError(path.join(SCRIPTS_DIR, entry.entry)), lastError };
+    return {
+      ...withLastError,
+      status: scriptLibraryLogic.computeScriptStatus(withLastError, withLastError.running),
+    };
+  });
+  return { registered, unregisteredFiles: view.unregisteredFiles, pages: scriptPages.pages || [] };
+}
+
+ipcMain.handle('scriptLibrary:list', () => {
+  try {
+    return { ok: true, ...buildScriptLibrarySnapshot() };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('scriptLibrary:register', (_, id, entry, meta) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const nextLibrary = scriptLibraryLogic.registerEntry(current.scriptLibrary || {}, id, entry, meta || {});
+    const file = path.join(SCRIPTS_DIR, entry);
+    if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry}`);
+    current.scriptLibrary = nextLibrary;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    return { ok: true, id };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptLibrary:update', (_, id, patch) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    if (patch?.entry !== undefined) {
+      const file = path.join(SCRIPTS_DIR, patch.entry);
+      if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${patch.entry}`);
+    }
+    const nextLibrary = scriptLibraryLogic.updateEntry(current.scriptLibrary || {}, id, patch || {});
+    current.scriptLibrary = nextLibrary;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true, id };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptLibrary:remove', (_, id) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    if (runningScripts[id]) throw new Error(`Não é possível remover "${id}": está ativo. Pare antes de remover.`);
+    const { scriptLibrary: nextLibrary, scriptPages: nextPages } = scriptLibraryLogic.removeEntry(
+      current.scriptLibrary || {},
+      current.scriptPages || { pages: [] },
+      id
+    );
+    current.scriptLibrary = nextLibrary;
+    current.scriptPages = nextPages;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    scriptReloadErrors.delete(id);
+    emitScriptsChanged();
+    return { ok: true, id };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptLibrary:associate', (_, id, pageId, slot) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const library = current.scriptLibrary || {};
+    const entry = library[id];
+    if (!entry) throw new Error(`Script "${id}" não existe na biblioteca.`);
+    const file = path.join(SCRIPTS_DIR, entry.entry);
+    if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry.entry}`);
+    const nextPages = scriptLibraryLogic.associateEntry(
+      library, current.scriptPages || { pages: [] }, id, pageId, slot
+    );
+    current.scriptPages = nextPages;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.message,
+      code: e.code,
+      currentPageId: e.currentPageId,
+      currentSlot: e.currentSlot,
+      occupiedById: e.occupiedById,
+    };
+  }
+});
+
+ipcMain.handle('scriptLibrary:move', (_, id, pageId, slot) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const library = current.scriptLibrary || {};
+    const entry = library[id];
+    if (!entry) throw new Error(`Script "${id}" não existe na biblioteca.`);
+    const file = path.join(SCRIPTS_DIR, entry.entry);
+    if (!fs.existsSync(file)) throw new Error(`Arquivo não encontrado: ${entry.entry}`);
+    const nextPages = scriptLibraryLogic.moveEntry(
+      library, current.scriptPages || { pages: [] }, id, pageId, slot
+    );
+    current.scriptPages = nextPages;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code, occupiedById: e.occupiedById };
+  }
+});
+
+ipcMain.handle('scriptLibrary:unassign', (_, id) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    const nextPages = scriptLibraryLogic.unassignEntry(
+      current.scriptLibrary || {},
+      current.scriptPages || { pages: [] },
+      id
+    );
+    current.scriptPages = nextPages;
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptPages:add', (_, name) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    current.scriptPages = scriptLibraryLogic.addPage(current.scriptPages || { pages: [] }, name);
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true, pages: current.scriptPages.pages };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptPages:rename', (_, pageId, name) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    current.scriptPages = scriptLibraryLogic.renamePage(current.scriptPages || { pages: [] }, pageId, name);
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptPages:reorder', (_, orderedIds) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    current.scriptPages = scriptLibraryLogic.reorderPages(current.scriptPages || { pages: [] }, orderedIds);
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
+ipcMain.handle('scriptPages:remove', (_, pageId) => {
+  try {
+    const current = show.getShow();
+    if (!current) throw new Error('Nenhum show carregado.');
+    current.scriptPages = scriptLibraryLogic.removePage(current.scriptPages || { pages: [] }, pageId, {
+      minPages: show.MIN_SCRIPT_PAGES,
+      runningScriptIds: Object.keys(runningScripts),
+    });
+    current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+    show.saveShow(current);
+    emitScriptsChanged();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code };
+  }
+});
+
 // Monta o mapa de scripts F-key com flag running — usado pelo IPC e pelo watch.
 function buildAllScripts() {
-  const result = {};
-  for (const [fkey, meta] of Object.entries(scriptMeta)) {
-    result[fkey] = { ...meta, running: !!runningScripts[fkey] };
-  }
-  return result;
+  const current = show.getShow();
+  const view = scriptLibraryLogic.buildPageScriptsView(
+    current?.scriptLibrary || {},
+    current?.scriptPages || { pages: [] },
+    'page-1',
+    Object.keys(runningScripts)
+  );
+  return Object.fromEntries(Object.entries(view).map(([slot, meta]) => [
+    slot,
+    { ...meta, file: path.join(SCRIPTS_DIR, meta.entry) },
+  ]));
 }
 
 // Notifica o renderer que o conjunto de scripts mudou (watch em tempo real).
 function emitScriptsChanged() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('scripts:changed', buildAllScripts());
+    mainWindow.webContents.send('scriptLibrary:changed', buildScriptLibrarySnapshot());
   }
 }
 
@@ -1277,69 +1658,205 @@ ipcMain.handle('script:stopAll', () => {
 // ─── WATCH em tempo real do diretório de scripts ─────────────────────────────
 // Reage a criar/modificar/remover .js em SCRIPTS_DIR sem reiniciar o app.
 let scriptsWatcher = null;
-const scriptWatchTimers = {};
+const RENAME_CORRELATION_WINDOW_MS = 2000;
+const scriptFileRegistry = new Map();       // canonicalPath -> { size, mtimeMs, hash }
+const scriptGenerationCounters = new Map(); // canonicalPath -> number (infra para o Checkpoint 6)
+const pendingRemovals = new Map();           // canonicalPath -> { size, mtimeMs, hash, timer }
 
-function handleScriptFileEvent(filename) {
-  if (!filename || !filename.endsWith('.js')) return;
-  // filename pode incluir subdiretório (ex: casamento\explosao-dourada.js) quando recursive=true
-  const file = path.join(SCRIPTS_DIR, filename);
-  const exists = fs.existsSync(file);
+function statSafe(absPath) {
+  try { return fs.statSync(absPath); } catch (e) { return null; }
+}
 
-  if (!exists) {
-    // REMOÇÃO: para o script se estiver rodando e limpa do scriptMeta.
-    let changed = false;
-    for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (meta.file === file) {
-        stopRunningScript(fkey, 'arquivo removido');
-        delete scriptMeta[fkey];
-        changed = true;
-      }
-    }
-    if (changed) saveScriptMeta();
-    emitScriptsChanged();
+function hashFileSafe(absPath) {
+  try { return crypto.createHash('sha1').update(fs.readFileSync(absPath)).digest('hex'); }
+  catch (e) { return null; }
+}
+
+function bumpScriptGeneration(canonicalPath) {
+  const next = (scriptGenerationCounters.get(canonicalPath) || 0) + 1;
+  scriptGenerationCounters.set(canonicalPath, next);
+  return next;
+}
+
+function updateScriptFileRegistry(canonicalPath, absPath) {
+  const stat = statSafe(absPath);
+  if (!stat) {
+    scriptFileRegistry.delete(canonicalPath);
     return;
   }
+  scriptFileRegistry.set(canonicalPath, {
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    hash: hashFileSafe(absPath),
+  });
+}
 
-  // Preset mov-preset recarrega todos os mov-* ativos que usam preset.
-  if (filename === 'mov-preset.js') {
-    for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (scriptPrependsMovPreset(meta.file) && runningScripts[fkey]) {
-        stopRunningScript(fkey, 'preset modificado');
-        startScript(fkey);
-      }
-    }
-  } else {
-    for (const [fkey, meta] of Object.entries(scriptMeta)) {
-      if (path.basename(meta.file) === filename && runningScripts[fkey]) {
-        stopRunningScript(fkey, 'arquivo modificado');
-        startScript(fkey);
-      }
+function seedScriptFileRegistry() {
+  scriptFileRegistry.clear();
+  for (const script of collectScripts(SCRIPTS_DIR, '')) {
+    const canonicalPath = `${script.name}.js`;
+    updateScriptFileRegistry(canonicalPath, script.file);
+  }
+}
+
+function findLibraryEntriesByEntryPath(canonicalPath) {
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
+  return Object.values(library).filter(
+    entry => (entry.entry || '').replace(/\\/g, '/') === canonicalPath
+  );
+}
+
+function stopRunningConsumersOfEntry(canonicalPath, reason) {
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
+  for (const [id, entry] of Object.entries(library)) {
+    const entryPath = (entry.entry || '').replace(/\\/g, '/');
+    if (entryPath === canonicalPath && runningScripts[id]) {
+      stopScriptById(id, reason);
+      scriptReloadErrors.delete(id);
     }
   }
-  // CRIAÇÃO: scriptMeta é indexado por F-key, então um arquivo novo não recebe
-  // associação automática (não há F-key) nem sobrescreve associação existente.
-  // Apenas notifica o renderer para a lista de scripts existentes refletir.
+}
+
+function reloadRunningConsumersOfEntry(canonicalPath) {
+  const current = show.getShow();
+  const library = current?.scriptLibrary || {};
+  for (const [id, entry] of Object.entries(library)) {
+    const entryPath = (entry.entry || '').replace(/\\/g, '/');
+    const file = path.join(SCRIPTS_DIR, entry.entry);
+    const isDirectMatch = entryPath === canonicalPath;
+    const isPresetCascade = canonicalPath === 'mov-preset.js' && scriptPrependsMovPreset(file);
+    const isFireBaseCascade = canonicalPath === 'fire-base.js' && scriptPrependsFireBase(file);
+    if ((isDirectMatch || isPresetCascade || isFireBaseCascade) && runningScripts[id]) {
+      swapRunningScript(id, file, (isPresetCascade || isFireBaseCascade) ? 'preset modificado' : 'arquivo modificado');
+    }
+    if (isDirectMatch && !runningScripts[id] && scriptReloadErrors.has(id) && checkScriptCompileError(file) === null) {
+      scriptReloadErrors.delete(id);
+    }
+  }
+}
+
+function correlateScriptRename(oldCanonicalPath, newCanonicalPath) {
+  if (!show.isSafeRelativeEntry(newCanonicalPath)) return;
+  const current = show.getShow();
+  if (!current) return;
+  const entries = findLibraryEntriesByEntryPath(oldCanonicalPath);
+  if (entries.length === 0) return;
+  for (const entry of entries) entry.entry = newCanonicalPath;
+  current.scriptSchemaVersion = show.SCRIPT_SCHEMA_VERSION;
+  show.saveShow(current);
+  console.log(`[scripts:watch] rename correlacionado: "${oldCanonicalPath}" -> "${newCanonicalPath}" (${entries.length} entrada(s) atualizada(s))`);
+}
+
+function handleScriptAddOrChange(absPath) {
+  const canonicalPath = scriptWatcherLogic.canonicalScriptPath(SCRIPTS_DIR, absPath);
+  bumpScriptGeneration(canonicalPath);
+
+  // Se o arquivo voltou no mesmo caminho, cancela a remoção anterior antes do reload.
+  const stalePending = pendingRemovals.get(canonicalPath);
+  if (stalePending) {
+    clearTimeout(stalePending.timer);
+    pendingRemovals.delete(canonicalPath);
+  }
+
+  const newHash = hashFileSafe(absPath);
+  const pendingList = [...pendingRemovals.entries()].map(([canonicalPathKey, value]) => ({
+    canonicalPath: canonicalPathKey,
+    hash: value.hash,
+  }));
+  const correlation = scriptWatcherLogic.correlateRenameCandidate(pendingList, canonicalPath, newHash);
+
+  let wasRenameCorrelated = false;
+  if (correlation.status === 'matched') {
+    const pending = pendingRemovals.get(correlation.oldCanonicalPath);
+    if (pending) clearTimeout(pending.timer);
+    pendingRemovals.delete(correlation.oldCanonicalPath);
+    correlateScriptRename(correlation.oldCanonicalPath, canonicalPath);
+    wasRenameCorrelated = true;
+  } else if (correlation.status === 'ambiguous') {
+    console.warn(`[scripts:watch] correlação de rename ambígua para "${canonicalPath}" (${correlation.candidates.length} candidatos) — nenhuma associação automática.`);
+  }
+
+  updateScriptFileRegistry(canonicalPath, absPath);
+
+  if (!wasRenameCorrelated) {
+    reloadRunningConsumersOfEntry(canonicalPath);
+  }
+
+  emitScriptsChanged();
+}
+
+function handleScriptUnlink(absPath) {
+  const canonicalPath = scriptWatcherLogic.canonicalScriptPath(SCRIPTS_DIR, absPath);
+  bumpScriptGeneration(canonicalPath);
+  const cached = scriptFileRegistry.get(canonicalPath);
+  scriptFileRegistry.delete(canonicalPath);
+
+  if (cached?.hash) {
+    const existingPending = pendingRemovals.get(canonicalPath);
+    if (existingPending) clearTimeout(existingPending.timer);
+    const timer = setTimeout(() => {
+      pendingRemovals.delete(canonicalPath);
+      // Janela expirou sem correlação de rename — agora sim é remoção genuína.
+      stopRunningConsumersOfEntry(canonicalPath, 'arquivo removido');
+      emitScriptsChanged();
+    }, RENAME_CORRELATION_WINDOW_MS);
+    if (timer.unref) timer.unref();
+    pendingRemovals.set(canonicalPath, { ...cached, timer });
+  } else {
+    // Sem hash em cache, não há base para correlacionar rename.
+    stopRunningConsumersOfEntry(canonicalPath, 'arquivo removido');
+  }
+
   emitScriptsChanged();
 }
 
 function startScriptsWatch() {
   if (scriptsWatcher) return;
   try {
-    scriptsWatcher = fs.watch(SCRIPTS_DIR, { recursive: true }, (_eventType, filename) => {
-      if (!filename) return;
-      const key = String(filename);
-      // debounce: fs.watch dispara múltiplos eventos por alteração
-      clearTimeout(scriptWatchTimers[key]);
-      scriptWatchTimers[key] = setTimeout(() => {
-        delete scriptWatchTimers[key];
-        try { handleScriptFileEvent(key); }
-        catch (e) { console.error('[scripts:watch] erro ao processar', key, e.message); }
-      }, 150);
+    seedScriptFileRegistry();
+    scriptsWatcher = chokidar.watch(SCRIPTS_DIR, {
+      ignored: (filePath) => path.relative(SCRIPTS_DIR, filePath).split(path.sep).includes('backlog'),
+      ignoreInitial: true,
+      persistent: true,
+      awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
     });
-    console.log('[scripts:watch] monitorando', SCRIPTS_DIR);
+    scriptsWatcher.on('add', (filePath) => {
+      if (!filePath.endsWith('.js')) return;
+      try { handleScriptAddOrChange(filePath); }
+      catch (e) { console.error('[scripts:watch] erro (add):', e.message); }
+    });
+    scriptsWatcher.on('change', (filePath) => {
+      if (!filePath.endsWith('.js')) return;
+      try { handleScriptAddOrChange(filePath); }
+      catch (e) { console.error('[scripts:watch] erro (change):', e.message); }
+    });
+    scriptsWatcher.on('unlink', (filePath) => {
+      if (!filePath.endsWith('.js')) return;
+      try { handleScriptUnlink(filePath); }
+      catch (e) { console.error('[scripts:watch] erro (unlink):', e.message); }
+    });
+    scriptsWatcher.on('error', (e) => console.error('[scripts:watch] erro do watcher:', e.message));
+    console.log('[scripts:watch] monitorando (chokidar)', SCRIPTS_DIR);
   } catch (e) {
     console.error('[scripts:watch] não foi possível iniciar:', e.message);
   }
+}
+
+async function stopScriptsWatch() {
+  if (!scriptsWatcher) return;
+  try {
+    await Promise.race([
+      scriptsWatcher.close(),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  } catch (e) {
+    console.error('[scripts:watch] erro ao fechar:', e.message);
+  }
+  scriptsWatcher = null;
+  for (const pending of pendingRemovals.values()) clearTimeout(pending.timer);
+  pendingRemovals.clear();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1438,6 +1955,7 @@ function msToFrames(ms) { return Math.max(0, Math.round((Number(ms) || 0) / FRAM
 // def = { id, name, mergeMode: 'htp'|'linear', loop, steps: [ { script, durationMs|null, fadeInMs, fadeOutMs, overlapMs } ] }
 // durationMs null/'infinite' = passo segura até nextMacroStep.
 const macroDefs = {};
+const macroStepErrors = new Map(); // macroId -> {stepIndex, error, timestamp}
 
 function normalizeMacroDef(id, def) {
   return {
@@ -1470,6 +1988,16 @@ function instantiateMacro(norm) {
   compositor.createMacro(norm.id, steps, { mergeMode: norm.mergeMode, loop: norm.loop });
 }
 
+function validateMacroReferences(norm) {
+  const invalidSteps = [];
+  norm.steps.forEach((step, index) => {
+    if (!step.script || !fs.existsSync(path.join(SCRIPTS_DIR, step.script + '.js'))) {
+      invalidSteps.push({ index, script: step.script });
+    }
+  });
+  return { valid: invalidSteps.length === 0, invalidSteps };
+}
+
 function saveMacros() {
   const current = show.getShow();
   if (!current) return;
@@ -1479,6 +2007,9 @@ function saveMacros() {
 
 // Carrega as macros do show na inicialização e as recria no compositor (sem disparar).
 function loadMacros() {
+  compositor.clearMacros();
+  for (const id of Object.keys(macroDefs)) delete macroDefs[id];
+  macroStepErrors.clear();
   const current = show.getShow();
   if (!current || !Array.isArray(current.macros)) return;
   for (const def of current.macros) {
@@ -1506,6 +2037,7 @@ ipcMain.handle('macro:create', (_, id, def = {}) => {
 ipcMain.handle('macro:update', (_, id, def = {}) => {
   try {
     if (!id || !macroDefs[id]) return { ok: false, error: 'macro não encontrada' };
+    macroStepErrors.delete(id);
     compositor.stopMacro(id);
     compositor.removeMacro(id);
     const norm = normalizeMacroDef(id, def);
@@ -1518,10 +2050,20 @@ ipcMain.handle('macro:update', (_, id, def = {}) => {
   }
 });
 
-ipcMain.handle('macro:start',  (_, id) => ({ ok: compositor.startMacro(id) }));
+ipcMain.handle('macro:start', (_, id) => {
+  const norm = macroDefs[id];
+  if (!norm) return { ok: false, error: 'macro não encontrada' };
+  const validation = validateMacroReferences(norm);
+  if (!validation.valid) {
+    return { ok: false, error: 'Macro com script(s) inexistente(s): ' + validation.invalidSteps.map(s => `passo ${s.index+1} (${s.script||'vazio'})`).join(', ') };
+  }
+  macroStepErrors.delete(id);
+  return compositor.startMacro(id);
+});
 ipcMain.handle('macro:stop',   (_, id) => ({ ok: compositor.stopMacro(id) }));
 ipcMain.handle('macro:next',   (_, id) => ({ ok: compositor.triggerNextStep(id) }));
 ipcMain.handle('macro:remove', (_, id) => {
+  macroStepErrors.delete(id);
   const ok = compositor.removeMacro(id);
   delete macroDefs[id];
   saveMacros();
@@ -1529,7 +2071,16 @@ ipcMain.handle('macro:remove', (_, id) => {
 });
 
 // Lista as macros definidas (para a UI) e o status da macro ativa (para polling).
-ipcMain.handle('macro:list',   () => Object.values(macroDefs));
+ipcMain.handle('macro:list', () => Object.values(macroDefs).map(def => {
+  const v = validateMacroReferences(def);
+  return {
+    ...def,
+    valid: v.valid,
+    invalid: !v.valid,
+    invalidSteps: v.invalidSteps,
+    lastError: macroStepErrors.get(def.id) || null,
+  };
+}));
 ipcMain.handle('macro:status', () => compositor.getActiveMacroStatus());
 
 // ─────────────────────────────────────────────────────────────
@@ -1575,12 +2126,12 @@ app.whenReady().then(() => {
     try {
       show.loadShow(DEFAULT_SHOW);
       console.log('[main] show padrao carregado');
-      loadScriptMeta(); loadPageScriptMeta(); loadMacros();
+      loadPageScriptMeta(); loadMacros();
       initializeOffsets();
       const startupChannels = show.getStartupChannels();
       Object.entries(startupChannels).forEach(([ch, value]) => universe.setChannel(Number(ch), value));
       applyDefaultStartupScene();
-      console.log('[main] scripts carregados:', Object.keys(scriptMeta));
+      console.log('[main] scripts na biblioteca:', Object.keys(show.getShow()?.scriptLibrary || {}).length);
     } catch (e) {
       console.warn('[main] falha ao carregar show padrao:', e.message);
     }
@@ -1588,6 +2139,9 @@ app.whenReady().then(() => {
 
   // Guard de fixture desabilitado aplicado na composição (uma vez por frame).
   compositor.setDisabledChannelsProvider(getDisabledFixtureChannelSet);
+  compositor.setMacroStepErrorHandler((macroId, stepIndex, err) => {
+    macroStepErrors.set(macroId, { stepIndex, error: err?.message || String(err), timestamp: Date.now() });
+  });
   ribaltaDebug.configure({
     getUniverse: () => universe.getUniverse(),
     getFixtureChannel: (fixtureId, alias) => getFixtureChannel(fixtureId, alias),
@@ -1602,7 +2156,8 @@ app.whenReady().then(() => {
   startScriptsWatch();
 });
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
+  await stopScriptsWatch();
   engine.stop();
   app.quit();
 });

@@ -14,12 +14,20 @@ const compositor    = require('./compositor');
 const interpolator  = require('./interpolator');
 const ribaltaDebug  = require('./ribaltaDebug');
 const ribaltaPhysicalCalib = require('../ribaltaPhysicalCalib');
+const perfStats = require('./perfStats');
 
 const FPS = 25;
 const INTERVAL_MS = Math.round(1000 / FPS); // 40ms
 
 let intervalId = null;
 let frameCount = 0;
+const _stageStats = {
+  interpolator: perfStats.createStatTracker(),
+  compositor: perfStats.createStatTracker(),
+  artnet: perfStats.createStatTracker(),
+  listeners: perfStats.createStatTracker(),
+  total: perfStats.createStatTracker(),
+};
 
 // Listeners externos notificados a cada frame, após o universo final estar
 // montado (mesmo ciclo de 40ms — nenhum loop novo é criado). Usado pela
@@ -38,20 +46,46 @@ function start() {
   }
   frameCount = 0;
   intervalId = setInterval(() => {
+    const _frameStart = performance.now();
     ribaltaDebug.tickFrame();
+
+    let _t0 = performance.now();
     interpolator.tick();           // avança interpolação de pan/tilt (speed virtual)
+    _stageStats.interpolator.record(performance.now() - _t0);
+
+    _t0 = performance.now();
     compositor.renderFrame();      // relógio único: compõe as camadas no universo
+    _stageStats.compositor.record(performance.now() - _t0);
+
     // Art-Net: tilt físico calibrado; onFrame abaixo usa universo lógico (3D inalterado).
+    _t0 = performance.now();
     sendArtDMX(ribaltaPhysicalCalib.getPhysicalUniverseForArtNet(getUniverse()));
+    _stageStats.artnet.record(performance.now() - _t0);
 
     // Universo final já montado neste ponto — notifica listeners (ex.: viewer 3D).
     const currentUniverse = getUniverse();
+    _t0 = performance.now();
     for (const listener of frameListeners) {
       try {
         listener(currentUniverse);
       } catch (e) {
         console.error('[engine] erro em frame listener:', e.message);
       }
+    }
+    _stageStats.listeners.record(performance.now() - _t0);
+
+    const _totalDuration = performance.now() - _frameStart;
+    const _totalResult = _stageStats.total.record(_totalDuration);
+    if (_totalDuration >= perfStats.THRESHOLDS.warn && _stageStats.total.shouldWarn(performance.now())) {
+      console.warn(
+        `[perf] frame lento: ${_totalDuration.toFixed(1)}ms total ` +
+        `(interp ${_stageStats.interpolator.snapshot().last.toFixed(1)}ms, ` +
+        `compositor ${_stageStats.compositor.snapshot().last.toFixed(1)}ms, ` +
+        `artnet ${_stageStats.artnet.snapshot().last.toFixed(1)}ms, ` +
+        `listeners ${_stageStats.listeners.snapshot().last.toFixed(1)}ms) — ` +
+        `média ${_totalResult.avg.toFixed(1)}ms, ${_totalResult.overruns} estouro(s) registrado(s). ` +
+        `Nota: esta medição detecta scripts lentos que RETORNAM; não interrompe nem detecta um loop infinito (while(true)) — isso é limitação estrutural do single-thread, documentada, não um watchdog.`
+      );
     }
 
     frameCount++;
@@ -75,4 +109,10 @@ function getFrameCount() {
   return frameCount;
 }
 
-module.exports = { start, stop, isRunning, getFrameCount, onFrame };
+function getPerformanceSnapshot() {
+  const snap = {};
+  for (const [stage, tracker] of Object.entries(_stageStats)) snap[stage] = tracker.snapshot();
+  return snap;
+}
+
+module.exports = { start, stop, isRunning, getFrameCount, onFrame, getPerformanceSnapshot };

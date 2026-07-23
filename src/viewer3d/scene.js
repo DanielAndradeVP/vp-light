@@ -855,14 +855,31 @@ function addLineArraySpeaker(parent, name, x, y, z, side = 1) {
 // índice do alias no array `channels`). Os layouts dos ParLed NÃO são
 // uniformes entre instâncias — por isso o mapa é por fixtureId, nunca um
 // offset fixo.
+//
+// Unidades 1/5/6/7 são "Layout A" no show real (dimmer,strobo,macro,
+// macro_speed,red,green,blue,white — confirmado em shows/vp.show.json em
+// 19-07-2026, ver docs/auditorias/exploracao/adapter-fixtures/). Os campos
+// macro/color_wheel/speed abaixo foram removidos dessas 4 unidades: a tabela
+// anterior apontava para canais errados (não conferia com o show real) E
+// mesmo com os canais certos, o comportamento do macro/strobo do Layout A
+// nunca foi medido/documentado (só o Layout B tem a tabela de
+// banco-de-conhecimento/par-led.md confirmada) — simular um comportamento
+// não confirmado seria pior do que não simular nada. parled.js já trata a
+// ausência dessas chaves com segurança (cai para RGB direto). dimmer/red/
+// green/blue são bem entendidos nos dois layouts e foram corrigidos para
+// bater com o canal real.
+// white: 8ª posição do Layout A (dimmer,strobo,macro,macro_speed,red,green,
+// blue,white) — canal real confirmado no show.json, mesma classe de
+// dimmer/red/green/blue (bem entendido, ao contrário de macro/speed no
+// Layout A). parled.js trata a ausência dessa chave com segurança.
 const PARLED_CHANNELS = {
-  1: { macro: 2,  color_wheel: 3,  speed: 4,  dimmer: 5,  red: 6,  green: 7,  blue: 8  },
+  1: { dimmer: 1,  red: 5,  green: 6,  blue: 7,  white: 8  },
   2: { macro: 9,  color_wheel: 10, speed: 11, dimmer: 12, red: 13, green: 14, blue: 15 },
   3: { macro: 17, color_wheel: 18, speed: 19, dimmer: 20, red: 21, green: 22, blue: 23 },
   4: { macro: 25, color_wheel: 26, speed: 27, dimmer: 28, red: 29, green: 30, blue: 31 },
-  5: { macro: 30, color_wheel: 31, speed: 32, dimmer: 33, red: 37, green: 38, blue: 39 },
-  6: { macro: 74, color_wheel: 75, speed: 76, dimmer: 77, red: 78, green: 79, blue: 80 },
-  7: { macro: 49, color_wheel: 50, speed: 51, dimmer: 49, red: 53, green: 54, blue: 55 },
+  5: { dimmer: 33, red: 37, green: 38, blue: 39, white: 40 },
+  6: { dimmer: 74, red: 78, green: 79, blue: 80, white: 81 },
+  7: { dimmer: 49, red: 53, green: 54, blue: 55, white: 56 },
   8: { macro: 57, color_wheel: 58, speed: 59, dimmer: 60, red: 61, green: 62, blue: 63 },
   9: { macro: 65, color_wheel: 66, speed: 67, dimmer: 68, red: 69, green: 70, blue: 71 },
 };
@@ -892,10 +909,14 @@ const RIBALTA_CHANNELS = {
   },
 };
 
+// Canais confirmados contra shows/vp.show.json (startChannel real de cada
+// fixture) em 19-07-2026 — Mini_Brut_02/03 estavam trocados aqui em relação
+// ao show real (auditoria docs/auditorias/exploracao/adapter-fixtures/
+// 19-07-2026-auditoria-completa-adapter-capabilities-fixtures.md, seção 19).
 const MINI_BRUT_CHANNELS = {
   fixture_1780805067518_mini_brut_01: { dimmer: 400 },
-  fixture_1780805067518_mini_brut_02: { dimmer: 401 },
-  fixture_1780805067518_mini_brut_03: { dimmer: 402 },
+  fixture_1780805067518_mini_brut_02: { dimmer: 402 },
+  fixture_1780805067518_mini_brut_03: { dimmer: 401 },
   fixture_1780805067518_mini_brut_04: { dimmer: 410 },
 };
 

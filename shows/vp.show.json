@@ -342,19 +342,26 @@
       "fixtureType": "moving_head_beam",
       "universe": 0,
       "group": "Moving Heads",
-      "note": "DMX 203-218. CH1 color_wheel: 0=branco, vermelho, amarelo, roxo escuro, verde, azul escuro, branco, ambar. CH2 strobo: 255 aberto/fixo com fecho_lampada em 255; 175 lento, 190 medio, 205 rapido. CH3 fecho_lampada. CH4 gobo_wheel. CH5 prism_1. CH6 prism_rotation. CH7 virtual_speed invertido pelo interpolador: 0=mais rapido, 255=mais lento. CH8 frost. CH9 focus. CH10 pan. CH11 pan_fine. CH12 tilt. CH13 tilt_fine. CH14 special_random. CH15 reset. CH16 indefinido.",
+      "note": "DMX 203-218. CH1 color_wheel: 15 pontos medidos fisicamente pelo operador em 19-07-2026, passo de 10 (ver adapters.color) - substitui a tabela antiga de 8 valores em passo de 16/32. CH2 strobo: 255 aberto/fixo com fecho_lampada em 255; 175 lento, 190 medio, 205 rapido. CH3 fecho_lampada. CH4 gobo_wheel. CH5 prism_1. CH6 prism_rotation. CH7 virtual_speed invertido pelo interpolador: 0=mais rapido, 255=mais lento. CH8 frost. CH9 focus. CH10 pan. CH11 pan_fine. CH12 tilt. CH13 tilt_fine. CH14 special_random. CH15 reset. CH16 indefinido.",
       "tiltOffset": 6,
       "virtualPanTiltSpeed": true,
       "adapters": {
         "color": {
           "white": 0,
-          "red": 16,
-          "yellow": 48,
-          "purple_dark": 80,
-          "green": 112,
-          "blue_dark": 144,
-          "white_2": 176,
-          "amber": 208
+          "red": 10,
+          "yellow": 20,
+          "purple_medium": 30,
+          "green": 40,
+          "blue_dark": 50,
+          "white_ice": 60,
+          "amber_1": 70,
+          "white_warm": 80,
+          "orange": 90,
+          "purple_dark": 100,
+          "blue_light": 110,
+          "amber_2": 120,
+          "yellow_2": 130,
+          "purple_light": 140
         }
       }
     },

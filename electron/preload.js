@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('vp', {
   startEngine: () => ipcRenderer.invoke('engine:start'),
   stopEngine:  () => ipcRenderer.invoke('engine:stop'),
   getEngineStatus: () => ipcRenderer.invoke('engine:status'),
+  getPerformanceSnapshot: () => ipcRenderer.invoke('performance:getSnapshot'),
 
   // ─── DMX ──────────────────────────────────────────────────
   /**
@@ -109,8 +110,25 @@ contextBridge.exposeInMainWorld('vp', {
   editScript:    (fkey, filePath) => ipcRenderer.invoke('script:edit', fkey, filePath),
   clearScript:   (fkey)       => ipcRenderer.invoke('script:clear', fkey),
   toggleScript:  (fkey)       => ipcRenderer.invoke('script:toggle', fkey),
+  toggleScriptAt: (pageId, slot) => ipcRenderer.invoke('script:toggleAt', pageId, slot),
   getAllScripts:  ()           => ipcRenderer.invoke('script:getAll'),
   stopAllScripts: ()           => ipcRenderer.invoke('script:stopAll'),
+  scriptLibraryList: () => ipcRenderer.invoke('scriptLibrary:list'),
+  scriptLibraryRegister: (id, entry, meta) => ipcRenderer.invoke('scriptLibrary:register', id, entry, meta),
+  scriptLibraryUpdate: (id, patch) => ipcRenderer.invoke('scriptLibrary:update', id, patch),
+  scriptLibraryRemove: (id) => ipcRenderer.invoke('scriptLibrary:remove', id),
+  scriptLibraryAssociate: (id, pageId, slot) => ipcRenderer.invoke('scriptLibrary:associate', id, pageId, slot),
+  scriptLibraryMove: (id, pageId, slot) => ipcRenderer.invoke('scriptLibrary:move', id, pageId, slot),
+  scriptLibraryUnassign: (id) => ipcRenderer.invoke('scriptLibrary:unassign', id),
+  scriptPagesAdd: (name) => ipcRenderer.invoke('scriptPages:add', name),
+  scriptPagesRename: (pageId, name) => ipcRenderer.invoke('scriptPages:rename', pageId, name),
+  scriptPagesReorder: (orderedIds) => ipcRenderer.invoke('scriptPages:reorder', orderedIds),
+  scriptPagesRemove: (pageId) => ipcRenderer.invoke('scriptPages:remove', pageId),
+  onScriptLibraryChanged: (callback) => {
+    const listener = (_event, snapshot) => callback(snapshot);
+    ipcRenderer.on('scriptLibrary:changed', listener);
+    return () => ipcRenderer.removeListener('scriptLibrary:changed', listener);
+  },
   // Watch em tempo real: o main avisa quando um .js muda no disco.
   // Retorna uma função para remover o listener.
   onScriptsChanged: (callback) => {

@@ -165,6 +165,7 @@ export function update(group, channels) {
   const red      = channels[ch.red        - 1] ?? 0;
   const green    = channels[ch.green      - 1] ?? 0;
   const blue     = channels[ch.blue       - 1] ?? 0;
+  const white    = ch.white       != null ? (channels[ch.white       - 1] ?? 0) : 0;
   const macro    = ch.macro       != null ? (channels[ch.macro       - 1] ?? 0) : 0;
   const colorWh  = ch.color_wheel != null ? (channels[ch.color_wheel - 1] ?? 0) : 0;
   const speed    = ch.speed       != null ? (channels[ch.speed       - 1] ?? 0) : 0;
@@ -198,10 +199,12 @@ export function update(group, channels) {
       [r, g, b] = on ? base : [0, 0, 0];
     }
   } else {
-    // Modo RGB direto
-    r = Math.max(0, Math.min(255, red))   / 255;
-    g = Math.max(0, Math.min(255, green)) / 255;
-    b = Math.max(0, Math.min(255, blue))  / 255;
+    // Modo RGB(W) direto — white reforça igualmente os 3 canais (RGBW real),
+    // só se a fixture tiver esse canal (Layout A); Layout B fica RGB puro.
+    const whiteT = Math.max(0, Math.min(255, white)) / 255;
+    r = Math.min(1, Math.max(0, Math.min(255, red))   / 255 + whiteT);
+    g = Math.min(1, Math.max(0, Math.min(255, green)) / 255 + whiteT);
+    b = Math.min(1, Math.max(0, Math.min(255, blue))  / 255 + whiteT);
   }
 
   const light = ensureLight(group);

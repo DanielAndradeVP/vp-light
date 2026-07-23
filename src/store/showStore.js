@@ -2,6 +2,7 @@
  * showStore.js — Estado global do show no renderer
  */
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { EMPTY_SCRIPT_LIBRARY_SNAPSHOT } from './scriptPagesSelectors.js';
 
 const ShowContext = createContext(null);
 const FIXTURE_GRID_SIZE = 40;
@@ -144,6 +145,19 @@ export function ShowProvider({ children }) {
   const [activeScenes, setActiveScenes] = useState([]);
   const [selectedFixtureId, setSelectedFixtureId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [scriptLibrarySnapshot, setScriptLibrarySnapshot] = useState(EMPTY_SCRIPT_LIBRARY_SNAPSHOT);
+  const [activeScriptPageId, setActiveScriptPageId] = useState(null);
+
+  const refreshScriptLibrarySnapshot = useCallback(async () => {
+    const res = await window.vp.scriptLibraryList?.();
+    if (!res?.ok) return res;
+    setScriptLibrarySnapshot({
+      registered: res.registered || [],
+      unregisteredFiles: res.unregisteredFiles || [],
+      pages: res.pages || [],
+    });
+    return res;
+  }, []);
 
   useEffect(() => {
     async function init() {
@@ -164,6 +178,33 @@ export function ShowProvider({ children }) {
     init();
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    window.vp.scriptLibraryList?.().then(res => {
+      if (!alive || !res?.ok) return;
+      setScriptLibrarySnapshot({
+        registered: res.registered || [],
+        unregisteredFiles: res.unregisteredFiles || [],
+        pages: res.pages || [],
+      });
+    });
+    const off = window.vp.onScriptLibraryChanged?.((snapshot) => {
+      if (!alive) return;
+      setScriptLibrarySnapshot({
+        registered: snapshot?.registered || [],
+        unregisteredFiles: snapshot?.unregisteredFiles || [],
+        pages: snapshot?.pages || [],
+      });
+    });
+    return () => { alive = false; off?.(); };
+  }, []);
+
+  useEffect(() => {
+    if (activeScriptPageId) return;
+    const scriptPages = scriptLibrarySnapshot.pages;
+    if (scriptPages.length > 0) setActiveScriptPageId(scriptPages[0].id);
+  }, [scriptLibrarySnapshot.pages, activeScriptPageId]);
+
   const saveShow = useCallback(async (data) => {
     const target = normalizeShowFixturePositions(normalizeShowPages(data || show));
     return await window.vp.saveShow(target);
@@ -176,9 +217,11 @@ export function ShowProvider({ children }) {
       setShow(loadedShow);
       setCurrentPage(DEFAULT_STARTUP_PAGE_ID);
       setActiveScenes(getDefaultStartupActiveScenes(loadedShow));
+      setActiveScriptPageId(null);
+      await refreshScriptLibrarySnapshot();
     }
     return result;
-  }, []);
+  }, [refreshScriptLibrarySnapshot]);
 
   const addFixture = useCallback((fixture) => {
     setShow(prev => ({ ...prev, fixtures: [...prev.fixtures, fixture] }));
@@ -243,8 +286,9 @@ export function ShowProvider({ children }) {
 
   const blackout = useCallback(async () => {
     await window.vp.blackout();
+    await refreshScriptLibrarySnapshot();
     setActiveScenes([]);
-  }, []);
+  }, [refreshScriptLibrarySnapshot]);
 
   const updateScene = useCallback(async (pageId, sceneKey, sceneData) => {
     const normalizedPageId = normalizePageId(pageId);
@@ -268,6 +312,19 @@ export function ShowProvider({ children }) {
     return window.vp.updateScene(normalizedPageId, sceneKey, sceneData);
   }, []);
 
+  const toggleScriptAtActivePage = useCallback((slot) => {
+    if (!activeScriptPageId) return Promise.resolve({ ok: false, error: 'Nenhuma página ativa' });
+    return window.vp.toggleScriptAt(activeScriptPageId, slot);
+  }, [activeScriptPageId]);
+
+  const addScriptPage = useCallback((name) => window.vp.scriptPagesAdd(name), []);
+  const renameScriptPage = useCallback((pageId, name) => window.vp.scriptPagesRename(pageId, name), []);
+  const reorderScriptPages = useCallback((orderedIds) => window.vp.scriptPagesReorder(orderedIds), []);
+  const removeScriptPage = useCallback((pageId) => window.vp.scriptPagesRemove(pageId), []);
+  const associateScript = useCallback((scriptId, pageId, slot) => window.vp.scriptLibraryAssociate(scriptId, pageId, slot), []);
+  const moveScript = useCallback((scriptId, pageId, slot) => window.vp.scriptLibraryMove(scriptId, pageId, slot), []);
+  const unassignScript = useCallback((scriptId) => window.vp.scriptLibraryUnassign(scriptId), []);
+
   const disabledFixtureChannels = useMemo(() => getDisabledFixtureChannelSet(show.fixtures), [show.fixtures]);
   const selectedFixture = show.fixtures.find(f => f.id === selectedFixtureId && isFixtureEnabled(f)) || null;
   const pages = show.pages || {};
@@ -287,6 +344,10 @@ export function ShowProvider({ children }) {
       activateScene, toggleScene, blackout,
       updateScene,
       setShow,
+      scriptLibrarySnapshot, activeScriptPageId, setActiveScriptPageId,
+      refreshScriptLibrarySnapshot,
+      toggleScriptAtActivePage, addScriptPage, renameScriptPage, reorderScriptPages,
+      removeScriptPage, associateScript, moveScript, unassignScript,
     }}>
       <SceneDmxSync
         activeScenes={activeScenes}

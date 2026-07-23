@@ -34,14 +34,27 @@
 const universe = require('./universe');
 const interpolator = require('./interpolator');
 const ribaltaDebug = require('./ribaltaDebug');
+const perfStats = require('./perfStats');
 
 // id -> camada
 const _layers = new Map();
 // id -> macro (definição + runtime)
 const _macros = new Map();
+const _layerStats = new Map(); // layerId -> tracker; preserva histórico após stop/restart
+const _frameStats = perfStats.createStatTracker();
+
+function _getLayerTracker(layerId) {
+  let tracker = _layerStats.get(layerId);
+  if (!tracker) {
+    tracker = perfStats.createStatTracker(60);
+    _layerStats.set(layerId, tracker);
+  }
+  return tracker;
+}
 
 const _EMPTY_SET = new Set();
 let _getDisabledChannels = () => _EMPTY_SET;  // provider injetado pelo main
+let _onMacroStepError = null;
 let _mergeMode = 'htp';                        // 'htp' | 'linear'
 let _layerSeq = 0;                             // sequência p/ ids únicos de camadas de macro
 
@@ -71,6 +84,7 @@ function applySceneLockToUniverse() {
 }
 
 function setDisabledChannelsProvider(fn) { if (typeof fn === 'function') _getDisabledChannels = fn; }
+function setMacroStepErrorHandler(fn) { _onMacroStepError = typeof fn === 'function' ? fn : null; }
 function setMergeMode(mode) { _mergeMode = (mode === 'linear') ? 'linear' : 'htp'; }
 
 // ─── CAMADAS ─────────────────────────────────────────────────────────────────
@@ -99,6 +113,11 @@ function removeLayer(id) { return _layers.delete(id); }
 function hasLayer(id)    { return _layers.has(id); }
 function clearLayers()   { _layers.clear(); }
 function layerCount()    { return _layers.size; }
+function hasActiveControlLayers(excludeIds) {
+  if (!excludeIds || excludeIds.size === 0) return _layers.size > 0;
+  for (const id of _layers.keys()) { if (!excludeIds.has(id)) return true; }
+  return false;
+}
 
 /** Escreve um valor no universo respeitando guards (fixture desabilitado, interpolador). */
 function _writeChannelToUniverse(ch, value) {
@@ -213,10 +232,12 @@ function _tickEnvelope(layer) {
 
 // ─── FRAME ───────────────────────────────────────────────────────────────────
 function renderFrame() {
+  const _frameStart = performance.now();
+
   // 1. avança macros (pode adicionar/release camadas para este frame)
   if (_macros.size) { for (const macro of _macros.values()) _advanceMacro(macro); }
 
-  if (_layers.size === 0) return;
+  if (_layers.size === 0) { _frameStats.record(performance.now() - _frameStart); return; }
 
   const arr = [..._layers.values()];
 
@@ -227,6 +248,7 @@ function renderFrame() {
     layer.touched.fill(0);
     const fn = layer.context && layer.context.OnExecute;
     if (typeof fn !== 'function') continue;
+    const _execStart = performance.now();
     try {
       fn();
     } catch (e) {
@@ -234,9 +256,15 @@ function renderFrame() {
       if (typeof layer.onError === 'function') { try { layer.onError(e); } catch (_) {} }
       console.error(`[compositor] OnExecute error (${layer._id}) — camada removida:`, e.message);
     }
+    const _execDuration = performance.now() - _execStart;
+    const _tracker = _getLayerTracker(layer._id);
+    const _result = _tracker.record(_execDuration);
+    if (_execDuration >= perfStats.THRESHOLDS.warn && _tracker.shouldWarn(performance.now())) {
+      console.warn(`[perf] camada "${layer._id}" lenta: ${_execDuration.toFixed(1)}ms (média ${_result.avg.toFixed(1)}ms, ${_result.overruns} estouro(s) registrado(s))`);
+    }
   }
 
-  if (_layers.size === 0) return;
+  if (_layers.size === 0) { _frameStats.record(performance.now() - _frameStart); return; }
 
   // 3. mescla (weight + modo) só nos canais tocados + guards + escreve no universe
   const disabled = _getDisabledChannels();
@@ -263,6 +291,14 @@ function renderFrame() {
   for (const layer of arr) {
     if (layer.phase === 'done') _removeLayerInternal(layer, 'fade-out');
   }
+
+  _frameStats.record(performance.now() - _frameStart);
+}
+
+function getPerformanceSnapshot() {
+  const layers = {};
+  for (const [layerId, tracker] of _layerStats.entries()) layers[layerId] = tracker.snapshot();
+  return { frame: _frameStats.snapshot(), layers };
 }
 
 // ─── MACRO (sequenciador) ─────────────────────────────────────────────────────
@@ -302,12 +338,15 @@ function removeMacro(id) { stopMacro(id); return _macros.delete(id); }
 
 function startMacro(id) {
   const macro = _macros.get(id);
-  if (!macro || !macro.steps.length) return false;
+  if (!macro || !macro.steps.length) return { ok: false, error: 'macro inexistente ou sem passos' };
+  if (macro.mergeMode === 'linear' && hasActiveControlLayers(macro._activeLayerIds)) {
+    return { ok: false, error: 'Macro linear bloqueada: já existem camadas ativas (scripts ou outra macro); mergeMode linear é global e contaminaria essas camadas.' };
+  }
   _stopMacroLayers(macro);
   macro.active = true;
   setMergeMode(macro.mergeMode);
   _enterStep(macro, 0);
-  return true;
+  return { ok: true };
 }
 
 function stopMacro(id) {
@@ -334,6 +373,11 @@ function stopAllMacros() {
   setMergeMode('htp');
 }
 
+function clearMacros() {
+  stopAllMacros();
+  _macros.clear();
+}
+
 function _stopMacroLayers(macro) {
   for (const lid of [...macro._activeLayerIds]) {
     const layer = _layers.get(lid);
@@ -343,6 +387,10 @@ function _stopMacroLayers(macro) {
   for (const s of macro.steps) s._layerId = null;
 }
 
+// A compilação dos passos é lazy: um passo ainda não iniciado pega a versão nova
+// automaticamente. Um passo ativo não é recarregado a quente nesta fase, para
+// evitar quebrar o estado do sequenciador; a versão nova entra quando a macro
+// reentra nesse passo.
 function _enterStep(macro, index) {
   macro.index = index;
   macro.frameInStep = 0;
@@ -365,6 +413,12 @@ function _enterStep(macro, index) {
     fadeInFrames: step.fadeInFrames,
     fadeOutFrames: step.fadeOutFrames,
     onDone: () => { macro._activeLayerIds.delete(lid); },
+    onError: (err) => {
+      macro._activeLayerIds.delete(lid);
+      if (step._layerId === lid) step._layerId = null;
+      if (typeof _onMacroStepError === 'function') { try { _onMacroStepError(macro.id, index, err); } catch (_) {} }
+      _gotoNextStep(macro);
+    },
   });
 }
 
@@ -405,13 +459,13 @@ function getActiveMacroStatus() {
 
 module.exports = {
   // config
-  setSceneLock, isSceneLockedChannel, setDisabledChannelsProvider, setMergeMode,
+  setSceneLock, isSceneLockedChannel, setDisabledChannelsProvider, setMacroStepErrorHandler, setMergeMode,
   // camadas (Fase 1 — usado por F-keys e page-scripts)
-  addLayer, removeLayer, stopLayer, hasLayer, clearLayers, layerCount, releaseLayer,
+  addLayer, removeLayer, stopLayer, hasLayer, clearLayers, layerCount, hasActiveControlLayers, releaseLayer,
   getActiveControlledChannels,
   // frame
-  renderFrame,
+  renderFrame, getPerformanceSnapshot,
   // macro (Fase 2)
-  createMacro, removeMacro, startMacro, stopMacro, triggerNextStep, stopAllMacros,
+  createMacro, removeMacro, startMacro, stopMacro, triggerNextStep, stopAllMacros, clearMacros,
   getActiveMacroStatus,
 };

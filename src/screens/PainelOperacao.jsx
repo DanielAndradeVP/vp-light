@@ -4,6 +4,8 @@
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { activeSceneMatches, useShow } from '../store/showStore.js';
+import { getPageActivitySummary, getScriptPagesList, getScriptsForPage } from '../store/scriptPagesSelectors.js';
+import ScriptClassificationBadges from '../components/ScriptClassificationBadges.jsx';
 import theme, { getContrastTextColor } from '../theme.js';
 
 const C = {
@@ -155,7 +157,7 @@ function TabStrip({ tabs, active, onChange }) {
 }
 
 /** Botão de disparo — espelha barras de cena/F-key da mesa principal */
-function DispatchPad({ label, name, active, running, empty, color, onClick, variant, pageScript }) {
+function DispatchPad({ label, name, active, running, empty, color, onClick, variant, pageScript, script }) {
   const isScene = variant === 'scene';
   const minH = isScene ? TOUCH.scene : TOUCH.fKey;
 
@@ -191,6 +193,7 @@ function DispatchPad({ label, name, active, running, empty, color, onClick, vari
       onClick={empty ? undefined : onClick}
       style={{
         ...theme.components[isScene ? 'sceneButton' : 'fKeyButton'],
+        position: 'relative',
         minHeight: minH,
         height: minH,
         padding: `${sp.xs}px ${sp.sm}px`,
@@ -257,6 +260,9 @@ function DispatchPad({ label, name, active, running, empty, color, onClick, vari
           fontWeight: 700,
         }}>● ATIVA</span>
       )}
+      {variant === 'fkey' && script && (
+        <ScriptClassificationBadges script={script} iconSize={11} barMaxHeight={10} />
+      )}
     </button>
   );
 }
@@ -316,6 +322,11 @@ function MacroEditorModal({ macro, onSave, onClose }) {
     if (macro) {
       const steps = macro.steps?.map(s => ({
         scriptName: s.script || s.scriptName || '',
+        _orig: {
+          fadeInMs: Number(s.fadeInMs) || 0,
+          fadeOutMs: Number(s.fadeOutMs) || 0,
+          overlapMs: Number(s.overlapMs) || 0,
+        },
       })) ?? [{ ...STEP_DEFAULTS }];
       const firstDur = macro.steps?.[0]?.durationMs ?? macro.steps?.[0]?.duration;
       return {
@@ -350,7 +361,7 @@ function MacroEditorModal({ macro, onSave, onClose }) {
   function setStep(i, value) {
     setDraft(d => {
       const steps = [...d.steps];
-      steps[i] = { scriptName: value };
+      steps[i] = { ...steps[i], scriptName: value };
       return { ...d, steps };
     });
   }
@@ -358,6 +369,11 @@ function MacroEditorModal({ macro, onSave, onClose }) {
   function removeStep(i){ setDraft(d => ({ ...d, steps: d.steps.filter((_, idx) => idx !== i) })); }
 
   const canSave = draft.name.trim() && draft.steps.length > 0 && draft.steps.every(s => s.scriptName.trim());
+  const hasAdvancedFields = !!macro && (
+    macro.loop === true
+    || macro.mergeMode === 'linear'
+    || macro.steps?.some(s => Number(s.fadeInMs) > 0 || Number(s.fadeOutMs) > 0 || Number(s.overlapMs) > 0)
+  );
 
   return (
     <div style={{
@@ -422,6 +438,12 @@ function MacroEditorModal({ macro, onSave, onClose }) {
               Tempo que cada script fica ativo antes de passar para o próximo.
             </div>
           </div>
+
+          {hasAdvancedFields && (
+            <div style={{ ...ty.tooltip, color: C.warn, marginBottom: sp.md }}>
+              Esta macro usa campos avançados (fade, overlap, loop ou mergeMode linear) que este editor simples não exibe. Esses campos serão preservados automaticamente ao salvar — apenas nome, scripts e duração comum podem ser alterados aqui.
+            </div>
+          )}
 
           <div style={{
             ...ty.compact,
@@ -533,14 +555,14 @@ function MacroPanel() {
     const intervalMs = Math.max(500, Number(draft.stepIntervalMs) || DEFAULT_STEP_INTERVAL_MS);
     const def = {
       name: isEdit ? (editingMacro.name || id) : id,
-      mergeMode: 'htp',
-      loop: false,
+      mergeMode: isEdit ? (editingMacro.mergeMode === 'linear' ? 'linear' : 'htp') : 'htp',
+      loop: isEdit ? !!editingMacro.loop : false,
       steps: draft.steps.map(s => ({
         script: s.scriptName.trim(),
         durationMs: intervalMs,
-        fadeInMs: 0,
-        fadeOutMs: 0,
-        overlapMs: 0,
+        fadeInMs: s._orig?.fadeInMs || 0,
+        fadeOutMs: s._orig?.fadeOutMs || 0,
+        overlapMs: s._orig?.overlapMs || 0,
       })),
     };
 
@@ -561,7 +583,10 @@ function MacroPanel() {
     setEditorOpen(true);
   }
 
-  async function handleStart(id)  { await window.vp.startMacro?.(id); }
+  async function handleStart(id) {
+    const result = await window.vp.startMacro?.(id);
+    if (result && result.ok === false) window.alert(result.error || 'Falha ao iniciar macro.');
+  }
   async function handleStop(id)   { await window.vp.stopMacro?.(id); }
   async function handleNext(id)   { await window.vp.nextMacroStep?.(id); }
   async function handleRemove(id) {
@@ -654,11 +679,23 @@ function MacroPanel() {
                 }} title="Remover macro">✕</button>
               </div>
 
+              {macro.invalid && (
+                <div style={{ ...ty.tooltip, color: C.warn, marginBottom: sp.md }}>
+                  ⚠ Script(s) inexistente(s): {macro.invalidSteps?.map(s => `passo ${s.index + 1} (${s.script || 'vazio'})`).join(', ')}
+                </div>
+              )}
+              {macro.lastError && (
+                <div style={{ ...ty.tooltip, color: C.warn, marginBottom: sp.md }}>
+                  ⚠ Erro no passo {macro.lastError.stepIndex + 1}: {macro.lastError.error}
+                </div>
+              )}
+
               {/* Transport */}
               <div style={{ display: 'flex', gap: sp.sm }}>
                 <Btn
                   onClick={() => isActive ? handleStop(macroId) : handleStart(macroId)}
                   active={isActive}
+                  disabled={!isActive && macro.invalid}
                   touch
                   style={{ flex: 1, ...ty.toolbar }}
                 >
@@ -730,23 +767,23 @@ const DISPATCH_TABS = [
 ];
 
 function QuickDispatchPanel({ currentPage }) {
-  const { show, activeScenes, toggleScene } = useShow();
+  const {
+    show, activeScenes, toggleScene,
+    scriptLibrarySnapshot, activeScriptPageId, setActiveScriptPageId, toggleScriptAtActivePage,
+  } = useShow();
   const [tab, setTab]       = useState('scripts');
-  const [scripts, setScripts] = useState({});
   const [pageScripts, setPageScripts] = useState({});
 
   const scenes = show?.pages?.[currentPage]?.scenes ?? {};
-
-  useEffect(() => {
-    if (!window.vp?.getAllScripts) return;
-    window.vp.getAllScripts().then(s => setScripts(s || {}));
-    let alive = true;
-    const id = setInterval(async () => {
-      const s = await window.vp.getAllScripts?.();
-      if (alive && s) setScripts(s);
-    }, 300);
-    return () => { alive = false; clearInterval(id); };
-  }, []);
+  const scriptPagesList = useMemo(() => getScriptPagesList(scriptLibrarySnapshot), [scriptLibrarySnapshot]);
+  const currentPageScripts = useMemo(
+    () => getScriptsForPage(scriptLibrarySnapshot, activeScriptPageId),
+    [scriptLibrarySnapshot, activeScriptPageId]
+  );
+  const scriptPageActivity = useMemo(
+    () => getPageActivitySummary(scriptLibrarySnapshot),
+    [scriptLibrarySnapshot]
+  );
 
   useEffect(() => {
     if (!window.vp?.getAllPageScripts) return;
@@ -760,18 +797,20 @@ function QuickDispatchPanel({ currentPage }) {
   }, [currentPage]);
 
   async function handleToggleScript(fkey) {
-    if (!scripts[fkey]) return;
-    const result = await window.vp.toggleScript?.(fkey);
-    if (result?.ok != null) {
-      setScripts(prev => ({ ...prev, [fkey]: { ...prev[fkey], running: result.running } }));
+    if (!currentPageScripts[fkey]) return;
+    const result = await toggleScriptAtActivePage(fkey);
+    if (result?.ok !== true) {
+      console.error('[vp] toggleScript falhou:', fkey, result?.error);
     }
   }
 
   async function handleTogglePageScript(sceneKey) {
     if (!pageScripts[sceneKey]) return;
     const result = await window.vp.togglePageScript?.(currentPage, sceneKey);
-    if (result?.ok != null) {
+    if (result?.ok === true) {
       setPageScripts(prev => ({ ...prev, [sceneKey]: { ...prev[sceneKey], running: result.running } }));
+    } else {
+      console.error('[vp] togglePageScript falhou:', sceneKey, result?.error);
     }
   }
 
@@ -796,29 +835,59 @@ function QuickDispatchPanel({ currentPage }) {
 
         {/* ── Scripts F1-F12 ── */}
         {tab === 'scripts' && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(6, 1fr)',
-            gap: sp.xs,
-            flex: 1,
-            alignContent: 'start',
-          }}>
-            {FKEYS.map(fkey => {
-              const script  = scripts[fkey];
-              const running = script?.running ?? false;
-              return (
-                <DispatchPad
-                  key={fkey}
-                  label={fkey}
-                  name={script?.name}
-                  running={running}
-                  empty={!script}
-                  color={script?.color || theme.components.fKeyButton.background}
-                  onClick={() => handleToggleScript(fkey)}
-                  variant="fkey"
-                />
-              );
-            })}
+          <div style={{ display:'flex', flexDirection:'column', gap:sp.sm, flex:1 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:sp.xs, overflowX:'auto', paddingBottom:sp.xs }}>
+              {scriptPagesList.map(page => {
+                const isActive = page.id === activeScriptPageId;
+                const activity = scriptPageActivity[page.id] || { activeCount:0, hasActive:false };
+                return (
+                  <button
+                    key={page.id}
+                    onClick={() => setActiveScriptPageId(page.id)}
+                    title={`${page.name}${activity.hasActive ? ` — ${activity.activeCount} script(s) ativo(s)` : ''}`}
+                    style={{
+                      position:'relative', flex:'0 0 auto', minWidth:TOUCH.actionW, minHeight:TOUCH.tab,
+                      padding:`${sp.xs}px ${sp.md}px`, borderRadius:0, cursor:'pointer',
+                      fontFamily:ty.fontFamily, fontSize:ty.compact.fontSize, fontWeight:isActive ? 700 : 400,
+                      background:isActive ? theme.colors.accentOverlay : C.btnBg,
+                      border:isActive ? `2px solid ${theme.colors.accent}` : `1px solid ${C.borderStrong}`,
+                      color:isActive ? C.text : C.textMuted,
+                    }}
+                  >
+                    {page.name}
+                    {activity.hasActive && (
+                      <span style={{
+                        position:'absolute', top:2, right:2, minWidth:16, height:16, borderRadius:8,
+                        background:C.warn, color:'#fff', fontSize:9, fontWeight:700,
+                        display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px',
+                      }}>{activity.activeCount}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{
+              display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:sp.xs,
+              flex:1, alignContent:'start',
+            }}>
+              {FKEYS.map(fkey => {
+                const script = currentPageScripts[fkey];
+                const running = script?.running ?? false;
+                return (
+                  <DispatchPad
+                    key={fkey}
+                    label={fkey}
+                    name={script?.name}
+                    running={running}
+                    empty={!script}
+                    color={script?.color || theme.components.fKeyButton.background}
+                    onClick={() => handleToggleScript(fkey)}
+                    variant="fkey"
+                    script={script}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
 
