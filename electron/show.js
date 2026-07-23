@@ -243,7 +243,39 @@ function validateFixtures(fixtures) {
     }
     ranges.push({ name: label, start, end });
   }
+  fixtures.forEach(fx => warnInvalidAdapters(fx));
   return true;
+}
+
+/**
+ * Avisos (não bloqueantes) sobre o campo opcional `fixture.adapters`.
+ * Nunca lança exceção nem impede o carregamento do show — um mapeamento
+ * semântico malformado não deve derrubar a operação ao vivo; o pior caso é
+ * `adapter.resolve`/`adapter.setColor` etc. devolverem null/erro estruturado
+ * em runtime, o que já é tratado pelos consumidores.
+ */
+function warnInvalidAdapters(fx) {
+  const label = (fx && (fx.name || fx.id)) || '(sem id)';
+  const adapters = fx && fx.adapters;
+  if (adapters === undefined) return;
+  if (!adapters || typeof adapters !== 'object' || Array.isArray(adapters)) {
+    console.warn(`[show] Fixture "${label}": campo "adapters" deveria ser um objeto, recebeu ${typeof adapters}.`);
+    return;
+  }
+  for (const [adapterKey, mapping] of Object.entries(adapters)) {
+    if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) {
+      console.warn(`[show] Fixture "${label}": adapters.${adapterKey} deveria ser um objeto de valor lógico → DMX.`);
+      continue;
+    }
+    for (const [logicalValue, dmxValue] of Object.entries(mapping)) {
+      const n = Math.round(Number(dmxValue));
+      if (!Number.isFinite(n) || n < 0 || n > 255) {
+        console.warn(
+          `[show] Fixture "${label}": adapters.${adapterKey}.${logicalValue} = ${JSON.stringify(dmxValue)} não é um valor DMX válido (0-255).`
+        );
+      }
+    }
+  }
 }
 
 /**

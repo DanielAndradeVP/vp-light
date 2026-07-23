@@ -1071,6 +1071,7 @@ function buildScriptSandbox(buffer, touched, controlledMask) {
 }
 
 const MOV_PADRAO_PRESET = path.join(SCRIPTS_DIR, 'mov-preset.js');
+const FIRE_BASE_PRESET = path.join(SCRIPTS_DIR, 'fire-base.js');
 
 /** Scripts mov-* (exceto mov-preset.js) concatenam o preset antes de compilar. */
 function scriptPrependsMovPreset(filePath) {
@@ -1079,11 +1080,22 @@ function scriptPrependsMovPreset(filePath) {
   return base.startsWith('mov-') && base.endsWith('.js');
 }
 
+/** Scripts fire-* (exceto fire-base.js) concatenam a biblioteca fire-base antes de compilar. */
+function scriptPrependsFireBase(filePath) {
+  const base = path.basename(filePath);
+  if (base === 'fire-base.js') return false;
+  return base.startsWith('fire-') && base.endsWith('.js');
+}
+
 function readScriptCode(filePath) {
   let code = fs.readFileSync(filePath, 'utf-8');
   if (scriptPrependsMovPreset(filePath)) {
     if (fs.existsSync(MOV_PADRAO_PRESET)) {
       code = fs.readFileSync(MOV_PADRAO_PRESET, 'utf-8') + '\n\n' + code;
+    }
+  } else if (scriptPrependsFireBase(filePath)) {
+    if (fs.existsSync(FIRE_BASE_PRESET)) {
+      code = fs.readFileSync(FIRE_BASE_PRESET, 'utf-8') + '\n\n' + code;
     }
   }
   return code;
@@ -1715,8 +1727,9 @@ function reloadRunningConsumersOfEntry(canonicalPath) {
     const file = path.join(SCRIPTS_DIR, entry.entry);
     const isDirectMatch = entryPath === canonicalPath;
     const isPresetCascade = canonicalPath === 'mov-preset.js' && scriptPrependsMovPreset(file);
-    if ((isDirectMatch || isPresetCascade) && runningScripts[id]) {
-      swapRunningScript(id, file, isPresetCascade ? 'preset modificado' : 'arquivo modificado');
+    const isFireBaseCascade = canonicalPath === 'fire-base.js' && scriptPrependsFireBase(file);
+    if ((isDirectMatch || isPresetCascade || isFireBaseCascade) && runningScripts[id]) {
+      swapRunningScript(id, file, (isPresetCascade || isFireBaseCascade) ? 'preset modificado' : 'arquivo modificado');
     }
     if (isDirectMatch && !runningScripts[id] && scriptReloadErrors.has(id) && checkScriptCompileError(file) === null) {
       scriptReloadErrors.delete(id);

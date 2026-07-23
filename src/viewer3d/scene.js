@@ -868,14 +868,18 @@ function addLineArraySpeaker(parent, name, x, y, z, side = 1) {
 // ausência dessas chaves com segurança (cai para RGB direto). dimmer/red/
 // green/blue são bem entendidos nos dois layouts e foram corrigidos para
 // bater com o canal real.
+// white: 8ª posição do Layout A (dimmer,strobo,macro,macro_speed,red,green,
+// blue,white) — canal real confirmado no show.json, mesma classe de
+// dimmer/red/green/blue (bem entendido, ao contrário de macro/speed no
+// Layout A). parled.js trata a ausência dessa chave com segurança.
 const PARLED_CHANNELS = {
-  1: { dimmer: 1,  red: 5,  green: 6,  blue: 7  },
+  1: { dimmer: 1,  red: 5,  green: 6,  blue: 7,  white: 8  },
   2: { macro: 9,  color_wheel: 10, speed: 11, dimmer: 12, red: 13, green: 14, blue: 15 },
   3: { macro: 17, color_wheel: 18, speed: 19, dimmer: 20, red: 21, green: 22, blue: 23 },
   4: { macro: 25, color_wheel: 26, speed: 27, dimmer: 28, red: 29, green: 30, blue: 31 },
-  5: { dimmer: 33, red: 37, green: 38, blue: 39 },
-  6: { dimmer: 74, red: 78, green: 79, blue: 80 },
-  7: { dimmer: 49, red: 53, green: 54, blue: 55 },
+  5: { dimmer: 33, red: 37, green: 38, blue: 39, white: 40 },
+  6: { dimmer: 74, red: 78, green: 79, blue: 80, white: 81 },
+  7: { dimmer: 49, red: 53, green: 54, blue: 55, white: 56 },
   8: { macro: 57, color_wheel: 58, speed: 59, dimmer: 60, red: 61, green: 62, blue: 63 },
   9: { macro: 65, color_wheel: 66, speed: 67, dimmer: 68, red: 69, green: 70, blue: 71 },
 };
