@@ -152,4 +152,26 @@ describe('schema de scripts do show', () => {
     expect(showModule.slugifyScriptId('  ÁGUA Quente / TESTE  ')).toBe('agua-quente-teste');
     expect(showModule.slugifyScriptId('Água Quente / Teste')).toBe('agua-quente-teste');
   });
+
+  it('loadShow remove entradas de scriptLibrary com entry inseguro (path traversal via show.json editado à mão)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vp-show-schema-'));
+    tempDirs.push(dir);
+    const filePath = path.join(dir, 'test.show.json');
+    fs.writeFileSync(filePath, JSON.stringify({
+      version: '1.0',
+      fixtures: [],
+      pages: {},
+      scriptSchemaVersion: showModule.SCRIPT_SCHEMA_VERSION,
+      scriptLibrary: {
+        legitimo: { id: 'legitimo', entry: 'legitimo.js', label: 'legitimo' },
+        malicioso: { id: 'malicioso', entry: '../../../fora/payload.js', label: 'malicioso' },
+        absoluto: { id: 'absoluto', entry: '/etc/passwd', label: 'absoluto' },
+      },
+      scriptPages: { pages: [] },
+    }, null, 2), 'utf-8');
+
+    const loaded = showModule.loadShow(filePath);
+
+    expect(Object.keys(loaded.scriptLibrary)).toEqual(['legitimo']);
+  });
 });

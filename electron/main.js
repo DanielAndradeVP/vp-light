@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const chokidar = require('chokidar');
 const crypto = require('crypto');
 const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
@@ -1074,6 +1075,12 @@ function buildScriptSandbox(buffer, touched, controlledMask) {
       fixtureAdapter.setPrism(semanticDeps, fixtureId, intent),
     setGobo: (fixtureId, value) =>
       fixtureAdapter.setGobo(semanticDeps, fixtureId, value),
+    setFocus: (fixtureId, intent) =>
+      fixtureAdapter.setFocus(semanticDeps, fixtureId, intent),
+    setFrost: (fixtureId, intent) =>
+      fixtureAdapter.setFrost(semanticDeps, fixtureId, intent),
+    setPrismRotation: (fixtureId, intent) =>
+      fixtureAdapter.setPrismRotation(semanticDeps, fixtureId, intent),
     getCapabilities: (fixtureId) =>
       fixtureAdapter.getCapabilities(semanticDeps, fixtureId),
   };
@@ -1111,16 +1118,35 @@ function readScriptCode(filePath) {
   return code;
 }
 
+// Orçamento de execução por hook de script, em ms. O frame do engine tem 40ms
+// (25fps) — 30ms deixa margem pro resto do trabalho do frame (interpolador,
+// compositor, Art-Net). Protege contra `while(true)`/recursão infinita num
+// script de usuário: `vm` interrompe JS síncrono nos back-edges de loop e em
+// chamadas de função (não interrompe uma única chamada nativa bloqueante, mas
+// scripts só chamam SetChannel/getChannel/adapter, tudo síncrono e não-bloqueante).
+const SCRIPT_HOOK_TIMEOUT_MS = 30;
+// Scripts reutilizáveis só pra invocar o hook já definido no contexto — o timeout
+// se aplica à chamada em si, não só à definição inicial do script.
+const CALL_ON_START = new vm.Script('OnStart();', { filename: 'vp-light:call-onstart.js' });
+const CALL_ON_EXECUTE = new vm.Script('OnExecute();', { filename: 'vp-light:call-onexecute.js' });
+const CALL_ON_TERMINATE = new vm.Script('OnTerminate();', { filename: 'vp-light:call-onterminate.js' });
+
 function compileScriptContext(code, buffer, touched, controlledMask) {
   const { SetChannel, getChannel, adapter } = buildScriptSandbox(buffer, touched, controlledMask);
+  const context = vm.createContext({ SetChannel, getChannel, adapter });
+  const definitionScript = new vm.Script(code, { filename: 'vp-light:script.js' });
+  definitionScript.runInContext(context, { timeout: SCRIPT_HOOK_TIMEOUT_MS });
+
   const ctx = {};
-  const fn = new Function('SetChannel', 'getChannel', 'adapter', 'ctx', `
-    ${code}
-    ctx.OnStart = typeof OnStart === 'function' ? OnStart : null;
-    ctx.OnExecute = typeof OnExecute === 'function' ? OnExecute : null;
-    ctx.OnTerminate = typeof OnTerminate === 'function' ? OnTerminate : null;
-  `);
-  fn(SetChannel, getChannel, adapter, ctx);
+  ctx.OnStart = typeof context.OnStart === 'function'
+    ? () => CALL_ON_START.runInContext(context, { timeout: SCRIPT_HOOK_TIMEOUT_MS })
+    : null;
+  ctx.OnExecute = typeof context.OnExecute === 'function'
+    ? () => CALL_ON_EXECUTE.runInContext(context, { timeout: SCRIPT_HOOK_TIMEOUT_MS })
+    : null;
+  ctx.OnTerminate = typeof context.OnTerminate === 'function'
+    ? () => CALL_ON_TERMINATE.runInContext(context, { timeout: SCRIPT_HOOK_TIMEOUT_MS })
+    : null;
   return ctx;
 }
 
@@ -1154,8 +1180,14 @@ function compileLayer(filePath) {
 }
 
 ipcMain.handle('script:create', async (_, pageId, fkey, name, options = {}) => {
-  const file = path.join(SCRIPTS_DIR, `${name}.js`);
+  if (!show.isSafeRelativeEntry(`${name}.js`)) {
+    return { ok: false, error: `Nome de script inválido: "${name}".` };
+  }
   const groups = Array.isArray(options.groups) ? options.groups : [];
+  if (!groups.every(group => show.isSafeRelativeEntry(`${group}.md`))) {
+    return { ok: false, error: 'Grupo de conhecimento inválido.' };
+  }
+  const file = path.join(SCRIPTS_DIR, `${name}.js`);
   const color = typeof options.color === 'string' ? options.color : '#000000';
   const fileAlreadyExists = fs.existsSync(file);
   console.log('[script:create] fkey=%s name=%s groups=%j fileExists=%s', fkey, name, groups, fileAlreadyExists);
@@ -1890,6 +1922,9 @@ const SCRIPT_TEMPLATE_BODY = [
 ].join('\n');
 
 ipcMain.handle('page_script:create', async (_, pageId, sceneKey, name) => {
+  if (!show.isSafeRelativeEntry(`${name}.js`)) {
+    return { ok: false, error: `Nome de script inválido: "${name}".` };
+  }
   pageId = normalizePageId(pageId);
   const file = path.join(SCRIPTS_DIR, `${name}.js`);
   if (!fs.existsSync(file)) {
@@ -2001,7 +2036,12 @@ function instantiateMacro(norm) {
 function validateMacroReferences(norm) {
   const invalidSteps = [];
   norm.steps.forEach((step, index) => {
-    if (!step.script || !fs.existsSync(path.join(SCRIPTS_DIR, step.script + '.js'))) {
+    // Caminho inseguro (".." / absoluto / etc.) é tratado como referência
+    // inválida, igual a script inexistente — impede que um passo de macro
+    // aponte pra fora de SCRIPTS_DIR (path traversal via show.json editado
+    // à mão ou UI comprometida).
+    const safe = show.isSafeRelativeEntry(`${step.script}.js`);
+    if (!step.script || !safe || !fs.existsSync(path.join(SCRIPTS_DIR, step.script + '.js'))) {
       invalidSteps.push({ index, script: step.script });
     }
   });

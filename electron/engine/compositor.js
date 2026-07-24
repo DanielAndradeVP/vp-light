@@ -207,6 +207,15 @@ function releaseLayer(id, fadeOutFrames) {
 
 function _removeLayerInternal(layer, reason) {
   if (!_layers.has(layer._id)) return;
+  // Limpa ANTES de chamar OnTerminate: sem isso, buffer/touched ainda carregam
+  // o último OnExecute renderizado (o "look" no momento em que a remoção foi
+  // pedida), e _flushLayerToUniverse reaplicaria esse efeito em 100% assim que
+  // o template padrão de script gera um OnTerminate vazio (caso comum, não é
+  // extremo). Zerando primeiro: OnTerminate vazio → nada é reaplicado (canal
+  // volta pro que outra camada/cena definir); OnTerminate que escreve valores
+  // de limpeza via SetChannel → exatamente esses valores chegam ao universo.
+  if (layer.buffer) layer.buffer.fill(0);
+  if (layer.touched) layer.touched.fill(0);
   if (layer.context && typeof layer.context.OnTerminate === 'function') {
     try { layer.context.OnTerminate(); } catch (e) {}
   }

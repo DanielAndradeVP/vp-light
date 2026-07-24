@@ -58,6 +58,25 @@ function isSafeRelativeEntry(entry) {
   return true;
 }
 
+/**
+ * Remove entradas de scriptLibrary com `entry` inseguro (".." / caminho
+ * absoluto / etc.) — protege contra um .show.json editado à mão (ou renderer
+ * comprometido) que insira uma referência apontando pra fora de scripts/.
+ * registerEntry()/updateEntry() já validam na criação; isto cobre o caminho
+ * de leitura direta do disco, que não passa por lá.
+ */
+function sanitizeScriptLibrary(scriptLibrary) {
+  const clean = {};
+  for (const [id, entry] of Object.entries(scriptLibrary || {})) {
+    if (entry && isSafeRelativeEntry(entry.entry)) {
+      clean[id] = entry;
+    } else {
+      console.warn(`[show] entrada de scriptLibrary "${id}" com entry inseguro/ausente — removida no load: ${entry?.entry}`);
+    }
+  }
+  return clean;
+}
+
 function createDefaultScriptPages() {
   const pages = [];
   for (let i = 1; i <= MIN_SCRIPT_PAGES; i += 1) {
@@ -323,12 +342,12 @@ function loadShow(filePath) {
         console.error(`[show] MIGRAÇÃO DE SCRIPTS FALHOU — mantendo formato legado nesta sessão, arquivo original intacto: ${migErr.message}`);
       }
     } else {
-      show.scriptLibrary = show.scriptLibrary && typeof show.scriptLibrary === 'object' ? show.scriptLibrary : {};
+      show.scriptLibrary = sanitizeScriptLibrary(show.scriptLibrary);
       show.scriptPages = normalizeScriptPages(show.scriptPages);
       show.scriptSchemaVersion = SCRIPT_SCHEMA_VERSION;
     }
   } else {
-    show.scriptLibrary = show.scriptLibrary && typeof show.scriptLibrary === 'object' ? show.scriptLibrary : {};
+    show.scriptLibrary = sanitizeScriptLibrary(show.scriptLibrary);
     show.scriptPages = normalizeScriptPages(show.scriptPages);
   }
   show = normalizePages(normalizeFixturePositions(show));

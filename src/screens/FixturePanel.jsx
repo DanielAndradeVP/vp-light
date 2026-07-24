@@ -99,8 +99,12 @@ export default function FixturePanel({ onClose }) {
     duplicateFixture(selectedId);
   }
 
-  function handleConfirm() {
-    saveShow();
+  async function handleConfirm() {
+    const result = await saveShow();
+    if (result && result.ok === false) {
+      window.alert(result.message || result.error || 'Erro ao salvar aparelhos');
+      return;
+    }
     onClose();
   }
 

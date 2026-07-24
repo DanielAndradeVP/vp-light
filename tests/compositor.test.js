@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const compositor = require('../electron/engine/compositor.js');
@@ -94,6 +94,49 @@ describe('compositor - execução simultânea de camadas', () => {
     expect(compositor.layerCount()).toBe(2);
     expect(universe.getUniverse()[0]).toBe(50);
     expect(universe.getUniverse()[1]).toBe(100);
+  });
+
+  it('parar uma camada com OnTerminate vazio não reaplica o último look ao universo (achado C-01 da auditoria de 24-07-2026)', () => {
+    // Antes do fix, _removeLayerInternal chamava OnTerminate sem limpar
+    // buffer/touched primeiro — como touched ainda carregava o último frame
+    // renderizado (100% ligado), _flushLayerToUniverse reescrevia
+    // explicitamente esse valor obsoleto no universo, mesmo quando o
+    // template padrão de script gera um OnTerminate vazio (caso comum, não
+    // extremo). O canal deve permanecer como já estava (sem uma nova escrita
+    // redundante), não porque alguém decidiu "reaplicar 100%".
+    compositor.addLayer('effect', createLayer({ 1: 255 }));
+    compositor.renderFrame();
+    expect(universe.getUniverse()[0]).toBe(255);
+
+    const setChannelSpy = vi.spyOn(universe, 'setChannel');
+    compositor.stopLayer('effect');
+
+    expect(setChannelSpy).not.toHaveBeenCalled();
+    setChannelSpy.mockRestore();
+  });
+
+  it('parar uma camada cujo OnTerminate limpa só parte dos canais tocados não reaplica os demais', () => {
+    const buffer = new Uint8Array(512);
+    const touched = new Uint8Array(512);
+    compositor.addLayer('effect', {
+      buffer, touched,
+      context: {
+        OnExecute: () => { buffer[0] = 200; touched[0] = 1; buffer[1] = 200; touched[1] = 1; },
+        // Só limpa o canal 1 — canal 2 fica sem tratamento explícito.
+        OnTerminate: () => { buffer[0] = 0; touched[0] = 1; },
+      },
+    });
+    compositor.renderFrame();
+    expect(universe.getUniverse()[0]).toBe(200);
+    expect(universe.getUniverse()[1]).toBe(200);
+
+    const setChannelSpy = vi.spyOn(universe, 'setChannel');
+    compositor.stopLayer('effect');
+
+    // Só o canal 1 (explicitamente escrito pelo OnTerminate) deveria ser tocado.
+    const touchedChannels = setChannelSpy.mock.calls.map(([channel]) => channel);
+    expect(touchedChannels).toEqual([1]);
+    setChannelSpy.mockRestore();
   });
 
   it('aplica HTP escolhendo o maior valor no mesmo canal', () => {
