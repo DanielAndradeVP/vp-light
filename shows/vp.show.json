@@ -275,10 +275,10 @@
         "fecho_lampada",
         "gobo_wheel",
         "prism_1",
-        "prism_1_rotation",
+        "prism_rotation",
         "virtual_speed",
         "frost",
-        "prism_1_rotation_2",
+        "focus",
         "pan",
         "pan_fine",
         "tilt",
@@ -302,13 +302,45 @@
       "adapters": {
         "color": {
           "white": 0,
-          "red": 30,
-          "green": 60,
-          "blue_light": 90,
-          "yellow": 120,
-          "purple": 150,
-          "blue": 180,
-          "amber": 210
+          "red": 10,
+          "green": 20,
+          "blue_medio": 30,
+          "yellow": 40,
+          "purple_light": 50,
+          "blue_light": 60,
+          "roxo_claro": 70,
+          "laranja_escuro": 80,
+          "blue_claro": 90,
+          "laranja_claro": 110,
+          "amber": 120,
+          "magenta": 130
+        },
+        "strobe": {
+          "lento": 40,
+          "medio": 60,
+          "rapido": 80,
+          "extra_rapido": 100
+        },
+        "prism": {
+          "ligado": 150
+        },
+        "focus": {
+          "focado": 160
+        },
+        "gobo": {
+          "circulo_bolinhas_finas": 10,
+          "circulo_bolinhas_medias": 20,
+          "circulo_bolinhas_grossas": 30,
+          "varios_l": 35,
+          "circulo_estrelas": 45
+        },
+        "frost": {
+          "ligado": 255
+        },
+        "prismRotation": {
+          "rapido": 170,
+          "medio": 150,
+          "lento": 135
         }
       }
     },
@@ -342,7 +374,7 @@
       "fixtureType": "moving_head_beam",
       "universe": 0,
       "group": "Moving Heads",
-      "note": "DMX 203-218. CH1 color_wheel: 15 pontos medidos fisicamente pelo operador em 19-07-2026, passo de 10 (ver adapters.color) - substitui a tabela antiga de 8 valores em passo de 16/32. CH2 strobo: 255 aberto/fixo com fecho_lampada em 255; 175 lento, 190 medio, 205 rapido. CH3 fecho_lampada. CH4 gobo_wheel. CH5 prism_1. CH6 prism_rotation. CH7 virtual_speed invertido pelo interpolador: 0=mais rapido, 255=mais lento. CH8 frost. CH9 focus. CH10 pan. CH11 pan_fine. CH12 tilt. CH13 tilt_fine. CH14 special_random. CH15 reset. CH16 indefinido.",
+      "note": "DMX 203-218. CH1 color_wheel: 15 pontos medidos fisicamente pelo operador em 19-07-2026, passo de 10 (ver adapters.color) - substitui a tabela antiga de 8 valores em passo de 16/32. CH2 strobo: 40 lento, 60 medio, 80 rapido, 100 extra rapido (ver adapters.strobe) - substitui a anotacao antiga (175/190/205), nunca usada como dado real do adapter. CH3 fecho_lampada. CH4 gobo_wheel. CH5 prism_1. CH6 prism_rotation. CH7 virtual_speed invertido pelo interpolador: 0=mais rapido, 255=mais lento. CH8 frost. CH9 focus. CH10 pan. CH11 pan_fine. CH12 tilt. CH13 tilt_fine. CH14 special_random. CH15 reset. CH16 indefinido.",
       "tiltOffset": 6,
       "virtualPanTiltSpeed": true,
       "adapters": {
@@ -362,6 +394,33 @@
           "amber_2": 120,
           "yellow_2": 130,
           "purple_light": 140
+        },
+        "strobe": {
+          "lento": 40,
+          "medio": 60,
+          "rapido": 80,
+          "extra_rapido": 100
+        },
+        "prism": {
+          "ligado": 150
+        },
+        "focus": {
+          "focado": 100
+        },
+        "gobo": {
+          "circulo_bolinhas_finas": 10,
+          "circulo_bolinhas_medias": 20,
+          "circulo_bolinhas_grossas": 30,
+          "varios_l": 35,
+          "circulo_estrelas": 45
+        },
+        "frost": {
+          "ligado": 255
+        },
+        "prismRotation": {
+          "rapido": 150,
+          "medio": 165,
+          "lento": 180
         }
       }
     },
@@ -1629,6 +1688,42 @@
       "description": "",
       "tags": [],
       "color": "#000000"
+    },
+    "brut-pisca-lados": {
+      "id": "brut-pisca-lados",
+      "entry": "brut-pisca-lados.js",
+      "label": "brut-pisca-lados",
+      "category": "strobe",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "fire-base": {
+      "id": "fire-base",
+      "entry": "fire-base.js",
+      "label": "fire-base",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#000000"
+    },
+    "mov-desc-mh-brut": {
+      "id": "mov-desc-mh-brut",
+      "entry": "mov-desc-mh-brut.js",
+      "label": "mov-desc-mh-brut",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#000000"
     }
   },
   "scriptPages": {
@@ -1692,7 +1787,12 @@
         "id": "page-2",
         "name": "Página 2",
         "order": 2,
-        "slots": {}
+        "slots": {
+          "F1": {
+            "type": "script",
+            "id": "brut-pisca-lados"
+          }
+        }
       },
       {
         "id": "page-3",

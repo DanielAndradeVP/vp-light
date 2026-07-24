@@ -89,10 +89,72 @@ describe('adapter semântico contra shows/vp.show.json real', () => {
     expect(adapter.setColor(deps, 'Moving Head Beam 2', 'cyan').code).toBe('VALUE_NOT_SUPPORTED');
   });
 
-  it('setColor("Moving Head Beam 1", "green") continua recusado (profile mapping-incomplete)', () => {
-    const { deps, writes } = makeRealDeps();
-    expect(adapter.setColor(deps, 'Moving Head Beam 1', 'green').code).toBe('CAPABILITY_NOT_MAPPED');
-    expect(writes).toEqual([]);
+  it('setColor cobre os 13 pontos medidos fisicamente do Moving Head Beam 1 (canal 123)', () => {
+    const { deps } = makeRealDeps();
+    const expected = {
+      white: 0, red: 10, green: 20, blue_medio: 30, yellow: 40,
+      purple_light: 50, blue_light: 60, roxo_claro: 70, laranja_escuro: 80,
+      blue_claro: 90, laranja_claro: 110, amber: 120, magenta: 130,
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      expect(adapter.setColor(deps, 'Moving Head Beam 1', name)).toMatchObject({ ok: true, channel: 123, value });
+    }
+    expect(adapter.setColor(deps, 'Moving Head Beam 1', 'cyan').code).toBe('VALUE_NOT_SUPPORTED');
+  });
+
+  it('setStrobe cobre os 4 pontos medidos fisicamente, iguais no MH1 (canal 124) e MH2 (canal 204)', () => {
+    const { deps } = makeRealDeps();
+    const expected = { lento: 40, medio: 60, rapido: 80, extra_rapido: 100 };
+    for (const [name, value] of Object.entries(expected)) {
+      expect(adapter.setStrobe(deps, 'Moving Head Beam 1', name)).toMatchObject({ ok: true, channel: 124, value });
+      expect(adapter.setStrobe(deps, 'Moving Head Beam 2', name)).toMatchObject({ ok: true, channel: 204, value });
+    }
+    expect(adapter.setStrobe(deps, 'Moving Head Beam 1', 'estroboscopico').code).toBe('VALUE_NOT_SUPPORTED');
+  });
+
+  it('setPrism usa o valor medido fisicamente (150), igual no MH1 (canal 127) e MH2 (canal 207)', () => {
+    const { deps } = makeRealDeps();
+    expect(adapter.setPrism(deps, 'Moving Head Beam 1', 'ligado')).toMatchObject({ ok: true, channel: 127, value: 150 });
+    expect(adapter.setPrism(deps, 'Moving Head Beam 2', 'ligado')).toMatchObject({ ok: true, channel: 207, value: 150 });
+    expect(adapter.setPrism(deps, 'Moving Head Beam 1', 'desligado').code).toBe('VALUE_NOT_SUPPORTED');
+  });
+
+  it('setFocus usa o valor medido fisicamente, diferente no MH1 (canal 131, valor 160) e MH2 (canal 211, valor 100)', () => {
+    const { deps } = makeRealDeps();
+    expect(adapter.setFocus(deps, 'Moving Head Beam 1', 'focado')).toMatchObject({ ok: true, channel: 131, value: 160 });
+    expect(adapter.setFocus(deps, 'Moving Head Beam 2', 'focado')).toMatchObject({ ok: true, channel: 211, value: 100 });
+  });
+
+  it('setGobo cobre os 5 padrões medidos fisicamente, iguais no MH1 (canal 126) e MH2 (canal 206)', () => {
+    const { deps } = makeRealDeps();
+    const expected = {
+      circulo_bolinhas_finas: 10,
+      circulo_bolinhas_medias: 20,
+      circulo_bolinhas_grossas: 30,
+      varios_l: 35,
+      circulo_estrelas: 45,
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      expect(adapter.setGobo(deps, 'Moving Head Beam 1', name)).toMatchObject({ ok: true, channel: 126, value });
+      expect(adapter.setGobo(deps, 'Moving Head Beam 2', name)).toMatchObject({ ok: true, channel: 206, value });
+    }
+    expect(adapter.setGobo(deps, 'Moving Head Beam 1', 'gobo_inexistente').code).toBe('VALUE_NOT_SUPPORTED');
+  });
+
+  it('setFrost usa o valor medido fisicamente (255), igual no MH1 (canal 130) e MH2 (canal 210)', () => {
+    const { deps } = makeRealDeps();
+    expect(adapter.setFrost(deps, 'Moving Head Beam 1', 'ligado')).toMatchObject({ ok: true, channel: 130, value: 255 });
+    expect(adapter.setFrost(deps, 'Moving Head Beam 2', 'ligado')).toMatchObject({ ok: true, channel: 210, value: 255 });
+  });
+
+  it('setPrismRotation usa os valores medidos fisicamente, com sentido invertido entre MH1 (canal 128) e MH2 (canal 208)', () => {
+    const { deps } = makeRealDeps();
+    expect(adapter.setPrismRotation(deps, 'Moving Head Beam 1', 'rapido')).toMatchObject({ ok: true, channel: 128, value: 170 });
+    expect(adapter.setPrismRotation(deps, 'Moving Head Beam 1', 'medio')).toMatchObject({ ok: true, channel: 128, value: 150 });
+    expect(adapter.setPrismRotation(deps, 'Moving Head Beam 1', 'lento')).toMatchObject({ ok: true, channel: 128, value: 135 });
+    expect(adapter.setPrismRotation(deps, 'Moving Head Beam 2', 'rapido')).toMatchObject({ ok: true, channel: 208, value: 150 });
+    expect(adapter.setPrismRotation(deps, 'Moving Head Beam 2', 'medio')).toMatchObject({ ok: true, channel: 208, value: 165 });
+    expect(adapter.setPrismRotation(deps, 'Moving Head Beam 2', 'lento')).toMatchObject({ ok: true, channel: 208, value: 180 });
   });
 
   it('setColor no Layout A real (ParLed_Deluxe_1) zera e escreve RGBW nos canais reais', () => {
@@ -145,7 +207,7 @@ describe('adapter semântico contra shows/vp.show.json real', () => {
   it('getCapabilities reflete o profile real de cada fixture', () => {
     const { deps } = makeRealDeps();
     expect(adapter.getCapabilities(deps, 'Moving Head Beam 2').capabilities.color.status).toBe('ready');
-    expect(adapter.getCapabilities(deps, 'Moving Head Beam 1').capabilities.color.status).toBe('mapping-incomplete');
+    expect(adapter.getCapabilities(deps, 'Moving Head Beam 1').capabilities.color.status).toBe('ready');
     expect(adapter.getCapabilities(deps, 'Ribalta_1')).toMatchObject({ ok: true, profileId: null, capabilities: {} });
   });
 

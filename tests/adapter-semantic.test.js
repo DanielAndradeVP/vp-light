@@ -6,7 +6,7 @@ const adapter = require('../electron/adapter.js');
 
 const movingChannels = [
   'color_wheel', 'strobo', 'fecho_lampada', 'gobo_wheel', 'prism_1',
-  'prism_1_rotation', 'virtual_speed', 'frost', 'prism_1_rotation_2',
+  'prism_rotation', 'virtual_speed', 'frost', 'focus',
   'pan', 'pan_fine', 'tilt', 'tilt_fine', 'special_random', 'indefinido', 'reset',
 ];
 
@@ -85,10 +85,16 @@ describe('semantic fixture adapter', () => {
     expect(writes).toEqual([[123, 112]]);
   });
 
-  it('setColor bloqueia a cor do moving head 1 enquanto o profile está incompleto', () => {
+  it('setGobo rejeita um padrão fora da tabela medida do moving head 1', () => {
+    // 'mh1' casa com o profile real moving-head-beam-1 (fixtureProfiles não é
+    // injetável). Todas as capabilities declaradas no profile real do MH1
+    // (cor, strobe, prism, focus, gobo, frost, prismRotation) já foram
+    // mapeadas e reconciliadas fisicamente — não sobra nenhuma capability
+    // incompleta pra testar CAPABILITY_NOT_MAPPED aqui. Mantém cobertura de
+    // VALUE_NOT_SUPPORTED para um nome de gobo inexistente na tabela.
     const { deps, writes } = makeDeps();
 
-    expect(adapter.setColor(deps, 'mh1', 'green').code).toBe('CAPABILITY_NOT_MAPPED');
+    expect(adapter.setGobo(deps, 'mh1', 'gobo-fora-da-tabela').code).toBe('VALUE_NOT_SUPPORTED');
     expect(writes).toEqual([]);
   });
 
@@ -232,13 +238,73 @@ describe('semantic fixture adapter', () => {
     expect(writes).toEqual([]);
   });
 
-  it('setStrobe, setPrism e setGobo respeitam mapping-incomplete', () => {
-    const { deps, writes } = makeDeps();
+  it('setGobo usa o valor calibrado do moving head 2', () => {
+    // strobe, prism, focus e gobo do MH2 foram todos mapeados e reconciliados
+    // fisicamente (status virou 'ready' no profile real) — nenhum deles serve
+    // mais de exemplo de "mapping-incomplete" aqui.
+    const { deps, writes } = makeDeps({
+      fixtures: FIXTURES.map((f) => f.id === 'mh2'
+        ? { ...f, adapters: { ...f.adapters, gobo: { circulo_bolinhas_finas: 10, varios_l: 35 } } }
+        : f),
+    });
 
-    expect(adapter.setStrobe(deps, 'mh2', 'fast').code).toBe('CAPABILITY_NOT_MAPPED');
-    expect(adapter.setPrism(deps, 'mh2', 'open').code).toBe('CAPABILITY_NOT_MAPPED');
-    expect(adapter.setGobo(deps, 'mh2', 'gobo1').code).toBe('CAPABILITY_NOT_MAPPED');
-    expect(writes).toEqual([]);
+    expect(adapter.setGobo(deps, 'mh2', 'varios_l')).toMatchObject({ ok: true, channel: 126, value: 35 });
+    expect(writes).toEqual([[126, 35]]);
+  });
+
+  it('setPrism usa o valor calibrado do moving head 2', () => {
+    const { deps, writes } = makeDeps({
+      fixtures: FIXTURES.map((f) => f.id === 'mh2'
+        ? { ...f, adapters: { ...f.adapters, prism: { ligado: 150 } } }
+        : f),
+    });
+
+    expect(adapter.setPrism(deps, 'mh2', 'ligado')).toMatchObject({ ok: true, channel: 127, value: 150 });
+    expect(writes).toEqual([[127, 150]]);
+  });
+
+  it('setFocus usa o valor calibrado do moving head 2', () => {
+    const { deps, writes } = makeDeps({
+      fixtures: FIXTURES.map((f) => f.id === 'mh2'
+        ? { ...f, adapters: { ...f.adapters, focus: { focado: 100 } } }
+        : f),
+    });
+
+    expect(adapter.setFocus(deps, 'mh2', 'focado')).toMatchObject({ ok: true, channel: 131, value: 100 });
+    expect(writes).toEqual([[131, 100]]);
+  });
+
+  it('setFrost usa o valor calibrado do moving head 2', () => {
+    const { deps, writes } = makeDeps({
+      fixtures: FIXTURES.map((f) => f.id === 'mh2'
+        ? { ...f, adapters: { ...f.adapters, frost: { ligado: 255 } } }
+        : f),
+    });
+
+    expect(adapter.setFrost(deps, 'mh2', 'ligado')).toMatchObject({ ok: true, channel: 130, value: 255 });
+    expect(writes).toEqual([[130, 255]]);
+  });
+
+  it('setPrismRotation usa o valor calibrado do moving head 2', () => {
+    const { deps, writes } = makeDeps({
+      fixtures: FIXTURES.map((f) => f.id === 'mh2'
+        ? { ...f, adapters: { ...f.adapters, prismRotation: { rapido: 150, medio: 165, lento: 180 } } }
+        : f),
+    });
+
+    expect(adapter.setPrismRotation(deps, 'mh2', 'lento')).toMatchObject({ ok: true, channel: 128, value: 180 });
+    expect(writes).toEqual([[128, 180]]);
+  });
+
+  it('setStrobe usa o valor calibrado do moving head 2', () => {
+    const { deps, writes } = makeDeps({
+      fixtures: FIXTURES.map((f) => f.id === 'mh2'
+        ? { ...f, adapters: { ...f.adapters, strobe: { lento: 40, medio: 60, rapido: 80, extra_rapido: 100 } } }
+        : f),
+    });
+
+    expect(adapter.setStrobe(deps, 'mh2', 'rapido')).toMatchObject({ ok: true, channel: 124, value: 80 });
+    expect(writes).toEqual([[124, 80]]);
   });
 
   it('getCapabilities expõe o profile do moving head 2', () => {

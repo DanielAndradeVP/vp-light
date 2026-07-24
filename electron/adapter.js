@@ -40,6 +40,23 @@ function clampDmx(value) {
   return Math.max(0, Math.min(255, n));
 }
 
+/**
+ * Busca uma chave num mapa comparando versões normalizadas (minúsculo, sem
+ * acento) dos dois lados — chave de busca E chaves do mapa. Corrige a
+ * assimetria em que só a consulta era normalizada e as chaves gravadas no
+ * show (maiúscula, acento, espaço) nunca batiam.
+ * Devolve { found, value } em vez de undefined/null puro porque um valor DMX
+ * legítimo pode ser 0 (ex.: "white": 0) — não dá pra usar checagem falsy.
+ */
+function normalizedLookup(mapping, key) {
+  if (!mapping || typeof mapping !== 'object') return { found: false };
+  const target = normalizeKey(key);
+  for (const k of Object.keys(mapping)) {
+    if (normalizeKey(k) === target) return { found: true, value: mapping[k] };
+  }
+  return { found: false };
+}
+
 // Cores RGB padrão: definição matemática do espaço de cor aditivo, não dados
 // medidos ou calibrados de um equipamento físico específico.
 const STANDARD_RGB_COLORS = {
@@ -116,9 +133,12 @@ function mappedValueResult(deps, fixture, profile, fixtureId, capability, reques
     return failure(fixtureId, capability, 'INVALID_VALUE', requestedValue, 'O valor deve ser uma string');
   }
 
-  const logical = normalizeKey(requestedValue);
-  const mapping = fixture.adapters?.[capability];
-  if (!mapping || typeof mapping !== 'object' || !Object.prototype.hasOwnProperty.call(mapping, logical)) {
+  const keyLookup = normalizedLookup(fixture.adapters, capability);
+  if (!keyLookup.found || !keyLookup.value || typeof keyLookup.value !== 'object') {
+    return failure(fixtureId, capability, 'VALUE_NOT_SUPPORTED', requestedValue, `Valor "${requestedValue}" não suportado`);
+  }
+  const valueLookup = normalizedLookup(keyLookup.value, requestedValue);
+  if (!valueLookup.found) {
     return failure(fixtureId, capability, 'VALUE_NOT_SUPPORTED', requestedValue, `Valor "${requestedValue}" não suportado`);
   }
 
@@ -128,7 +148,7 @@ function mappedValueResult(deps, fixture, profile, fixtureId, capability, reques
     return failure(fixtureId, capability, 'CHANNEL_NOT_FOUND', requestedValue, `Canal da capability "${capability}" não encontrado`);
   }
 
-  const value = clampDmx(mapping[logical]);
+  const value = clampDmx(valueLookup.value);
   if (value === null) {
     return failure(fixtureId, capability, 'INVALID_VALUE', requestedValue, `Mapeamento de "${requestedValue}" não é numérico`);
   }
@@ -156,13 +176,13 @@ function setColor(deps, fixtureId, colorName) {
         return failure(fixtureId, capability, 'CHANNEL_NOT_FOUND', colorName, 'Canal da roda de cor não encontrado');
       }
 
-      const logical = normalizeKey(colorName);
-      const mapping = fixture.adapters?.color;
-      if (!mapping || typeof mapping !== 'object' || !Object.prototype.hasOwnProperty.call(mapping, logical)) {
+      const keyLookup = normalizedLookup(fixture.adapters, capability);
+      const valueLookup = keyLookup.found ? normalizedLookup(keyLookup.value, colorName) : { found: false };
+      if (!valueLookup.found) {
         return failure(fixtureId, capability, 'VALUE_NOT_SUPPORTED', colorName, `Cor "${colorName}" não suportada`);
       }
 
-      const value = clampDmx(mapping[logical]);
+      const value = clampDmx(valueLookup.value);
       if (value === null) {
         return failure(fixtureId, capability, 'INVALID_VALUE', colorName, `Mapeamento da cor "${colorName}" não é numérico`);
       }
@@ -333,6 +353,45 @@ function setGobo(deps, fixtureId, value) {
   }
 }
 
+function setFocus(deps, fixtureId, intent) {
+  const capability = 'focus';
+  try {
+    const resolvedFixture = resolveEnabledFixture(deps, fixtureId, capability, intent);
+    if (resolvedFixture.error) return resolvedFixture.error;
+    const resolvedCapability = resolveProfileCapability(resolvedFixture.fixture, fixtureId, capability, intent);
+    if (resolvedCapability.error) return resolvedCapability.error;
+    return mappedValueResult(deps, resolvedFixture.fixture, resolvedCapability.profile, fixtureId, capability, intent);
+  } catch (error) {
+    return failure(fixtureId, capability, 'INVALID_VALUE', intent, error?.message || 'Valor inválido');
+  }
+}
+
+function setFrost(deps, fixtureId, intent) {
+  const capability = 'frost';
+  try {
+    const resolvedFixture = resolveEnabledFixture(deps, fixtureId, capability, intent);
+    if (resolvedFixture.error) return resolvedFixture.error;
+    const resolvedCapability = resolveProfileCapability(resolvedFixture.fixture, fixtureId, capability, intent);
+    if (resolvedCapability.error) return resolvedCapability.error;
+    return mappedValueResult(deps, resolvedFixture.fixture, resolvedCapability.profile, fixtureId, capability, intent);
+  } catch (error) {
+    return failure(fixtureId, capability, 'INVALID_VALUE', intent, error?.message || 'Valor inválido');
+  }
+}
+
+function setPrismRotation(deps, fixtureId, intent) {
+  const capability = 'prismRotation';
+  try {
+    const resolvedFixture = resolveEnabledFixture(deps, fixtureId, capability, intent);
+    if (resolvedFixture.error) return resolvedFixture.error;
+    const resolvedCapability = resolveProfileCapability(resolvedFixture.fixture, fixtureId, capability, intent);
+    if (resolvedCapability.error) return resolvedCapability.error;
+    return mappedValueResult(deps, resolvedFixture.fixture, resolvedCapability.profile, fixtureId, capability, intent);
+  } catch (error) {
+    return failure(fixtureId, capability, 'INVALID_VALUE', intent, error?.message || 'Valor inválido');
+  }
+}
+
 function getCapabilities(deps, fixtureId) {
   const capability = 'capabilities';
   try {
@@ -363,21 +422,19 @@ function resolve(getFixture, getChannelByAlias, isEnabled, fixtureId, alias, ada
   try {
     const fixture = getFixture(fixtureId);
     if (!fixture || !isEnabled(fixture)) return null;
-    if (!getChannelByAlias(fixture, alias)) return null;
+    if (getChannelByAlias(fixture, alias) === null) return null;
 
     const key = normalizeKey(adapterKey);
     const logical = normalizeKey(logicalValue);
     if (!key || !logical) return null;
 
-    const adapters = fixture.adapters;
-    if (!adapters || typeof adapters !== 'object') return null;
+    const keyLookup = normalizedLookup(fixture.adapters, key);
+    if (!keyLookup.found) return null;
 
-    const mapping = adapters[key];
-    if (!mapping || typeof mapping !== 'object') return null;
+    const valueLookup = normalizedLookup(keyLookup.value, logical);
+    if (!valueLookup.found) return null;
 
-    if (!Object.prototype.hasOwnProperty.call(mapping, logical)) return null;
-
-    return clampDmx(mapping[logical]);
+    return clampDmx(valueLookup.value);
   } catch {
     return null;
   }
@@ -394,5 +451,8 @@ module.exports = {
   setStrobe,
   setPrism,
   setGobo,
+  setFocus,
+  setFrost,
+  setPrismRotation,
   getCapabilities,
 };
