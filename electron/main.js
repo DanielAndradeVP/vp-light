@@ -1153,7 +1153,7 @@ function compileLayer(filePath) {
   return { buffer, touched, controlledMask, context: ctx };
 }
 
-ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
+ipcMain.handle('script:create', async (_, pageId, fkey, name, options = {}) => {
   const file = path.join(SCRIPTS_DIR, `${name}.js`);
   const groups = Array.isArray(options.groups) ? options.groups : [];
   const color = typeof options.color === 'string' ? options.color : '#000000';
@@ -1209,7 +1209,7 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
     library = scriptLibraryLogic.updateEntry(library, id, { color });
   }
   const previous = scriptLibraryLogic.resolveScriptSlot(
-    library, current.scriptPages, 'page-1', fkey
+    library, current.scriptPages, pageId, fkey
   );
   // Evita deixar uma camada DMX órfã quando a associação forçada substitui o slot.
   if (previous && previous.scriptId !== id && runningScripts[previous.scriptId]) {
@@ -1217,7 +1217,7 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
   }
   let pages;
   try {
-    pages = scriptLibraryLogic.forceAssociateEntry(library, current.scriptPages, id, 'page-1', fkey);
+    pages = scriptLibraryLogic.forceAssociateEntry(library, current.scriptPages, id, pageId, fkey);
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1230,21 +1230,21 @@ ipcMain.handle('script:create', async (_, fkey, name, options = {}) => {
   return { ok: true, name, file, color };
 });
 
-ipcMain.handle('script:edit', async (_, fkey, filePath) => {
+ipcMain.handle('script:edit', async (_, pageId, fkey, filePath) => {
   if (filePath) return openScriptInVSCode(filePath);
   const current = show.getShow();
   const resolved = scriptLibraryLogic.resolveScriptSlot(
-    current?.scriptLibrary || {}, current?.scriptPages || { pages: [] }, 'page-1', fkey
+    current?.scriptLibrary || {}, current?.scriptPages || { pages: [] }, pageId, fkey
   );
   if (!resolved) return { ok: false, error: 'Nenhum script neste botão' };
   return openScriptInVSCode(path.join(SCRIPTS_DIR, resolved.entry.entry));
 });
 
-ipcMain.handle('script:clear', (_, fkey) => {
+ipcMain.handle('script:clear', (_, pageId, fkey) => {
   const current = show.getShow();
   if (!current) return { ok: true };
   const resolved = scriptLibraryLogic.resolveScriptSlot(
-    current.scriptLibrary || {}, current.scriptPages || { pages: [] }, 'page-1', fkey
+    current.scriptLibrary || {}, current.scriptPages || { pages: [] }, pageId, fkey
   );
   if (!resolved) return { ok: true };
   stopScriptById(resolved.scriptId, 'limpar');

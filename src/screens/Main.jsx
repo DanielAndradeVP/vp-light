@@ -6,7 +6,6 @@ import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { activeSceneMatches, parseSceneRef, sceneRefId, useShow } from '../store/showStore.js';
 import {
   findScriptAssociation,
-  getPageActivitySummary,
   getScriptPagesList,
   getScriptsForPage,
 } from '../store/scriptPagesSelectors.js';
@@ -673,10 +672,10 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
-  const [scriptMenu, setScriptMenu] = useState(null); // { x, y, fkey }
+  const [scriptMenu, setScriptMenu] = useState(null); // { x, y, fkey, pageId }
   const [scriptPageMenu, setScriptPageMenu] = useState(null); // { x, y, pageId }
-  const [createModal, setCreateModal] = useState(null); // { fkey }
-  const [existingScriptsModal, setExistingScriptsModal] = useState(null); // { fkey }
+  const [createModal, setCreateModal] = useState(null); // { fkey, pageId }
+  const [existingScriptsModal, setExistingScriptsModal] = useState(null); // { fkey, pageId }
   const [scriptName, setScriptName] = useState('');
   const [existingScripts, setExistingScripts] = useState([]);
   const [selectedExisting, setSelectedExisting] = useState(null);
@@ -692,17 +691,53 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   const FKEYS = ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'];
   const scriptPagesList = useMemo(() => getScriptPagesList(scriptLibrarySnapshot), [scriptLibrarySnapshot]);
-  const currentPageScripts = useMemo(
-    () => getScriptsForPage(scriptLibrarySnapshot, activeScriptPageId),
-    [scriptLibrarySnapshot, activeScriptPageId]
-  );
-  const scriptPageActivity = useMemo(
-    () => getPageActivitySummary(scriptLibrarySnapshot),
+  // Cada fileira de F-keys mostra uma página diferente ao mesmo tempo — os menus/modais de
+  // script sempre carregam o pageId de onde foram abertos, em vez de depender de "a página ativa".
+  const getPageScripts = useCallback(
+    (pageId) => getScriptsForPage(scriptLibrarySnapshot, pageId),
     [scriptLibrarySnapshot]
   );
-  const legacyScriptCreationSupported = activeScriptPageId === 'page-1';
-  const activeScriptPageIdRef = useRef(activeScriptPageId);
-  useEffect(() => { activeScriptPageIdRef.current = activeScriptPageId; }, [activeScriptPageId]);
+  const editingScript = createModal ? getPageScripts(createModal.pageId)[createModal.fkey] : null;
+  const existingModalScript = existingScriptsModal ? getPageScripts(existingScriptsModal.pageId)[existingScriptsModal.fkey] : null;
+  const scriptMenuScript = scriptMenu ? getPageScripts(scriptMenu.pageId)[scriptMenu.fkey] : null;
+  // Criar/associar script agora funciona em qualquer página (script:create e script:edit
+  // recebem pageId explícito no backend, não ficam mais travados em 'page-1').
+  // Bancos de 3 páginas de script — o botão ⇅ troca qual trio de páginas ocupa as 3 fileiras.
+  const scriptPageBanks = useMemo(() => {
+    const sorted = [...scriptPagesList].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const banks = [];
+    for (let i = 0; i < sorted.length; i += 3) banks.push(sorted.slice(i, i + 3));
+    return banks.length ? banks : [[]];
+  }, [scriptPagesList]);
+  const [scriptBankIndex, setScriptBankIndex] = useState(0);
+  useEffect(() => {
+    if (scriptBankIndex >= scriptPageBanks.length) setScriptBankIndex(0);
+  }, [scriptPageBanks.length, scriptBankIndex]);
+  const scriptBankHasActivity = (scriptPageBanks[scriptBankIndex] || []).some(
+    page => page && (scriptLibrarySnapshot.registered || []).some(entry => entry.running && entry.associatedPageId === page.id)
+  );
+  // Lista 1, 2 e 3 = as 3 posições de fileira dentro do banco ativo (lista 1 = fileira de baixo,
+  // a página F1–F12 original do sistema quando o banco 1 está selecionado).
+  const scriptListPages = scriptPageBanks[scriptBankIndex] || [];
+  // Qual lista (0=lista1, 1=lista2, 2=lista3) está "em uso" — recebe as teclas físicas F1–F12
+  // e os atalhos numéricos 1/2/3. Lista 1 é o padrão ao iniciar.
+  const [activeScriptListIndex, setActiveScriptListIndex] = useState(0);
+  // Liga/desliga o conceito de "lista em uso". Desligado: 1/2/3 e F1–F12 físicos não fazem
+  // nada por scripts — só o toque direto em qualquer F-key de qualquer fileira funciona.
+  const [scriptListModeEnabled, setScriptListModeEnabled] = useState(true);
+  // Memoizado: sem isso, getScriptsForPage rodava 3x a cada re-render do Main.jsx
+  // (o polling de conflitos já força re-render a cada 100ms), travando a UI.
+  const scriptFKeyDisplayRows = useMemo(
+    () => [2, 1, 0].map(listIndex => {
+      const page = scriptListPages[listIndex];
+      return {
+        listIndex,
+        page,
+        scripts: page ? getScriptsForPage(scriptLibrarySnapshot, page.id) : {},
+      };
+    }),
+    [scriptListPages, scriptLibrarySnapshot]
+  );
   const erroredScriptIdsRef = useRef(new Set());
 
   useEffect(() => {
@@ -741,14 +776,6 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   useEffect(() => {
     window.vp.getAllPageScripts(currentPageId).then(result => setPageScripts(result || {}));
-  }, [currentPageId]);
-
-  // Ao trocar de página, cenas ativas de outras páginas deixam de valer no DMX.
-  const prevPageIdRef = useRef(currentPageId);
-  useEffect(() => {
-    if (prevPageIdRef.current === currentPageId) return;
-    prevPageIdRef.current = currentPageId;
-    setActiveScenes(prev => prev.filter(ref => parseSceneRef(ref, currentPageId).pageId === currentPageId));
   }, [currentPageId]);
 
   // Metadados de cenas ativas (customFunctions). DMX via SceneDmxSync no showStore.
@@ -818,7 +845,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     window.vp.listScripts().then(r => {
       const files = r.ok ? r.files : [];
       setExistingScripts(files);
-      const current = currentPageScripts[existingScriptsModal.fkey];
+      const current = getPageScripts(existingScriptsModal.pageId)[existingScriptsModal.fkey];
       if (!current) {
         setSelectedExisting(null);
         return;
@@ -827,7 +854,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
       setSelectedExisting(match || { name: current.name, color: current.color });
       setScriptColor(current.color || DEFAULT_SCRIPT_COLOR);
     });
-  }, [existingScriptsModal, currentPageScripts]);
+  }, [existingScriptsModal, getPageScripts]);
 
   const assignedScriptKeys = useMemo(() => {
     const files = new Set();
@@ -840,18 +867,17 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     return { files, names };
   }, [scriptLibrarySnapshot]);
 
-  const existingModalAssigned = existingScriptsModal ? currentPageScripts[existingScriptsModal.fkey] : null;
-  const canConfirmExistingScript = !!(selectedExisting || existingModalAssigned);
+  const canConfirmExistingScript = !!(selectedExisting || existingModalScript);
 
   const selectableExistingScripts = useMemo(
     () => {
-      const current = existingScriptsModal ? currentPageScripts[existingScriptsModal.fkey] : null;
+      const current = existingModalScript;
       return existingScripts.filter(s => {
         if (current && s.name === current.name) return true;
         return !assignedScriptKeys.files.has(s.file) && !assignedScriptKeys.names.has(s.name);
       });
     },
-    [existingScripts, assignedScriptKeys, existingScriptsModal, currentPageScripts],
+    [existingScripts, assignedScriptKeys, existingModalScript],
   );
 
   const groupedExistingScripts = useMemo(
@@ -861,18 +887,18 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
   useEffect(() => {
     if (!existingScriptsModal || !selectedExisting) return;
-    const assigned = currentPageScripts[existingScriptsModal.fkey];
+    const assigned = getPageScripts(existingScriptsModal.pageId)[existingScriptsModal.fkey];
     if (assigned && assigned.name === selectedExisting.name) {
       return;
     }
     const inUse = assignedScriptKeys.files.has(selectedExisting.file)
       || assignedScriptKeys.names.has(selectedExisting.name);
     if (inUse) setSelectedExisting(null);
-  }, [existingScriptsModal, selectedExisting, assignedScriptKeys, currentPageScripts]);
+  }, [existingScriptsModal, selectedExisting, assignedScriptKeys, getPageScripts]);
 
-  async function handleScriptRightClick(e, fkey) {
+  async function handleScriptRightClick(e, pageId, fkey) {
     e.preventDefault();
-    setScriptMenu({ x: e.clientX, y: e.clientY, fkey });
+    setScriptMenu({ x: e.clientX, y: e.clientY, fkey, pageId });
   }
 
   function handleAddScriptPage() {
@@ -887,12 +913,12 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     setScriptPageMenu({ x: e.clientX, y: e.clientY, pageId });
   }
 
-  async function handleToggleScript(fkey) {
+  async function handleToggleScript(pageId, fkey) {
     let result;
     try {
-      result = await window.vp.toggleScriptAt(activeScriptPageIdRef.current, fkey);
+      result = await window.vp.toggleScriptAt(pageId, fkey);
     } catch (e) {
-      console.error('[vp] toggleScript IPC error:', fkey, e);
+      console.error('[vp] toggleScript IPC error:', pageId, fkey, e);
       return;
     }
     if (!result?.ok) {
@@ -909,7 +935,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     const finalGroups = FIXTURE_GROUPS
       .filter(g => selectedGroups.has(g.key) || g.fixtures.some(f => selectedFixtures.has(f)))
       .map(g => g.key);
-    const result = await window.vp.createScript(createModal.fkey, scriptName.trim(), { groups: finalGroups, color: scriptColor });
+    const result = await window.vp.createScript(createModal.pageId, createModal.fkey, scriptName.trim(), { groups: finalGroups, color: scriptColor });
     setCreateModal(null);
     setScriptName('');
     setScriptColor(DEFAULT_SCRIPT_COLOR);
@@ -917,8 +943,8 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     setSelectedFixtures(new Set());
   }
 
-  async function handleClearScript(fkey) {
-    const scriptId = currentPageScripts[fkey]?.scriptId;
+  async function handleClearScript(pageId, fkey) {
+    const scriptId = getPageScripts(pageId)[fkey]?.scriptId;
     if (scriptId) await unassignScript(scriptId);
     setScriptMenu(null);
   }
@@ -1185,7 +1211,19 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
     if (isEditableTarget) return;
     if (e.repeat) return;
-    if (!e.ctrlKey && !e.altKey && !e.metaKey && /^[0-9]$/.test(e.key)) {
+    // 1/2/3 escolhem qual lista de scripts (F1–F12) fica "em uso" — não trocam mais página de cena.
+    // Só funciona com o modo de lista ligado (botão de cadeado ao lado do ⇅).
+    if (!e.ctrlKey && !e.altKey && !e.metaKey && /^[123]$/.test(e.key)) {
+      if (scriptListModeEnabled) {
+        const listIndex = Number(e.key) - 1;
+        if (scriptListPages[listIndex]) {
+          e.preventDefault();
+          setActiveScriptListIndex(listIndex);
+        }
+      }
+      return;
+    }
+    if (!e.ctrlKey && !e.altKey && !e.metaKey && /^[04-9]$/.test(e.key)) {
       const pageId = e.key === '0' ? '10' : e.key;
       if (pageId !== currentPageId && pages[pageId]) {
         e.preventDefault();
@@ -1201,8 +1239,15 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
     }
     if (e.code === 'Space') { e.preventDefault(); handleBlackout(); return; }
     if (key === 'Q') { e.preventDefault(); handleDeselectScene(); return; }
-    if (FKEYS.includes(key)) { e.preventDefault(); handleToggleScript(key); return; }
-  }, [currentPageId, handleActivateScene, handleBlackout, handleDeselectScene, handleToggleScript, pages, setCurrentPage]);
+    if (FKEYS.includes(key)) {
+      e.preventDefault();
+      if (scriptListModeEnabled) {
+        const kbPageId = scriptListPages[activeScriptListIndex]?.id;
+        if (kbPageId) handleToggleScript(kbPageId, key);
+      }
+      return;
+    }
+  }, [currentPageId, handleActivateScene, handleBlackout, handleDeselectScene, handleToggleScript, pages, setCurrentPage, scriptListPages, activeScriptListIndex, scriptListModeEnabled]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKey);
@@ -2576,84 +2621,113 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         })}
       </div>
 
-      {/* PÁGINAS DE SCRIPTS */}
-      <div style={{ display:'flex', alignItems:'center', gap:4, padding:'2px 4px', background:'#000000', borderTop:'1px solid #333', overflowX:'auto' }}>
-        {scriptPagesList.map(page => {
-          const isActive = page.id === activeScriptPageId;
-          const activity = scriptPageActivity[page.id] || { activeCount: 0, hasActive: false };
+      {/* F-KEYS — 3 fileiras simultâneas (lista 1, 2 e 3). O botão ⇅ troca qual trio de páginas
+          está sendo mostrado; o cadeado abaixo dele liga/desliga o modo de "lista em uso"; os
+          botões numerados (ou o atalho de teclado 1/2/3) escolhem qual fileira recebe F1–F12. */}
+      <div style={{ display:'flex', alignItems:'stretch', gap:4, padding:4, background:'#000000', color:'#ffffff', borderTop:'1px solid #5f8588' }}>
+        <div style={{ flex:'0 0 28px', display:'flex', flexDirection:'column', gap:2 }}>
+          <button
+            onClick={() => setScriptBankIndex(i => (i + 1) % Math.max(scriptPageBanks.length, 1))}
+            title={`Alternar páginas de scripts mostradas (${scriptBankIndex + 1}/${Math.max(scriptPageBanks.length, 1)})`}
+            style={{
+              flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
+              fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:700, borderRadius:0, cursor:'pointer',
+              boxSizing:'border-box',
+              background: scriptBankHasActivity ? '#7a1420' : '#1a1a1a',
+              border:'1px solid #333', color:'#ffffff',
+            }}
+          >
+            <span style={{ fontSize:13, lineHeight:1 }}>⇅</span>
+            <span>{scriptBankIndex + 1}/{Math.max(scriptPageBanks.length, 1)}</span>
+          </button>
+          <button
+            onClick={() => setScriptListModeEnabled(v => !v)}
+            title={scriptListModeEnabled
+              ? 'Modo de lista em uso: LIGADO — teclas 1/2/3 escolhem a lista, F1–F12 físico usa a lista em uso. Clique para desligar.'
+              : 'Modo de lista em uso: DESLIGADO — F1–F12 físico não aciona scripts; toque em qualquer F-key de qualquer lista funciona normalmente. Clique para religar.'}
+            style={{
+              flex:1, display:'flex', alignItems:'center', justifyContent:'center',
+              fontFamily:'Arial, Helvetica, sans-serif', fontSize:14, fontWeight:700, borderRadius:0, cursor:'pointer',
+              boxSizing:'border-box',
+              background: scriptListModeEnabled ? '#1a1a1a' : '#3a2f00',
+              border: scriptListModeEnabled ? '1px solid #333' : `1px solid ${theme.colors.accent}`,
+              color: scriptListModeEnabled ? '#ffffff' : theme.colors.accent,
+            }}
+          >
+            {scriptListModeEnabled ? '🔒' : '🔓'}
+          </button>
+        </div>
+        <div style={{ flex:'0 0 24px', display:'flex', flexDirection:'column', gap:3 }}>
+        {scriptFKeyDisplayRows.map(({ listIndex, page }) => {
+          const isListActive = activeScriptListIndex === listIndex;
           return (
             <button
-              key={page.id}
-              onClick={() => setActiveScriptPageId(page.id)}
-              onContextMenu={(e) => handleScriptPageRightClick(e, page.id)}
+              key={page ? page.id : `empty-list-${listIndex}`}
+              onClick={() => { if (page && scriptListModeEnabled) setActiveScriptListIndex(listIndex); }}
+              disabled={!page || !scriptListModeEnabled}
+              title={`Lista ${listIndex + 1}${page ? ` — ${page.name}` : ''} (atalho: tecla ${listIndex + 1})${isListActive ? ' — em uso' : ''}${scriptListModeEnabled ? '' : ' — modo desligado'}`}
               style={{
-                position:'relative', flex:'0 0 auto', minWidth:64,
-                padding:'4px 10px', fontSize:11, fontFamily:'Arial, Helvetica, sans-serif',
-                fontWeight:isActive ? 700 : 400, borderRadius:0, cursor:'pointer',
-                background:isActive ? theme.colors.accentOverlay : '#1a1a1a',
-                border:isActive ? `2px solid ${theme.colors.accent}` : '1px solid #333',
-                color:isActive ? '#ffffff' : '#aaaaaa',
+                height:36, minHeight:36, display:'flex', alignItems:'center', justifyContent:'center',
+                fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, borderRadius:0,
+                cursor: (page && scriptListModeEnabled) ? 'pointer' : 'default', boxSizing:'border-box',
+                opacity: scriptListModeEnabled ? 1 : 0.4,
+                background: isListActive ? theme.colors.accent : '#1a1a1a',
+                border: isListActive ? `2px solid ${theme.colors.accent}` : '1px solid #333',
+                color: isListActive ? '#000000' : '#ffffff',
               }}
-              title={`${page.name}${activity.hasActive ? ` — ${activity.activeCount} script(s) ativo(s)` : ''}`}
             >
-              {page.name}
-              {activity.hasActive && (
-                <span style={{
-                  position:'absolute', top:-5, right:-5, minWidth:15, height:15, borderRadius:8,
-                  background:'#e33344', color:'#fff', fontSize:9, fontWeight:700,
-                  display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px', lineHeight:1,
-                }}>{activity.activeCount}</span>
-              )}
+              {listIndex + 1}
             </button>
           );
         })}
-        <button
-          onClick={handleAddScriptPage}
-          title="Nova página de scripts"
-          style={{ flex:'0 0 auto', minWidth:26, padding:'4px 8px', fontSize:14, fontWeight:700, background:'#1a1a1a', border:'1px solid #333', color:'#aaaaaa', cursor:'pointer', borderRadius:0 }}
-        >+</button>
-      </div>
-
-      {/* F-KEYS */}
-      <div style={{ display:'flex', alignItems:'center', gap:4, padding:4, background:'#000000', color:'#ffffff', borderTop:'1px solid #5f8588', minHeight:42 }}>
-        {FKEYS.map(fkey => {
-          const script = currentPageScripts[fkey];
-          const isRunning = script?.running;
-          const fKeyStyle = theme.components.fKeyButton;
-          const fKeyBg = script?.color || fKeyStyle.background;
-          const fKeyTextColor = getContrastTextColor(fKeyBg);
+        </div>
+        <div style={{ flex:1, display:'flex', flexDirection:'column', gap:3 }}>
+        {scriptFKeyDisplayRows.map(({ listIndex, page, scripts: rowScripts }) => {
           return (
-            <button
-              key={fkey}
-              onClick={(e) => { e.stopPropagation(); handleToggleScript(fkey); }}
-              onContextMenu={(e) => handleScriptRightClick(e, fkey)}
-              style={{
-                position:'relative',
-                flex:1,
-                fontFamily:'Arial, Helvetica, sans-serif',
-                fontSize:12,
-                fontWeight:700,
-                lineHeight:1.1,
-                height:36,
-                minHeight:36,
-                padding:'4px 8px',
-                borderRadius:0,
-                boxSizing:'border-box',
-                cursor:'pointer',
-                background: fKeyBg,
-                border: isRunning ? `3px solid ${theme.colors.borderStrong}` : fKeyStyle.border,
-                color: fKeyTextColor,
-                boxShadow:'none',
-                outline:'none',
-                display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:1, minWidth:0,
-              }}
-            >
-              <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, color:'inherit' }}>{fkey}</span>
-              {script && <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, overflow:'hidden', maxWidth:'100%', color:'inherit' }}>{script.name}</span>}
-              <ScriptClassificationBadges script={script} />
-            </button>
+            <div key={page ? page.id : `empty-${listIndex}`} style={{ display:'flex', alignItems:'center', gap:4, opacity: page ? 1 : 0.3 }}>
+              {FKEYS.map(fkey => {
+                const script = rowScripts[fkey];
+                const isRunning = script?.running;
+                const fKeyStyle = theme.components.fKeyButton;
+                const fKeyBg = script?.color || fKeyStyle.background;
+                const fKeyTextColor = getContrastTextColor(fKeyBg);
+                return (
+                  <button
+                    key={fkey}
+                    disabled={!page}
+                    onClick={(e) => { e.stopPropagation(); if (page) handleToggleScript(page.id, fkey); }}
+                    onContextMenu={(e) => { if (page) handleScriptRightClick(e, page.id, fkey); }}
+                    style={{
+                      position:'relative',
+                      flex:1,
+                      fontFamily:'Arial, Helvetica, sans-serif',
+                      fontSize:12,
+                      fontWeight:700,
+                      lineHeight:1.1,
+                      height:36,
+                      minHeight:36,
+                      padding:'4px 8px',
+                      borderRadius:0,
+                      boxSizing:'border-box',
+                      cursor: page ? 'pointer' : 'default',
+                      background: fKeyBg,
+                      border: isRunning ? `3px solid ${theme.colors.borderStrong}` : fKeyStyle.border,
+                      color: fKeyTextColor,
+                      boxShadow:'none',
+                      outline:'none',
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:1, minWidth:0,
+                    }}
+                  >
+                    <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:12, fontWeight:700, color:'inherit' }}>{fkey}</span>
+                    {script && <span style={{ fontFamily:'Arial, Helvetica, sans-serif', fontSize:10, fontWeight:400, overflow:'hidden', maxWidth:'100%', color:'inherit' }}>{script.name}</span>}
+                    <ScriptClassificationBadges script={script} />
+                  </button>
+                );
+              })}
+            </div>
           );
         })}
+        </div>
       </div>
 
       {/* MENU DE CONTEXTO — PÁGINA DE SCRIPTS */}
@@ -2713,71 +2787,64 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
         >
           <div
             onClick={() => {
-              if (!legacyScriptCreationSupported) return;
-              setExistingScriptsModal({ fkey: scriptMenu.fkey });
+              setExistingScriptsModal({ fkey: scriptMenu.fkey, pageId: scriptMenu.pageId });
               setScriptMenu(null);
             }}
-            style={{ padding:'8px 14px', fontSize:12, cursor:legacyScriptCreationSupported ? 'pointer' : 'not-allowed', color:legacyScriptCreationSupported ? '#e0e0e0' : '#555' }}
-            onMouseEnter={e => { if (legacyScriptCreationSupported) e.currentTarget.style.background='#383838'; }}
+            style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+            onMouseEnter={e => { e.currentTarget.style.background='#383838'; }}
             onMouseLeave={e => e.currentTarget.style.background='transparent'}
           >
             Scripts Existentes
           </div>
           <div
             onClick={() => {
-              if (!legacyScriptCreationSupported) return;
-              const currentScript = currentPageScripts[scriptMenu.fkey];
-              setCreateModal({ fkey: scriptMenu.fkey });
+              setCreateModal({ fkey: scriptMenu.fkey, pageId: scriptMenu.pageId });
               setScriptName('');
-              setScriptColor(currentScript?.color || DEFAULT_SCRIPT_COLOR);
+              setScriptColor(scriptMenuScript?.color || DEFAULT_SCRIPT_COLOR);
               setSelectedGroups(new Set());
               setSelectedFixtures(new Set());
               setScriptMenu(null);
             }}
-            style={{
-              padding:'8px 14px', fontSize:12,
-              cursor: legacyScriptCreationSupported ? 'pointer' : 'not-allowed',
-              color: legacyScriptCreationSupported ? '#e0e0e0' : '#555',
-            }}
-            onMouseEnter={e => { if (legacyScriptCreationSupported) e.currentTarget.style.background='#383838'; }}
+            style={{ padding:'8px 14px', fontSize:12, cursor:'pointer', color:'#e0e0e0' }}
+            onMouseEnter={e => { e.currentTarget.style.background='#383838'; }}
             onMouseLeave={e => e.currentTarget.style.background='transparent'}
           >
-            {currentPageScripts[scriptMenu.fkey] ? 'Editar Script' : 'Criar Script'}
+            {scriptMenuScript ? 'Editar Script' : 'Criar Script'}
           </div>
           <div
             onClick={() => {
-              const script = currentPageScripts[scriptMenu.fkey];
+              const script = scriptMenuScript;
               if (!script) return;
               const association = findScriptAssociation(scriptLibrarySnapshot, script.scriptId);
               setMoveModal({
                 scriptId: script.scriptId,
-                sourcePageId: association?.pageId || activeScriptPageId,
+                sourcePageId: association?.pageId || scriptMenu.pageId,
                 sourceSlot: association?.slot || scriptMenu.fkey,
-                targetPageId: activeScriptPageId,
+                targetPageId: scriptMenu.pageId,
               });
               setScriptMenu(null);
             }}
-            style={{ padding:'8px 14px', fontSize:12, cursor:currentPageScripts[scriptMenu.fkey] ? 'pointer' : 'not-allowed', color:currentPageScripts[scriptMenu.fkey] ? '#e0e0e0' : '#555' }}
-            onMouseEnter={e => { if (currentPageScripts[scriptMenu.fkey]) e.currentTarget.style.background='#383838'; }}
+            style={{ padding:'8px 14px', fontSize:12, cursor:scriptMenuScript ? 'pointer' : 'not-allowed', color:scriptMenuScript ? '#e0e0e0' : '#555' }}
+            onMouseEnter={e => { if (scriptMenuScript) e.currentTarget.style.background='#383838'; }}
             onMouseLeave={e => e.currentTarget.style.background='transparent'}
           >
             Mover para...
           </div>
           <div
-            onClick={() => currentPageScripts[scriptMenu.fkey] ? handleClearScript(scriptMenu.fkey) : setScriptMenu(null)}
+            onClick={() => scriptMenuScript ? handleClearScript(scriptMenu.pageId, scriptMenu.fkey) : setScriptMenu(null)}
             style={{
               padding:'8px 14px', fontSize:12,
-              cursor: currentPageScripts[scriptMenu.fkey] ? 'pointer' : 'not-allowed',
-              color: currentPageScripts[scriptMenu.fkey] ? '#e0e0e0' : '#555',
+              cursor: scriptMenuScript ? 'pointer' : 'not-allowed',
+              color: scriptMenuScript ? '#e0e0e0' : '#555',
             }}
-            onMouseEnter={e => { if (currentPageScripts[scriptMenu.fkey]) e.currentTarget.style.background='#383838'; }}
+            onMouseEnter={e => { if (scriptMenuScript) e.currentTarget.style.background='#383838'; }}
             onMouseLeave={e => e.currentTarget.style.background='transparent'}
           >
             Limpar
           </div>
           <div
             onClick={async () => {
-              const scriptId = currentPageScripts[scriptMenu.fkey]?.scriptId;
+              const scriptId = scriptMenuScript?.scriptId;
               if (!scriptId) return;
               const result = await unassignScript(scriptId);
               if (!result?.ok) console.warn('[vp] unassignScript falhou:', scriptId, result?.error);
@@ -2785,10 +2852,10 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
             }}
             style={{
               padding:'8px 14px', fontSize:12,
-              cursor:currentPageScripts[scriptMenu.fkey] ? 'pointer' : 'not-allowed',
-              color:currentPageScripts[scriptMenu.fkey] ? '#e0e0e0' : '#555',
+              cursor:scriptMenuScript ? 'pointer' : 'not-allowed',
+              color:scriptMenuScript ? '#e0e0e0' : '#555',
             }}
-            onMouseEnter={e => { if (currentPageScripts[scriptMenu.fkey]) e.currentTarget.style.background='#383838'; }}
+            onMouseEnter={e => { if (scriptMenuScript) e.currentTarget.style.background='#383838'; }}
             onMouseLeave={e => { e.currentTarget.style.background='transparent'; }}
           >Desassociar</div>
         </div>
@@ -2802,7 +2869,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
             {/* Header */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', borderBottom:'1px solid #383838' }}>
               <span style={{ fontSize:13, fontWeight:600 }}>
-                {currentPageScripts[createModal.fkey] ? 'Editar Script' : 'Novo Script'} — {createModal.fkey}
+                {editingScript ? 'Editar Script' : 'Novo Script'} — {createModal.fkey}
               </span>
               <button onClick={() => { setCreateModal(null); setScriptName(''); setScriptColor(DEFAULT_SCRIPT_COLOR); setSelectedGroups(new Set()); setSelectedFixtures(new Set()); }} style={{ background:'none', border:'none', color:theme.colors.primary, fontSize:18, cursor:'pointer' }}>✕</button>
             </div>
@@ -2812,23 +2879,23 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               <div>
                 <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted, marginBottom:4 }}>Nome do script</div>
                 <input
-                  value={currentPageScripts[createModal.fkey] ? currentPageScripts[createModal.fkey].name : scriptName}
+                  value={editingScript ? editingScript.name : scriptName}
                   onChange={e => setScriptName(e.target.value)}
-                  disabled={!!currentPageScripts[createModal.fkey]}
+                  disabled={!!editingScript}
                   placeholder="Nome do script..."
-                  style={{ width:'100%', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, color: currentPageScripts[createModal.fkey] ? theme.colors.textDisabled : theme.colors.text, background:theme.colors.surface, padding:theme.spacing.inputPadding, border:'none', borderBottom:`1px solid ${theme.colors.textSecondary}`, outline:'none', boxSizing:'border-box' }}
+                  style={{ width:'100%', fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, color: editingScript ? theme.colors.textDisabled : theme.colors.text, background:theme.colors.surface, padding:theme.spacing.inputPadding, border:'none', borderBottom:`1px solid ${theme.colors.textSecondary}`, outline:'none', boxSizing:'border-box' }}
                 />
               </div>
               <ColorPaletteField value={scriptColor} onChange={setScriptColor} label="Cor do script" />
 
-              {currentPageScripts[createModal.fkey] && (
+              {editingScript && (
                 <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                   <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted }}>Classificação</div>
                   <div style={{ display:'flex', gap:8 }}>
                     <select
-                      value={currentPageScripts[createModal.fkey].category || ''}
+                      value={editingScript.category || ''}
                       onChange={async (e) => {
-                        const scriptId = currentPageScripts[createModal.fkey].scriptId;
+                        const scriptId = editingScript.scriptId;
                         await window.vp.scriptLibraryUpdate(scriptId, { category: e.target.value });
                       }}
                       style={{ flex:1, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, background:theme.colors.surface, color:theme.colors.text, border:`1px solid ${theme.colors.textSecondary}`, padding:4 }}
@@ -2842,9 +2909,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                       <option value="utilitario">Utilitário</option>
                     </select>
                     <select
-                      value={currentPageScripts[createModal.fkey].speed || 'medio'}
+                      value={editingScript.speed || 'medio'}
                       onChange={async (e) => {
-                        const scriptId = currentPageScripts[createModal.fkey].scriptId;
+                        const scriptId = editingScript.scriptId;
                         await window.vp.scriptLibraryUpdate(scriptId, { speed: e.target.value });
                       }}
                       style={{ flex:1, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, background:theme.colors.surface, color:theme.colors.text, border:`1px solid ${theme.colors.textSecondary}`, padding:4 }}
@@ -2854,9 +2921,9 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
                       <option value="rapido">Rápido</option>
                     </select>
                     <select
-                      value={currentPageScripts[createModal.fkey].intensity || 'moderado'}
+                      value={editingScript.intensity || 'moderado'}
                       onChange={async (e) => {
-                        const scriptId = currentPageScripts[createModal.fkey].scriptId;
+                        const scriptId = editingScript.scriptId;
                         await window.vp.scriptLibraryUpdate(scriptId, { intensity: e.target.value });
                       }}
                       style={{ flex:1, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.body.fontSize, background:theme.colors.surface, color:theme.colors.text, border:`1px solid ${theme.colors.textSecondary}`, padding:4 }}
@@ -2870,7 +2937,7 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               )}
 
               {/* Banco de conhecimento — só exibe para script novo */}
-              {!currentPageScripts[createModal.fkey] && (
+              {!editingScript && (
                 <div>
                   <div style={{ fontFamily:theme.typography.fontFamily, fontSize:theme.typography.label.fontSize, color:theme.colors.textMuted, marginBottom:8 }}>Banco de conhecimento</div>
                   <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
@@ -2933,19 +3000,18 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
               <button
                 onClick={async () => {
-                  if (currentPageScripts[createModal.fkey]) {
-                    await window.vp.scriptLibraryUpdate(currentPageScripts[createModal.fkey].scriptId, { color: scriptColor });
-                    await window.vp.editScript(createModal.fkey);
+                  if (editingScript) {
+                    await window.vp.scriptLibraryUpdate(editingScript.scriptId, { color: scriptColor });
                     setCreateModal(null);
                     setScriptColor(DEFAULT_SCRIPT_COLOR);
                   } else {
                     handleCreateScript();
                   }
                 }}
-                disabled={!currentPageScripts[createModal.fkey] && !scriptName.trim()}
-                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: (!currentPageScripts[createModal.fkey] && !scriptName.trim()) ? 'default' : 'pointer', background: (!currentPageScripts[createModal.fkey] && !scriptName.trim()) ? 'rgba(0,0,0,.12)' : theme.colors.primary, color: (!currentPageScripts[createModal.fkey] && !scriptName.trim()) ? theme.colors.textDisabled : '#ffffff', border:'none', boxShadow: (!currentPageScripts[createModal.fkey] && !scriptName.trim()) ? 'none' : theme.elevation.z2 }}
+                disabled={!editingScript && !scriptName.trim()}
+                style={{ minHeight:36, padding:'0 16px', borderRadius:4, fontFamily:theme.typography.fontFamily, fontSize:theme.typography.button.fontSize, fontWeight:theme.typography.button.fontWeight, cursor: (!editingScript && !scriptName.trim()) ? 'default' : 'pointer', background: (!editingScript && !scriptName.trim()) ? 'rgba(0,0,0,.12)' : theme.colors.primary, color: (!editingScript && !scriptName.trim()) ? theme.colors.textDisabled : '#ffffff', border:'none', boxShadow: (!editingScript && !scriptName.trim()) ? 'none' : theme.elevation.z2 }}
               >
-                {currentPageScripts[createModal.fkey] ? 'Abrir no VS Code' : 'Criar e Abrir'}
+                {editingScript ? 'Salvar' : 'Criar e Abrir'}
               </button>
             </div>
           </div>
@@ -3023,11 +3089,11 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
               {EXISTING_SCRIPTS_SHOW_VSCODE && (
               <button
                 onClick={async () => {
-                  const assigned = currentPageScripts[existingScriptsModal.fkey];
+                  const assigned = existingModalScript;
                   const target = selectedExisting || (assigned ? { name: assigned.name } : null);
                   if (!target) return;
-                  await window.vp.createScript(existingScriptsModal.fkey, target.name, { skipOpenEditor: true, color: scriptColor });
-                  const result = await window.vp.editScript(existingScriptsModal.fkey, target.file);
+                  await window.vp.createScript(existingScriptsModal.pageId, existingScriptsModal.fkey, target.name, { skipOpenEditor: true, color: scriptColor });
+                  const result = await window.vp.editScript(existingScriptsModal.pageId, existingScriptsModal.fkey, target.file);
                   if (!result?.ok) console.warn('[vp] editScript falhou:', result?.error);
                 }}
                 disabled={!canConfirmExistingScript}
@@ -3037,10 +3103,10 @@ export default function Main({ onOpenFixtures, onOpenPainel }) {
 
               <button
                 onClick={async () => {
-                  const assigned = currentPageScripts[existingScriptsModal.fkey];
+                  const assigned = existingModalScript;
                   const target = selectedExisting || (assigned ? { name: assigned.name } : null);
                   if (!target) return;
-                  await window.vp.createScript(existingScriptsModal.fkey, target.name, { skipOpenEditor: true, color: scriptColor });
+                  await window.vp.createScript(existingScriptsModal.pageId, existingScriptsModal.fkey, target.name, { skipOpenEditor: true, color: scriptColor });
                   setExistingScriptsModal(null);
                   setScriptColor(DEFAULT_SCRIPT_COLOR);
                   setSelectedExisting(null);
