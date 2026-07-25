@@ -1,4 +1,4 @@
-// ══════════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════════
 // fire-base.js — Biblioteca compartilhada do pacote-de-scripts-fire.
 //
 // PROPÓSITO
@@ -54,10 +54,6 @@ const FB_ID = {
 
   // Moving Wosh (cabeça CMY, modelo diferente dos beams)
   WOSH: 'fixture_1780805067518_moving_wosh_01',
-
-  // Ribaltas motorizadas (par sincronizado — calibração física no engine)
-  RIB1: 'fixture_1780805067518_ribalta_1',
-  RIB2: 'fixture_1780805067518_ribalta_2',
 
   // Ribaltas RGB estáticas (enabled:false no show → getChannel = null)
   RIB_STATIC: [
@@ -130,23 +126,6 @@ function fb_mh(id) {
   };
 }
 
-function fb_rib(id) {
-  return {
-    id,
-    tilt:   getChannel(id, 'tilt'),
-    speed:  getChannel(id, 'speed'),
-    dimmer: getChannel(id, 'dimmer'),
-    leds: [
-      getChannel(id, 'led_1'), getChannel(id, 'led_2'),
-      getChannel(id, 'led_3'), getChannel(id, 'led_4'),
-      getChannel(id, 'led_5'), getChannel(id, 'led_6'),
-      getChannel(id, 'led_7'), getChannel(id, 'led_8'),
-    ],
-    strobo: getChannel(id, 'strobo'),
-    fn:     getChannel(id, 'function'),
-  };
-}
-
 function fb_ribStatic(id) {
   return {
     id,
@@ -202,7 +181,6 @@ function fb_wosh() {
 
 // ── 5. Grupos resolvidos (coleções prontas) ───────────────────────────────────
 function fb_allMH()        { return [fb_mh(FB_ID.MH1), fb_mh(FB_ID.MH2)]; }
-function fb_bothRib()      { return [fb_rib(FB_ID.RIB1), fb_rib(FB_ID.RIB2)]; }
 function fb_allBrut()      { return FB_BRUT_STAGE.map(fb_brut); } // ORDEM FÍSICA
 function fb_allPar()       { return FB_ID.PAR.map(fb_par); }
 function fb_allRibStatic() { return FB_ID.RIB_STATIC.map(fb_ribStatic); }
@@ -226,15 +204,6 @@ const FB_MH_GAP = 8;
 
 // virtual_speed: MAIOR = mais lento. (referência mov-traj-*)
 const FB_MH_SPEED = { VERY_SLOW: 220, SLOW: 205, MED: 180, FAST: 155, VERY_FAST: 140 };
-
-// Ribaltas motorizadas — mesmo tilt lógico e mesma speed nos DOIS lados.
-// A calibração física por lado é do engine (ribaltaPhysicalCalib.js);
-// scripts NUNCA somam offset (+70 etc.) nem usam speed diferente por lado.
-const FB_RIB = {
-  TILT_LOUVOR: 105, TILT_ALTAR: 145, TILT_LOW: 100, TILT_HIGH: 190,
-  SPEED_SLOW:  190, SPEED_MED:  170, SPEED_FAST: 20,
-  DIM_ON:      255, DIM_WASH:   220,
-};
 
 const FB_FITA_DIM = 178;
 
@@ -298,31 +267,11 @@ function fb_mhColorWake(mh) {
 }
 
 
-// ── 9. Ribaltas motorizadas (par sincronizado) ────────────────────────────────
-// ribs = fb_bothRib(). Move as DUAS com mesma speed e mesmo tilt lógico.
-function fb_ribMove(ribs, speed, tilt) {
-  for (const r of ribs) {
-    fb_set(r.fn, 0);
-    fb_set(r.speed, speed);
-    fb_set(r.tilt, tilt);
-  }
-}
+// ── 9. Ribaltas RGB estáticas ─────────────────────────────────────────────────
+const FB_RIB_STATIC_DIM_WASH = 220;
 
-function fb_ribDim(ribs, value) {
-  for (const r of ribs) fb_set(r.dimmer, value);
-}
-
-// Acende todos os leds da barra da ribalta no mesmo nível.
-function fb_ribLeds(ribs, value) {
-  for (const r of ribs) {
-    for (const led of r.leds) fb_set(led, value);
-  }
-}
-
-
-// ── 10. Ribaltas RGB estáticas ────────────────────────────────────────────────
 function fb_ribStaticApply(list, r, g, b, dim) {
-  const d = dim === undefined ? FB_RIB.DIM_WASH : dim;
+  const d = dim === undefined ? FB_RIB_STATIC_DIM_WASH : dim;
   for (const rib of list) {
     fb_set(rib.special, 0);
     fb_set(rib.strobo, 0);
@@ -334,7 +283,7 @@ function fb_ribStaticApply(list, r, g, b, dim) {
 }
 
 
-// ── 11. Helpers de coreografia (matemática de efeito) ─────────────────────────
+// ── 10. Helpers de coreografia (matemática de efeito) ─────────────────────────
 function fb_lerp(a, b, t) {
   return Math.round(a + (b - a) * t);
 }
@@ -393,7 +342,7 @@ function fb_keyframeState(phase, keyframes) {
 }
 
 
-// ── 12. Blackout / reset padrão ───────────────────────────────────────────────
+// ── 11. Blackout / reset padrão ───────────────────────────────────────────────
 // Use no OnTerminate para deixar cada família num estado limpo e previsível.
 function fb_blackoutMH(mh, panRest, tiltRest) {
   fb_set(mh.dimmer, FB_OFF);
@@ -402,16 +351,6 @@ function fb_blackoutMH(mh, panRest, tiltRest) {
   if (panRest !== undefined)  fb_set(mh.pan, panRest);
   if (tiltRest !== undefined) fb_set(mh.tilt, tiltRest);
   fb_set(mh.panFine, 0);
-}
-
-function fb_blackoutRib(ribs) {
-  for (const r of ribs) {
-    fb_set(r.fn, 0);
-    fb_set(r.speed, 0);
-    fb_set(r.dimmer, 0);
-    for (const led of r.leds) fb_set(led, 0);
-    fb_set(r.strobo, 0);
-  }
 }
 
 function fb_blackoutBrut(brutList) {

@@ -58,7 +58,7 @@ Guia completo para autores de scripts: `docs/planos/adapter-semantico/19-07-2026
 ## 8. PAR LED — Layout A e Layout B
 
 Dois layouts reais confirmados diretamente no `show.json` (contradizendo `banco-de-conhecimento/par-led.md`, que descreve os 9 PARs como idênticos):
-- **Layout A** (`ParLed_Deluxe_1/5/7` + `ParLed_Deluxe_9_extra`, id `..._parled_deluxe_6`): `dimmer,strobo,macro,macro_speed,red,green,blue,white` — RGBW.
+- **Layout A** (`ParLed_Deluxe_1/5/7` + `ParLed_Deluxe_10`, id `..._parled_deluxe_6`): `dimmer,strobo,macro,macro_speed,red,green,blue,white` — RGBW.
 - **Layout B** (`ParLed_Deluxe_2/3/4/8/9`): `macro,color_wheel,speed,dimmer,red,green,blue,""` — RGB.
 
 `adapter.setColor(fixtureId, colorName)` funciona nos dois, usando uma tabela padrão de cores RGB (`red, green, blue, white, yellow, cyan, magenta, purple` — definição matemática do espaço aditivo de cor, não dado medido do equipamento, ADR-5), sempre zerando os canais de cor antes de aplicar a nova (nunca mistura com o estado anterior). `white` usa o canal dedicado no Layout A (branco "de verdade") e mistura RGB (`r=g=b=255`) no Layout B (única forma fisicamente possível sem canal branco). Testado com dados reais do show (`tests/adapter-real-show.test.js`) para as duas instâncias reais de cada layout.
@@ -89,7 +89,7 @@ Duas correções críticas aplicadas em `src/viewer3d/scene.js` (Checkpoint 8), 
 1. **Mini_Brut_02/03**: canais estavam trocados em relação ao show real (`402`/`401` → corrigido para bater com `startChannel` real de cada unidade).
 2. **PAR LED Layout A** (unidades 1, 5, 6, 7): a tabela `PARLED_CHANNELS` assumia a estrutura do Layout B para essas 4 unidades (que na verdade são Layout A) — `dimmer`/`red`/`green`/`blue` corrigidos para os canais reais (a unidade 7 tinha até `macro` e `dimmer` colididos no mesmo canal 49, um bug real eliminado). As chaves `macro`/`color_wheel`/`speed` foram **removidas** (não corrigidas) para essas 4 unidades — o comportamento de macro/strobo do Layout A nunca foi medido/documentado (só o Layout B tem a tabela confirmada em `banco-de-conhecimento/par-led.md`); simular um comportamento não confirmado seria pior do que cair no modo RGB direto já seguro em `parled.js`.
 
-**Não corrigido nesta sessão (dívida documentada)**: canal `white` (RGBW) nunca é lido no preview do Layout A (exigiria lógica de blend nova em `parled.js`, não só dado de tabela); divergência cosmética de rótulo (o preview mostra "ParLed_Deluxe_6" para a fixture cujo nome real no show é "ParLed_Deluxe_9_extra" — o `id`/canal já está correto, só o texto do rótulo diverge); divergência Viewer3D pré/pós-calibração física de ribalta (Viewer3D lê o universo lógico, Art-Net usa a cópia calibrada — comportamento documentado desde a auditoria original, não tocado); divergência de `gain` da Ribalta_2 entre código (`1`) e documentação (`0.915`) — fora do escopo do adapter, é calibração física de ribalta.
+**Não corrigido nesta sessão (dívida documentada)**: canal `white` (RGBW) nunca é lido no preview do Layout A (exigiria lógica de blend nova em `parled.js`, não só dado de tabela); divergência cosmética de rótulo (o preview mostra "ParLed_Deluxe_6" para a fixture cujo nome real no show é "ParLed_Deluxe_10" — o `id`/canal já está correto, só o texto do rótulo diverge); divergência Viewer3D pré/pós-calibração física de ribalta (Viewer3D lê o universo lógico, Art-Net usa a cópia calibrada — comportamento documentado desde a auditoria original, não tocado); divergência de `gain` da Ribalta_2 entre código (`1`) e documentação (`0.915`) — fora do escopo do adapter, é calibração física de ribalta.
 
 ## 15. Testes
 
@@ -140,7 +140,7 @@ Duas correções críticas aplicadas em `src/viewer3d/scene.js` (Checkpoint 8), 
 
 - Nenhum script ativo depende do adapter semântico hoje — risco de regressão em produção é nulo (confirmado por grep, nenhum `SetChannel` hardcoded com os valores antigos de cor do M2, `fire-base.js` continua inerte).
 - `_lastDiagnosticAt` (Map de rate-limit em `adapter.js`) cresce por combinação única de fixtureId+capability+code — teoricamente ilimitado, praticamente bounded pelo conjunto finito de fixtures/capabilities/códigos do show (~20×8×9), sem risco real de vazamento de memória (validado sob 144 mil chamadas repetidas — o Map não cresceu além do esperado, já que as chaves se repetem).
-- Divergência cosmética de rótulo no Viewer3D (`ParLed_Deluxe_6` vs. nome real `ParLed_Deluxe_9_extra`) — não afeta canal/DMX, só o texto exibido.
+- Divergência cosmética de rótulo no Viewer3D (`ParLed_Deluxe_6` vs. nome real `ParLed_Deluxe_10`) — não afeta canal/DMX, só o texto exibido.
 
 ## 21. Itens P2 (não implementados, fora do escopo desta tarefa)
 

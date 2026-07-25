@@ -42,8 +42,8 @@
 >
 > **Atualizado (5)** — `prism` **e** `focus` mapeados fisicamente nos dois
 > beams. `prism`: mesmo valor nos dois (`ligado: 150`), canal 127 no MH1 e 207
-> no MH2 — hoje só há esse único ponto lógico calibrado (não há um valor
-> "desligado" na tabela ainda). `focus`: valores **diferentes** por modelo —
+> no MH2 (o ponto "desligado" foi calibrado depois — ver "Atualizado (10)").
+> `focus`: valores **diferentes** por modelo —
 > MH1 `focado: 160` (canal 131), MH2 `focado: 100` (canal 211). `adapters.prism`
 > e `adapters.focus` escritos no show; `status` de ambas as capabilities virou
 > `ready` nos dois arquivos de perfil. Como não existia função
@@ -102,6 +102,20 @@
 > capabilities declaradas nos profiles do MH1 e MH2 estão `ready`** — nenhuma
 > capability incompleta resta nos dois moving heads. `npx vitest run` → 142
 > testes, sem regressão.
+>
+> **Atualizado (10)** — fechamento de uma armadilha real, não uma nova medição:
+> `prism` e `frost` tinham só o ponto lógico `"ligado"` calibrado, sem nenhum
+> valor de "desligado" — ou seja, um script que quisesse desligar o prisma ou
+> o frost do MH1/MH2 não tinha como fazer isso via `adapter.set*` (só via
+> `SetChannel` cru com DMX chutado, o que o adapter existe justamente pra
+> evitar). Confirmado com o usuário que **DMX 0 = desligado** é fisicamente
+> correto para os dois nos dois beams. `adapters.prism` e `adapters.frost`
+> ganharam `"desligado": 0` no show (MH1 e MH2); nenhuma mudança de `status`
+> (já eram `ready`) nem novo código no adapter — a tabela só ficou mais
+> completa. `focus` continua com um único ponto lógico (`"focado"`) porque
+> nenhum valor de "focus desligado" foi pedido/medido — não é a mesma
+> armadilha, é uma capability que genuinamente só tem um estado calibrado.
+> `npx vitest run` → 151 testes, sem regressão.
 
 ---
 
@@ -250,12 +264,15 @@ menores. Uso: `adapter.setStrobe(fixtureId, "rapido")` → escreve `80`.
 | Capability | MH1 (canal) | MH2 (canal) | Valor lógico | DMX |
 |---|---|---|---|---|
 | `prism` | 127 | 207 | `ligado` | 150 (igual nos dois) |
+| `prism` | 127 | 207 | `desligado` | 0 (igual nos dois) |
 | `focus` | 131 | 211 | `focado` | 160 no MH1 · 100 no MH2 |
 
-`prism` tem hoje só um ponto lógico calibrado (`ligado`) — não há um valor
-"desligado"/"aberto" na tabela ainda; uso: `adapter.setPrism(fixtureId,
-"ligado")`. `focus` também tem só um ponto (`focado`), mas o valor DMX é
-diferente por modelo — uso: `adapter.setFocus(fixtureId, "focado")`.
+`prism` tem dois pontos lógicos calibrados (`ligado`/`desligado`) — confirmado
+com o usuário que DMX 0 = desligado é fisicamente correto nos dois beams; uso:
+`adapter.setPrism(fixtureId, "ligado")` ou `adapter.setPrism(fixtureId,
+"desligado")`. `focus` tem só um ponto (`focado`) porque nenhum valor de
+"focus desligado" foi medido — o valor DMX de `focado` é diferente por
+modelo; uso: `adapter.setFocus(fixtureId, "focado")`.
 
 `adapter.setFocus` **não existia** antes desta medição — foi criada em
 `electron/adapter.js` espelhando `setStrobe`/`setPrism` (mesmo mecanismo,
@@ -288,10 +305,13 @@ aparelhos, mesma tabela lógica. Uso: `adapter.setGobo(fixtureId,
 | Capability | MH1 (canal) | MH2 (canal) | Valor lógico | DMX |
 |---|---|---|---|---|
 | `frost` | 130 | 210 | `ligado` | 255 (igual nos dois) |
+| `frost` | 130 | 210 | `desligado` | 0 (igual nos dois) |
 
-Só um ponto lógico calibrado até agora (`ligado`) — não há um valor
-"desligado" na tabela ainda. Uso: `adapter.setFrost(fixtureId, "ligado")` →
-escreve `255`. `adapter.setFrost` não existia antes desta medição — foi criada
+Dois pontos lógicos calibrados (`ligado`/`desligado`) — confirmado com o
+usuário que DMX 0 = desligado é fisicamente correto nos dois beams. Uso:
+`adapter.setFrost(fixtureId, "ligado")` → escreve `255`;
+`adapter.setFrost(fixtureId, "desligado")` → escreve `0`. `adapter.setFrost`
+não existia antes desta medição — foi criada
 espelhando `setStrobe`/`setPrism`/`setFocus` (mesmo mecanismo, mesmos códigos
 de erro).
 

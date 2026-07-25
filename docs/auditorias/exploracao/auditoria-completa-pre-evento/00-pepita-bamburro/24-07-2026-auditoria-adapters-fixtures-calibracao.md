@@ -63,7 +63,7 @@ Escopo: `electron/adapter.js`, `fixtureOffsets.js`, `fixtureProfiles/{index,movi
 
 | Fixture | Profile | color | dimmer | pan/tilt | strobe | prism/frost | gobo | focus/prismRotation |
 |---|---|---|---|---|---|---|---|---|
-| ParLed_Deluxe_1/5/7/9_extra | layout-a | ✅ | ✅ | n/a | ⚠️ parcial | ❌ | ❌ | ❌ |
+| ParLed_Deluxe_1/5/7/10 | layout-a | ✅ | ✅ | n/a | ⚠️ parcial | ❌ | ❌ | ❌ |
 | ParLed_Deluxe_2/3/8/9 | layout-b | ✅ | ✅ | n/a | ❌ inalcançável | ❌ | ❌ | ❌ |
 | ParLed_Deluxe_4, parLed1 (desabilitadas) | — | — | — | — | — | — | — | — |
 | **Moving Head Beam 1/2** | próprio | ✅ | ✅ | ✅ | ✅ | ⚠️ só "ligado" | ✅ | ⚠️ **dados prontos, função ausente na sandbox** |

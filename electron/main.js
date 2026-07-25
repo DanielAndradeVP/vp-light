@@ -1902,6 +1902,41 @@ async function stopScriptsWatch() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// LIGA/DESLIGA CALIBRAÇÃO FÍSICA DE TILT DAS RIBALTAS (via tools/ribalta-calib.js)
+// ─────────────────────────────────────────────────────────────
+
+const RIBALTA_CALIB_STATE_PATH = path.join(__dirname, 'ribalta-calib-state.json');
+let ribaltaCalibWatcher = null;
+
+function applyRibaltaCalibStateFromDisk() {
+  try {
+    const raw = fs.readFileSync(RIBALTA_CALIB_STATE_PATH, 'utf-8');
+    const data = JSON.parse(raw);
+    ribaltaPhysicalCalib.setEnabled(data.enabled !== false);
+  } catch (e) {
+    ribaltaPhysicalCalib.setEnabled(true); // arquivo ausente/inválido → default ativa
+  }
+}
+
+function startRibaltaCalibWatch() {
+  if (ribaltaCalibWatcher) return;
+  applyRibaltaCalibStateFromDisk();
+  try {
+    ribaltaCalibWatcher = chokidar.watch(RIBALTA_CALIB_STATE_PATH, {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 25 },
+    });
+    ribaltaCalibWatcher.on('add', applyRibaltaCalibStateFromDisk);
+    ribaltaCalibWatcher.on('change', applyRibaltaCalibStateFromDisk);
+    ribaltaCalibWatcher.on('unlink', applyRibaltaCalibStateFromDisk);
+    ribaltaCalibWatcher.on('error', (e) => console.error('[ribalta-calib:watch] erro do watcher:', e.message));
+    console.log('[ribalta-calib:watch] monitorando (chokidar)', RIBALTA_CALIB_STATE_PATH);
+  } catch (e) {
+    console.error('[ribalta-calib:watch] não foi possível iniciar:', e.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // IPC HANDLERS — PAGE SCRIPTS
 // ─────────────────────────────────────────────────────────────
 
@@ -2204,10 +2239,12 @@ app.whenReady().then(() => {
   console.log('[main] engine DMX iniciado');
 
   startScriptsWatch();
+  startRibaltaCalibWatch();
 });
 
 app.on('window-all-closed', async () => {
   await stopScriptsWatch();
+  if (ribaltaCalibWatcher) { try { await ribaltaCalibWatcher.close(); } catch (_) {} ribaltaCalibWatcher = null; }
   engine.stop();
   app.quit();
 });

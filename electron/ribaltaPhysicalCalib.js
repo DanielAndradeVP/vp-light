@@ -81,6 +81,8 @@ const PHYSICAL_TILT_CALIBRATION = {
 const _ARTNET_BUFFER = new Uint8Array(512);
 /** @type {Record<number, string>} canal DMX tilt → chave de calibracao */
 let _tiltChannelToCalibKey = {};
+/** Liga/desliga a camada inteira (as duas ribaltas juntas). Default: ativa. */
+let _enabled = true;
 
 function clamp255(value) {
   const n = Math.round(Number(value));
@@ -198,6 +200,7 @@ function configureFromFixtures(fixtures, isFixtureEnabled = () => true) {
  */
 function getPhysicalUniverseForArtNet(logicalBuffer) {
   _ARTNET_BUFFER.set(logicalBuffer);
+  if (!_enabled) return _ARTNET_BUFFER;
   for (const [channel, calibKey] of Object.entries(_tiltChannelToCalibKey)) {
     const idx = Number(channel) - 1;
     if (idx < 0 || idx >= 512) continue;
@@ -210,6 +213,16 @@ function getTiltChannelMap() {
   return { ..._tiltChannelToCalibKey };
 }
 
+/** Liga/desliga a calibracao fisica de tilt das duas ribaltas (sempre as duas juntas). */
+function setEnabled(enabled) {
+  _enabled = !!enabled;
+  console.log(`[ribaltaPhysicalCalib] calibração ${_enabled ? 'ATIVA' : 'DESATIVADA (tilt cru)'}`);
+}
+
+function isEnabled() {
+  return _enabled;
+}
+
 module.exports = {
   PHYSICAL_TILT_CALIBRATION,
   calibratePhysicalTilt,
@@ -217,4 +230,6 @@ module.exports = {
   configureFromFixtures,
   getPhysicalUniverseForArtNet,
   getTiltChannelMap,
+  setEnabled,
+  isEnabled,
 };

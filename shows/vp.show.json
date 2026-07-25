@@ -6,9 +6,9 @@
     "notes": "Show base para o Fire. Salvar antes de sair!",
     "viewport": {
       "grid": {
-        "zoom": 1.2100000000000002,
-        "panX": 488.45500000000004,
-        "panY": 405.735
+        "zoom": 1.9487171000000014,
+        "panX": 637.8744548499999,
+        "panY": 593.53275145
       },
       "grid2": {
         "zoom": 2.143588810000004,
@@ -33,7 +33,7 @@
         "blue",
         "white"
       ],
-      "posX": -80,
+      "posX": -200,
       "posY": -240,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
@@ -58,8 +58,8 @@
         "blue",
         ""
       ],
-      "posX": -40,
-      "posY": -200,
+      "posX": -120,
+      "posY": -240,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -82,8 +82,8 @@
         "blue",
         ""
       ],
-      "posX": 0,
-      "posY": -200,
+      "posX": -40,
+      "posY": -240,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -143,7 +143,7 @@
     },
     {
       "id": "fixture_1780805067518_parled_deluxe_6",
-      "name": "ParLed_Deluxe_9_extra",
+      "name": "ParLed_Deluxe_10",
       "startChannel": 74,
       "channelCount": 8,
       "channels": [
@@ -156,7 +156,7 @@
         "blue",
         "white"
       ],
-      "posX": 200,
+      "posX": 280,
       "posY": -240,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
@@ -181,7 +181,7 @@
         "blue",
         "white"
       ],
-      "posX": 80,
+      "posX": 120,
       "posY": -240,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
@@ -206,8 +206,8 @@
         "blue",
         ""
       ],
-      "posX": 120,
-      "posY": -200,
+      "posX": 200,
+      "posY": -240,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -230,8 +230,8 @@
         "blue",
         ""
       ],
-      "posX": 160,
-      "posY": -200,
+      "posX": 360,
+      "posY": -240,
       "manufacturer": "Generico",
       "model": "ParLed Deluxe",
       "fixtureType": "par_led",
@@ -288,7 +288,7 @@
         "reset"
       ],
       "posX": -40,
-      "posY": -40,
+      "posY": -160,
       "manufacturer": "Light Party",
       "model": "Moving Head Beam 200W",
       "fixtureType": "moving_head_beam",
@@ -368,7 +368,7 @@
         ""
       ],
       "posX": 40,
-      "posY": -40,
+      "posY": -160,
       "manufacturer": "Light Party",
       "model": "MovingHead_Beam 230W_16channels",
       "fixtureType": "moving_head_beam",
@@ -444,8 +444,8 @@
         "strobo",
         "function"
       ],
-      "posX": 0,
-      "posY": -120,
+      "posX": -200,
+      "posY": -160,
       "manufacturer": "Light Party",
       "model": "Ribalta",
       "fixtureType": "ribalta",
@@ -474,8 +474,8 @@
         "strobo",
         "function"
       ],
-      "posX": 80,
-      "posY": -120,
+      "posX": -120,
+      "posY": -160,
       "manufacturer": "Light Party",
       "model": "Ribalta",
       "fixtureType": "ribalta",
@@ -585,8 +585,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": 200,
-      "posY": 40,
+      "posX": 120,
+      "posY": -80,
       "manufacturer": "FitaLedDimmer",
       "model": "Fita de Led",
       "fixtureType": "fita_led"
@@ -599,8 +599,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": -120,
-      "posY": 40,
+      "posX": -200,
+      "posY": -80,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -617,8 +617,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": -40,
-      "posY": 40,
+      "posX": -120,
+      "posY": -80,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -634,8 +634,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": 40,
-      "posY": 40,
+      "posX": -40,
+      "posY": -80,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -651,8 +651,8 @@
       "channels": [
         "dimmer"
       ],
-      "posX": 120,
-      "posY": 40,
+      "posX": 40,
+      "posY": -80,
       "manufacturer": "Generico",
       "model": "Halogeno (controlado via Hack Dimmer DMX)",
       "fixtureType": "mini_brut",
@@ -684,7 +684,7 @@
         ""
       ],
       "posX": 120,
-      "posY": -40,
+      "posY": -160,
       "manufacturer": "Acme",
       "model": "575W",
       "fixtureType": "moving_head",
@@ -933,57 +933,6 @@
             }
           }
         },
-        "X": {
-          "name": "parled_static",
-          "color": "#00aa00",
-          "channels": {
-            "1": 255,
-            "5": 0,
-            "6": 255,
-            "7": 0,
-            "12": 255,
-            "13": 0,
-            "14": 255,
-            "15": 0,
-            "20": 255,
-            "21": 0,
-            "22": 255,
-            "23": 0,
-            "33": 255,
-            "37": 0,
-            "38": 255,
-            "39": 0,
-            "49": 255,
-            "53": 0,
-            "54": 255,
-            "55": 0,
-            "60": 255,
-            "61": 0,
-            "62": 255,
-            "63": 0,
-            "68": 255,
-            "69": 0,
-            "70": 255,
-            "71": 0,
-            "74": 255,
-            "78": 0,
-            "79": 255,
-            "80": 0,
-            "132": 111,
-            "134": 143,
-            "212": 127,
-            "214": 143,
-            "404": 178
-          },
-          "customFunctions": {
-            "fixture_1780805067518_moving_head_beam_1": {
-              "tilt_invert": false
-            },
-            "fixture_1780805067518_moving_head_beam_2": {
-              "tilt_invert": false
-            }
-          }
-        },
         "S": {
           "name": "parled_strobo",
           "color": "#aa00aa",
@@ -1215,56 +1164,6 @@
             "134": 143,
             "212": 127,
             "214": 143
-          },
-          "customFunctions": {
-            "fixture_1780805067518_moving_head_beam_1": {
-              "tilt_invert": false
-            },
-            "fixture_1780805067518_moving_head_beam_2": {
-              "tilt_invert": false
-            }
-          }
-        },
-        "C": {
-          "name": "s",
-          "color": "#cc0000",
-          "channels": {
-            "1": 255,
-            "5": 255,
-            "12": 255,
-            "13": 255,
-            "20": 255,
-            "21": 255,
-            "33": 255,
-            "37": 255,
-            "49": 255,
-            "53": 255,
-            "60": 255,
-            "61": 255,
-            "68": 255,
-            "69": 255,
-            "74": 255,
-            "78": 255,
-            "123": 12,
-            "124": 255,
-            "125": 34,
-            "203": 40,
-            "204": 255,
-            "205": 35,
-            "206": 0,
-            "207": 0,
-            "208": 0,
-            "209": 0,
-            "210": 0,
-            "211": 0,
-            "212": 0,
-            "213": 0,
-            "214": 0,
-            "215": 0,
-            "216": 0,
-            "217": 0,
-            "218": 0,
-            "404": 178
           },
           "customFunctions": {
             "fixture_1780805067518_moving_head_beam_1": {
@@ -1571,7 +1470,7 @@
     },
     "brut-pisca-cruz": {
       "id": "brut-pisca-cruz",
-      "entry": "brut-pisca-cruz.js",
+      "entry": "pisca-brut-cruz.js",
       "label": "brut-pisca-cruz",
       "category": "",
       "speed": "medio",
@@ -1591,7 +1490,7 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#ff6699"
+      "color": "#00cccc"
     },
     "mov-desc-branco": {
       "id": "mov-desc-branco",
@@ -1603,7 +1502,7 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#ff6699"
+      "color": "#00cccc"
     },
     "mov-desc-full-reset": {
       "id": "mov-desc-full-reset",
@@ -1627,7 +1526,7 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#ff6699"
+      "color": "#0000cc"
     },
     "mov-traj-mh-rib": {
       "id": "mov-traj-mh-rib",
@@ -1639,7 +1538,7 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#ff6699"
+      "color": "#0000cc"
     },
     "mov-traj-rib-alto": {
       "id": "mov-traj-rib-alto",
@@ -1651,7 +1550,7 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#ff8800"
+      "color": "#0000cc"
     },
     "mov-traj-rib-baixo": {
       "id": "mov-traj-rib-baixo",
@@ -1663,7 +1562,7 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#ff8800"
+      "color": "#ff6699"
     },
     "mov-desc-seq-fade": {
       "id": "mov-desc-seq-fade",
@@ -1675,7 +1574,7 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#000000"
+      "color": "#ff6699"
     },
     "mov-desc-sync-loop": {
       "id": "mov-desc-sync-loop",
@@ -1687,11 +1586,11 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#000000"
+      "color": "#ff6699"
     },
     "brut-pisca-lados": {
       "id": "brut-pisca-lados",
-      "entry": "brut-pisca-lados.js",
+      "entry": "pisca-brut-lados.js",
       "label": "brut-pisca-lados",
       "category": "strobe",
       "speed": "medio",
@@ -1711,7 +1610,7 @@
       "status": "estavel",
       "description": "",
       "tags": [],
-      "color": "#000000"
+      "color": "#00aa00"
     },
     "mov-desc-mh-brut": {
       "id": "mov-desc-mh-brut",
@@ -1723,7 +1622,331 @@
       "status": "estavel",
       "description": "",
       "tags": [],
+      "color": "#0000cc"
+    },
+    "teste-cor-movings": {
+      "id": "teste-cor-movings",
+      "entry": "teste-cor-movings.js",
+      "label": "teste-cor-movings",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
       "color": "#000000"
+    },
+    "pisca-brut-chase": {
+      "id": "pisca-brut-chase",
+      "entry": "pisca-brut-chase.js",
+      "label": "pisca-brut-chase",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff8800"
+    },
+    "pisca-brut-lados": {
+      "id": "pisca-brut-lados",
+      "entry": "pisca-brut-lados.js",
+      "label": "pisca-brut-lados",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff8800"
+    },
+    "altar-lenta": {
+      "id": "altar-lenta",
+      "entry": "altar-lenta.js",
+      "label": "altar-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "varredura-lateral-rapido": {
+      "id": "varredura-lateral-rapido",
+      "entry": "varredura-lateral-rapido.js",
+      "label": "varredura-lateral-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "strobo-cruzado-rapido": {
+      "id": "strobo-cruzado-rapido",
+      "entry": "strobo-cruzado-rapido.js",
+      "label": "strobo-cruzado-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "pendulo-lenta": {
+      "id": "pendulo-lenta",
+      "entry": "pendulo-lenta.js",
+      "label": "pendulo-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "onda-longa-lenta": {
+      "id": "onda-longa-lenta",
+      "entry": "onda-longa-lenta.js",
+      "label": "onda-longa-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "dueto-lenta": {
+      "id": "dueto-lenta",
+      "entry": "dueto-lenta.js",
+      "label": "dueto-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "horizonte-lenta": {
+      "id": "horizonte-lenta",
+      "entry": "horizonte-lenta.js",
+      "label": "horizonte-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "nevoa-lenta": {
+      "id": "nevoa-lenta",
+      "entry": "nevoa-lenta.js",
+      "label": "nevoa-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "batida-ribalta-rapido": {
+      "id": "batida-ribalta-rapido",
+      "entry": "batida-ribalta-rapido.js",
+      "label": "batida-ribalta-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#0000cc"
+    },
+    "respiro-ribalta-lenta": {
+      "id": "respiro-ribalta-lenta",
+      "entry": "respiro-ribalta-lenta.js",
+      "label": "respiro-ribalta-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#0000cc"
+    },
+    "prisma-quebrado-rapido": {
+      "id": "prisma-quebrado-rapido",
+      "entry": "prisma-quebrado-rapido.js",
+      "label": "prisma-quebrado-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "tesoura-rapido": {
+      "id": "tesoura-rapido",
+      "entry": "tesoura-rapido.js",
+      "label": "tesoura-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "brut-full-baixo": {
+      "id": "brut-full-baixo",
+      "entry": "brut-full-baixo.js",
+      "label": "brut-full-baixo",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#ff8800"
+    },
+    "respiracao-lenta": {
+      "id": "respiracao-lenta",
+      "entry": "respiracao-lenta.js",
+      "label": "respiracao-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "deriva-cor-lenta": {
+      "id": "deriva-cor-lenta",
+      "entry": "deriva-cor-lenta.js",
+      "label": "deriva-cor-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "deitado-lenta": {
+      "id": "deitado-lenta",
+      "entry": "deitado-lenta.js",
+      "label": "deitado-lenta",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00cccc"
+    },
+    "chase-cor-rapido": {
+      "id": "chase-cor-rapido",
+      "entry": "chase-cor-rapido.js",
+      "label": "chase-cor-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "flash-blackout-rapido": {
+      "id": "flash-blackout-rapido",
+      "entry": "flash-blackout-rapido.js",
+      "label": "flash-blackout-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "figura8-rapido": {
+      "id": "figura8-rapido",
+      "entry": "figura8-rapido.js",
+      "label": "figura8-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "gobo-circulo-rapido": {
+      "id": "gobo-circulo-rapido",
+      "entry": "gobo-circulo-rapido.js",
+      "label": "gobo-circulo-rapido",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "pisca-parled-lados": {
+      "id": "pisca-parled-lados",
+      "entry": "pisca-parled-lados.js",
+      "label": "pisca-parled-lados",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#00aa00"
+    },
+    "pisca-parled-pingpong": {
+      "id": "pisca-parled-pingpong",
+      "entry": "pisca-parled-pingpong.js",
+      "label": "pisca-parled-pingpong",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#aa00aa"
+    },
+    "pisca-chase-brut-parled": {
+      "id": "pisca-chase-brut-parled",
+      "entry": "pisca-chase-brut-parled.js",
+      "label": "pisca-chase-brut-parled",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#aa00aa"
+    },
+    "strobo-parled-lateral-vermelho": {
+      "id": "strobo-parled-lateral-vermelho",
+      "entry": "strobo-parled-lateral-vermelho.js",
+      "label": "strobo-parled-lateral-vermelho",
+      "category": "",
+      "speed": "medio",
+      "intensity": "moderado",
+      "status": "estavel",
+      "description": "",
+      "tags": [],
+      "color": "#aa00aa"
     }
   },
   "scriptPages": {
@@ -1737,49 +1960,49 @@
             "type": "script",
             "id": "brut-fita-full"
           },
-          "F2": {
-            "type": "script",
-            "id": "brut-pisca-combo"
-          },
-          "F3": {
-            "type": "script",
-            "id": "brut-pisca-cruz"
-          },
-          "F4": {
-            "type": "script",
-            "id": "mov-preset"
-          },
           "F5": {
             "type": "script",
-            "id": "mov-desc-branco"
-          },
-          "F6": {
-            "type": "script",
-            "id": "mov-desc-full-reset"
-          },
-          "F7": {
-            "type": "script",
-            "id": "mov-desc-rib-reset"
-          },
-          "F8": {
-            "type": "script",
-            "id": "mov-traj-mh-rib"
-          },
-          "F9": {
-            "type": "script",
-            "id": "mov-traj-rib-alto"
+            "id": "pisca-brut-lados"
           },
           "F10": {
             "type": "script",
-            "id": "mov-traj-rib-baixo"
+            "id": "batida-ribalta-rapido"
           },
           "F11": {
             "type": "script",
-            "id": "mov-desc-seq-fade"
+            "id": "respiro-ribalta-lenta"
           },
           "F12": {
             "type": "script",
-            "id": "mov-desc-sync-loop"
+            "id": "mov-desc-rib-reset"
+          },
+          "F2": {
+            "type": "script",
+            "id": "brut-full-baixo"
+          },
+          "F6": {
+            "type": "script",
+            "id": "brut-pisca-cruz"
+          },
+          "F3": {
+            "type": "script",
+            "id": "pisca-brut-chase"
+          },
+          "F4": {
+            "type": "script",
+            "id": "brut-pisca-combo"
+          },
+          "F7": {
+            "type": "script",
+            "id": "pisca-parled-pingpong"
+          },
+          "F8": {
+            "type": "script",
+            "id": "pisca-chase-brut-parled"
+          },
+          "F9": {
+            "type": "script",
+            "id": "strobo-parled-lateral-vermelho"
           }
         }
       },
@@ -1790,7 +2013,47 @@
         "slots": {
           "F1": {
             "type": "script",
-            "id": "brut-pisca-lados"
+            "id": "respiracao-lenta"
+          },
+          "F2": {
+            "type": "script",
+            "id": "deriva-cor-lenta"
+          },
+          "F3": {
+            "type": "script",
+            "id": "deitado-lenta"
+          },
+          "F4": {
+            "type": "script",
+            "id": "pendulo-lenta"
+          },
+          "F5": {
+            "type": "script",
+            "id": "onda-longa-lenta"
+          },
+          "F6": {
+            "type": "script",
+            "id": "altar-lenta"
+          },
+          "F7": {
+            "type": "script",
+            "id": "dueto-lenta"
+          },
+          "F8": {
+            "type": "script",
+            "id": "horizonte-lenta"
+          },
+          "F9": {
+            "type": "script",
+            "id": "nevoa-lenta"
+          },
+          "F10": {
+            "type": "script",
+            "id": "mov-preset"
+          },
+          "F11": {
+            "type": "script",
+            "id": "mov-desc-branco"
           }
         }
       },
@@ -1798,7 +2061,56 @@
         "id": "page-3",
         "name": "Página 3",
         "order": 3,
-        "slots": {}
+        "slots": {
+          "F10": {
+            "type": "script",
+            "id": "mov-desc-full-reset"
+          },
+          "F11": {
+            "type": "script",
+            "id": "mov-desc-sync-loop"
+          },
+          "F12": {
+            "type": "script",
+            "id": "mov-desc-seq-fade"
+          },
+          "F3": {
+            "type": "script",
+            "id": "varredura-lateral-rapido"
+          },
+          "F4": {
+            "type": "script",
+            "id": "strobo-cruzado-rapido"
+          },
+          "F5": {
+            "type": "script",
+            "id": "prisma-quebrado-rapido"
+          },
+          "F6": {
+            "type": "script",
+            "id": "tesoura-rapido"
+          },
+          "F1": {
+            "type": "script",
+            "id": "flash-blackout-rapido"
+          },
+          "F2": {
+            "type": "script",
+            "id": "figura8-rapido"
+          },
+          "F7": {
+            "type": "script",
+            "id": "chase-cor-rapido"
+          },
+          "F8": {
+            "type": "script",
+            "id": "gobo-circulo-rapido"
+          },
+          "F9": {
+            "type": "script",
+            "id": "pisca-parled-lados"
+          }
+        }
       },
       {
         "id": "page-4",

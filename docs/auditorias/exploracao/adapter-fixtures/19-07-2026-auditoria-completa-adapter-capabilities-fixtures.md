@@ -245,7 +245,7 @@ Isso já prova, no código real, exatamente o que o operador descreveu: **o mesm
 | ParLed_Deluxe_3 | 17–24 | 8 | `par_led` (layout B) | ativo | nenhum |
 | ParLed_Deluxe_4 | 25–32 | 8 | `par_led` (layout B) | **desativado** | nenhum |
 | ParLed_Deluxe_5 | 33–40 | 8 | `par_led` (layout A) | sem `enabled` explícito | nenhum |
-| ParLed_Deluxe_9_extra (`_6`) | 74–81 | 8 | `par_led` (layout A) | sem `enabled` explícito | nenhum |
+| ParLed_Deluxe_10 (`_6`) | 74–81 | 8 | `par_led` (layout A) | sem `enabled` explícito | nenhum |
 | ParLed_Deluxe_7 | 49–56 | 8 | `par_led` (layout A) | sem `enabled` explícito | nenhum |
 | ParLed_Deluxe_8 | 57–64 | 8 | `par_led` (layout B) | sem `enabled` explícito | nenhum |
 | ParLed_Deluxe_9 | 65–72 | 8 | `par_led` (layout B) | sem `enabled` explícito | nenhum |

@@ -15,7 +15,7 @@ Existem 9 ids `parled_deluxe_*` mais um fixture de teste legado (`parLed1`). Map
 | `..._parled_deluxe_3` / ParLed_Deluxe_3 | 17 | (default on) | **A** | índice 8 (CH 24) |
 | `..._parled_deluxe_4` / ParLed_Deluxe_4 | 25 | **false** | A | desativado (25–32 livres) |
 | `..._parled_deluxe_5` / ParLed_Deluxe_5 | 33 | (default on) | **B** | nenhum |
-| `..._parled_deluxe_6` / **ParLed_Deluxe_9_extra** | **74** | (default on) | **B** | nenhum |
+| `..._parled_deluxe_6` / **ParLed_Deluxe_10** | **74** | (default on) | **B** | nenhum |
 | `..._parled_deluxe_7` / ParLed_Deluxe_7 | 49 | (default on) | **B** | nenhum |
 | `..._parled_deluxe_8` / ParLed_Deluxe_8 | 57 | (default on) | **A** | índice 8 (CH 64) |
 | `..._parled_deluxe_9` / ParLed_Deluxe_9 | 65 | (default on) | **A** | índice 8 (CH 72) |
@@ -23,7 +23,7 @@ Existem 9 ids `parled_deluxe_*` mais um fixture de teste legado (`parLed1`). Map
 
 `isFixtureEnabled` (main.js) = `enabled !== false`, então `enabled` ausente/`null` conta como **ligado**. Só ParLed_4 e o legado parLed1 estão desligados.
 
-**Faixas DMX livres:** 25–32 (ParLed_4 off), 41–48 (nada), 73 (nada). Ativos: 4 fixtures layout A (2,3,8,9) + 4 layout B (1,5,7 e o id `_6` = "9_extra") = 8 PARs ativos.
+**Faixas DMX livres:** 25–32 (ParLed_4 off), 41–48 (nada), 73 (nada). Ativos: 4 fixtures layout A (2,3,8,9) + 4 layout B (1,5,7 e o id `_6` = "10") = 8 PARs ativos.
 
 ---
 
@@ -44,7 +44,7 @@ Mesmo modelo no papel, **dois perfis diferentes** no patch:
 | 7 | blue | 15 |
 | 8 | "" (morto) | 16 |
 
-**Layout B** — `[dimmer, strobo, macro, macro_speed, red, green, blue, white]` (fixtures 1, 5, 7, "9_extra")
+**Layout B** — `[dimmer, strobo, macro, macro_speed, red, green, blue, white]` (fixtures 1, 5, 7, "10")
 
 | Índice | Alias | Ex. ParLed_1 (start 1) |
 |---|---|---|
@@ -113,10 +113,10 @@ Quem escreve nos PAR hoje:
   - ParLed_1 (layout B): real `dimmer=1`; o mapa usa `dimmer:5` (que é o `red` real) e inventa `macro:2/color_wheel:3/speed:4`.
   - ParLed_5 (start 33): `macro:30/color_wheel:31/speed:32` caem **fora** da faixa do fixture (na faixa do ParLed_4 desativado); `dimmer:33` acerta por coincidência.
   - ParLed_7 (start 49): `dimmer:49` **e** `macro:49` apontam para o mesmo canal.
-  - Fixture `_6` ("9_extra", start 74): `dimmer:77` (na verdade `macro_speed`), quando o dimmer real é 74.
+  - Fixture `_6` ("10", start 74): `dimmer:77` (na verdade `macro_speed`), quando o dimmer real é 74.
   - Corretos: ParLed_2, 3, 8, 9 (layout A) e o 4 desativado.
 
-Resultado: **a prévia 3D dos PAR de layout B (1, 5, 7, "9_extra") lê canais errados** e não modela strobo/white.
+Resultado: **a prévia 3D dos PAR de layout B (1, 5, 7, "10") lê canais errados** e não modela strobo/white.
 
 ---
 
@@ -125,11 +125,11 @@ Resultado: **a prévia 3D dos PAR de layout B (1, 5, 7, "9_extra") lê canais er
 ### A. Documentação desatualizada — prioridade alta (`par-led.md`)
 - Afirma "9 fixtures do mesmo modelo, 8 canais cada, comportamento idêntico, diferem só no startChannel" e um layout único. **Falso**: há dois layouts (A e B). Documentar os dois perfis e quais fixtures usam cada um.
 - Diz que ParLed_1 tem canal morto no índice 1. **Falso**: ParLed_1 é layout B, 8 canais funcionais (dimmer…white), sem canal morto.
-- A tabela de starts (…41, 49, 57, 65) não bate: **não há fixture em 41–48**; o "6º" fixture é o id `parled_deluxe_6` nomeado **"ParLed_Deluxe_9_extra"** em **start 74**.
+- A tabela de starts (…41, 49, 57, 65) não bate: **não há fixture em 41–48**; o "6º" fixture é o id `parled_deluxe_6` nomeado **"ParLed_Deluxe_10"** em **start 74**.
 - Layout B tem `strobo`, `macro_speed` e `white` — nenhum documentado.
 
 ### B. Nomenclatura / identidade confusa do fixture `_6` (corrigir)
-O id `fixture_1780805067518_parled_deluxe_6` tem `name` "ParLed_Deluxe_9_extra" e vive em 74, longe da sequência. id, nome e endereço contam três histórias diferentes. Padronizar id↔nome↔posição.
+O id `fixture_1780805067518_parled_deluxe_6` tem `name` "ParLed_Deluxe_10" e vive em 74, longe da sequência. id, nome e endereço contam três histórias diferentes. Padronizar id↔nome↔posição.
 
 ### C. Mapa 3D `PARLED_CHANNELS` errado para layout B (corrigir/centralizar)
 Preenchido assumindo layout A. Deve ser derivado do patch (por alias, como os scripts fazem) em vez de números escritos à mão — senão a prévia mente e qualquer remapeamento de canal quebra em silêncio. Faltam também `strobo`/`white` no modelo visual.
@@ -150,4 +150,4 @@ Nenhuma tecla aciona PAR isoladamente hoje; o uso vem de cenas completas no `bac
 
 ## 7. Resumo do escopo atual
 
-Os PAR LED são **8 fixtures ativos de um mesmo modelo, mas com dois perfis DMX diferentes** (4 em layout A com `color_wheel/speed`, 4 em layout B com `strobo/macro_speed/white`), acessados com segurança por alias via `getChannel`. Na camada de hardware/engine tudo funciona: os scripts usam o subconjunto comum (dimmer + RGB, RGB direto), sem offset, sem interpolador e sem scene lock. **Os problemas são de consistência e documentação**, não de operação: a base de conhecimento descreve um layout único que não existe; o mapa do viewer 3D está errado para os fixtures de layout B (prévia mente); a `fire-base.js` tem um comentário invertido; e há ruído de identidade/endereço (o "ParLed_Deluxe_9_extra" em 74, canais livres em 41–48, o legado parLed1 sobreposto). Centralizar a fonte de verdade no patch (por alias), atualizar a doc com os dois perfis e derivar o mapa 3D do próprio show resolveria a maior parte dos riscos silenciosos.
+Os PAR LED são **8 fixtures ativos de um mesmo modelo, mas com dois perfis DMX diferentes** (4 em layout A com `color_wheel/speed`, 4 em layout B com `strobo/macro_speed/white`), acessados com segurança por alias via `getChannel`. Na camada de hardware/engine tudo funciona: os scripts usam o subconjunto comum (dimmer + RGB, RGB direto), sem offset, sem interpolador e sem scene lock. **Os problemas são de consistência e documentação**, não de operação: a base de conhecimento descreve um layout único que não existe; o mapa do viewer 3D está errado para os fixtures de layout B (prévia mente); a `fire-base.js` tem um comentário invertido; e há ruído de identidade/endereço (o "ParLed_Deluxe_10" em 74, canais livres em 41–48, o legado parLed1 sobreposto). Centralizar a fonte de verdade no patch (por alias), atualizar a doc com os dois perfis e derivar o mapa 3D do próprio show resolveria a maior parte dos riscos silenciosos.

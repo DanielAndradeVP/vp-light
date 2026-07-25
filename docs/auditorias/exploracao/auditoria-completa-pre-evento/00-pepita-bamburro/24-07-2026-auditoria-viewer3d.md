@@ -40,13 +40,13 @@ Conferência campo a campo dos 5 mapas hardcoded de `scene.js` contra `startChan
 - Sem log/warning quando `group.userData.channels` está ausente/incorreto — todo `update()` sai silenciosamente com `if (!ch) return`. Hoje todos os 15 `fixtureId` batem (sem typo), mas é risco estrutural para o próximo ciclo de manutenção.
 
 ### [Baixo] Rótulo cosmético incorreto — confirmado ainda presente
-- [fato] `scene.js:945` gera `name = "ParLed_Deluxe_6"` para `item.n=6`, mas o nome real dessa fixture no show.json é **"ParLed_Deluxe_9_extra"** (scene.js:940; vp.show.json linha 146). É exatamente o item citado no relatório de prontidão de 23/07 como pendência **ainda não corrigida** — confirmado que segue assim hoje. Sem impacto em canal/DMX (só o `THREE.Group.name`); sem exposição visível na UI atual (não há tooltip/label por fixture renderizado ao usuário).
+- [fato] `scene.js:945` gera `name = "ParLed_Deluxe_6"` para `item.n=6`, mas o nome real dessa fixture no show.json é **"ParLed_Deluxe_10"** (scene.js:940; vp.show.json linha 146). É exatamente o item citado no relatório de prontidão de 23/07 como pendência **ainda não corrigida** — confirmado que segue assim hoje. Sem impacto em canal/DMX (só o `THREE.Group.name`); sem exposição visível na UI atual (não há tooltip/label por fixture renderizado ao usuário).
 
 ### Observação lateral (fora do escopo primário, não confirmada como bug)
 - Comentário em `electron/engine/engine.js:68` ("onFrame usa universo lógico") é impreciso para canais com `panOffset`/`tiltOffset` (Moving Head Beam 1/2) — `getUniverse()` retorna o buffer já com offset somado, não o lógico puro. Não afeta consistência visual hoje (3D e Art-Net usam o mesmo buffer), mas pode induzir a erro em debug futuro de calibração de pan/tilt.
 
 ## Tabela de divergências show.json ↔ viewer3D (resumo — ver relatório bruto do agente para a tabela completa fixture-a-fixture)
-Todas as 18 fixtures com representação esperada no 3D batem corretamente em canal. Únicas exceções: `Moving_Wosh` (ausente do 3D) e o rótulo cosmético do `ParLed_Deluxe_9_extra`.
+Todas as 18 fixtures com representação esperada no 3D batem corretamente em canal. Únicas exceções: `Moving_Wosh` (ausente do 3D) e o rótulo cosmético do `ParLed_Deluxe_10`.
 
 ## Resumo priorizado
 
@@ -61,6 +61,6 @@ Todas as 18 fixtures com representação esperada no 3D batem corretamente em ca
 4. Sem log/warning em falha silenciosa de `userData.channels` ausente.
 
 **Baixo**
-5. Rótulo cosmético `ParLed_Deluxe_6` vs. nome real `ParLed_Deluxe_9_extra` — ainda não corrigido, sem impacto prático hoje.
+5. Rótulo cosmético `ParLed_Deluxe_6` vs. nome real `ParLed_Deluxe_10` — ainda não corrigido, sem impacto prático hoje.
 6. `PARLED_CHANNELS[4]` entrada morta (fixture desabilitada).
 7. Notas desatualizadas no show.json ("pending_label") não refletem `channels[]` real.

@@ -1,10 +1,15 @@
 // mov-desc-full-reset — Descida palco completo (MH + bruts + fita); reset escondido.
+// Ribalta em par oscila contínuo entre TILT_LOW e TILT_HIGH em fase com o próprio
+// ciclo do script, sempre acesa (mesmo princípio do pendulo-lenta).
 // Preset: mov-preset.js
 
 // ── IDs de fixture ──────────────────────────────────────────────────────────
 
 const ID_M1   = 'fixture_1780805067518_moving_head_beam_1';
 const ID_M2   = 'fixture_1780805067518_moving_head_beam_2';
+
+const ID_R1   = 'fixture_1780805067518_ribalta_1';
+const ID_R2   = 'fixture_1780805067518_ribalta_2';
 
 const ID_FITA = 'fixture_1780805067518_fita_led';
 
@@ -18,6 +23,9 @@ const ID_B04  = 'fixture_1780805067518_mini_brut_04';
 
 let m1_cw, m1_strobo, m1_fecho, m1_prism, m1_pan, m1_tilt, m1_speed;
 let m2_cw, m2_strobo, m2_fecho, m2_prism, m2_pan, m2_tilt, m2_speed;
+
+let r1_tilt, r1_speed, r1_dimmer, r1_strobo, r1_function, r1_leds;
+let r2_tilt, r2_speed, r2_dimmer, r2_strobo, r2_function, r2_leds;
 
 let fita, b01, b02, b03, b04;
 
@@ -59,6 +67,8 @@ function spulse(t, min, max, period) {
   return min + ((max - min) / 2) * (1 + Math.sin(2 * Math.PI * t / period));
 }
 
+function wave01(t, period) { return (Math.sin((2 * Math.PI * t) / period) + 1) / 2; }
+
 
 // ── Start ───────────────────────────────────────────────────────────────────
 
@@ -82,6 +92,21 @@ function OnStart() {
   m2_pan    = getChannel(ID_M2, 'pan');
   m2_tilt   = getChannel(ID_M2, 'tilt');
   m2_speed  = getChannel(ID_M2, 'virtual_speed');
+
+  // Ribalta
+  r1_tilt     = getChannel(ID_R1, 'tilt');
+  r1_speed    = getChannel(ID_R1, 'speed');
+  r1_dimmer   = getChannel(ID_R1, 'dimmer');
+  r1_strobo   = getChannel(ID_R1, 'strobo');
+  r1_function = getChannel(ID_R1, 'function');
+  r1_leds = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => getChannel(ID_R1, 'led_' + n));
+
+  r2_tilt     = getChannel(ID_R2, 'tilt');
+  r2_speed    = getChannel(ID_R2, 'speed');
+  r2_dimmer   = getChannel(ID_R2, 'dimmer');
+  r2_strobo   = getChannel(ID_R2, 'strobo');
+  r2_function = getChannel(ID_R2, 'function');
+  r2_leds = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => getChannel(ID_R2, 'led_' + n));
 
   // Fita e Mini Bruts
   fita = getChannel(ID_FITA, 'dimmer');
@@ -141,6 +166,18 @@ function OnExecute() {
     ch(m2_strobo, 0);
   }
 
+  // RIBALTA — oscila contínuo entre TILT_LOW e TILT_HIGH em fase com o próprio loop
+  // do script, sempre acesa (mesmo princípio do pendulo-lenta, independente da fase
+  // dos movings).
+  const ribTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, wave01(cycleTick, LOOP));
+  ch(r1_function, 0); ch(r2_function, 0);
+  ch(r1_speed, MP_RIB.SPEED_SLOW); ch(r2_speed, MP_RIB.SPEED_SLOW);
+  ch(r1_tilt, ribTilt); ch(r2_tilt, ribTilt);
+  ch(r1_dimmer, MP_RIB.DIM_ON); ch(r2_dimmer, MP_RIB.DIM_ON);
+  ch(r1_strobo, 0); ch(r2_strobo, 0);
+  for (const c of r1_leds) ch(c, 255);
+  for (const c of r2_leds) ch(c, 255);
+
   // MINI BRUTS — onda suave em 4 canais
   ch(b01, spulse(cycleTick, 76, 255, 100));
   ch(b02, spulse(cycleTick + 25, 76, 255, 100));
@@ -170,6 +207,14 @@ function OnTerminate() {
   ch(m2_pan, 0);
   ch(m2_speed, 0);
   ch(m2_tilt, 0);
+
+  ch(r1_function, 0); ch(r2_function, 0);
+  ch(r1_speed, 0); ch(r2_speed, 0);
+  ch(r1_tilt, MP_RIB.TILT_LOW); ch(r2_tilt, MP_RIB.TILT_LOW);
+  ch(r1_dimmer, 0); ch(r2_dimmer, 0);
+  ch(r1_strobo, 0); ch(r2_strobo, 0);
+  for (const c of (r1_leds || [])) ch(c, 0);
+  for (const c of (r2_leds || [])) ch(c, 0);
 
   ch(fita, 0);
 

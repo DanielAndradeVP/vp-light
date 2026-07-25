@@ -112,11 +112,13 @@ describe('adapter semântico contra shows/vp.show.json real', () => {
     expect(adapter.setStrobe(deps, 'Moving Head Beam 1', 'estroboscopico').code).toBe('VALUE_NOT_SUPPORTED');
   });
 
-  it('setPrism usa o valor medido fisicamente (150), igual no MH1 (canal 127) e MH2 (canal 207)', () => {
+  it('setPrism cobre ligado (150) e desligado (0), iguais no MH1 (canal 127) e MH2 (canal 207)', () => {
     const { deps } = makeRealDeps();
     expect(adapter.setPrism(deps, 'Moving Head Beam 1', 'ligado')).toMatchObject({ ok: true, channel: 127, value: 150 });
     expect(adapter.setPrism(deps, 'Moving Head Beam 2', 'ligado')).toMatchObject({ ok: true, channel: 207, value: 150 });
-    expect(adapter.setPrism(deps, 'Moving Head Beam 1', 'desligado').code).toBe('VALUE_NOT_SUPPORTED');
+    expect(adapter.setPrism(deps, 'Moving Head Beam 1', 'desligado')).toMatchObject({ ok: true, channel: 127, value: 0 });
+    expect(adapter.setPrism(deps, 'Moving Head Beam 2', 'desligado')).toMatchObject({ ok: true, channel: 207, value: 0 });
+    expect(adapter.setPrism(deps, 'Moving Head Beam 1', 'valor_inexistente').code).toBe('VALUE_NOT_SUPPORTED');
   });
 
   it('setFocus usa o valor medido fisicamente, diferente no MH1 (canal 131, valor 160) e MH2 (canal 211, valor 100)', () => {
@@ -141,10 +143,12 @@ describe('adapter semântico contra shows/vp.show.json real', () => {
     expect(adapter.setGobo(deps, 'Moving Head Beam 1', 'gobo_inexistente').code).toBe('VALUE_NOT_SUPPORTED');
   });
 
-  it('setFrost usa o valor medido fisicamente (255), igual no MH1 (canal 130) e MH2 (canal 210)', () => {
+  it('setFrost cobre ligado (255) e desligado (0), iguais no MH1 (canal 130) e MH2 (canal 210)', () => {
     const { deps } = makeRealDeps();
     expect(adapter.setFrost(deps, 'Moving Head Beam 1', 'ligado')).toMatchObject({ ok: true, channel: 130, value: 255 });
     expect(adapter.setFrost(deps, 'Moving Head Beam 2', 'ligado')).toMatchObject({ ok: true, channel: 210, value: 255 });
+    expect(adapter.setFrost(deps, 'Moving Head Beam 1', 'desligado')).toMatchObject({ ok: true, channel: 130, value: 0 });
+    expect(adapter.setFrost(deps, 'Moving Head Beam 2', 'desligado')).toMatchObject({ ok: true, channel: 210, value: 0 });
   });
 
   it('setPrismRotation usa os valores medidos fisicamente, com sentido invertido entre MH1 (canal 128) e MH2 (canal 208)', () => {

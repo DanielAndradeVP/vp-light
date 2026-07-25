@@ -1,4 +1,6 @@
 // mov-desc-sync-loop — MH + ribalta descem sincronizados; loop contínuo.
+// Ribalta em onda senoidal contínua entre TILT_LOW e TILT_HIGH (mesmo princípio
+// do onda-longa-lenta) em vez de rampa linear com corte no fim do ciclo.
 // Preset: mov-preset.js
 
 // ── IDs de fixture ──────────────────────────────────────────────────────────
@@ -84,6 +86,8 @@ function clamp01(v) {
 function spulse(t, min, max, period) {
   return min + ((max - min) / 2) * (1 + Math.sin(2 * Math.PI * t / period));
 }
+
+function wave01(t, period) { return (Math.sin((2 * Math.PI * t) / period) + 1) / 2; }
 
 
 // ── Start ───────────────────────────────────────────────────────────────────
@@ -182,8 +186,9 @@ function OnExecute() {
   ch(m1_prism, 0);
   ch(m2_prism, 0);
 
-  // RIBALTAS — par sincronizado (mesmo tilt logico; calibracao fisica na engine)
-  const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, p);
+  // RIBALTAS — par sincronizado, onda senoidal contínua (mesmo tilt logico; calibracao
+  // fisica na engine). Sem corte no fim do ciclo — reverte suavemente.
+  const ribaltaTilt = lerp(MP_RIB.TILT_LOW, MP_RIB.TILT_HIGH, wave01(t, LOOP));
 
   ch(r1_dimmer, 255);
   ch(r2_dimmer, 255);

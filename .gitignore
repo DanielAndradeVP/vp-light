@@ -29,6 +29,9 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
+# Estado runtime (toggle ao vivo via tools/ribalta-calib.js)
+electron/ribalta-calib-state.json
+
 # Backups locais de rollback (auditoria/implementação scripts-pages-hotreload)
 backups/
 start-linux.sh

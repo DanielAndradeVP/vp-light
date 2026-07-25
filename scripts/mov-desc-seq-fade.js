@@ -1,4 +1,6 @@
 // mov-desc-seq-fade — Moving desce primeiro; ribalta entra depois com fade.
+// Ribalta no padrão altar-lenta: fica apagada posicionando em TILT_ALTAR (esconde
+// o motor viajando) e, na fase visível, recua devagar (smoothstep) até TILT_LOW.
 // Preset: mov-preset.js (injetado automaticamente em mov-*.js)
 //
 // Ciclo contínuo (sem fase reposition no loop):
@@ -87,6 +89,11 @@ function lerp(a, b, t) {
 
 function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+function smoothstep(t) {
+  const c = clamp01(t);
+  return c * c * (3 - 2 * c);
 }
 
 function fadeLevel(phaseTick, duration, max) {
@@ -241,11 +248,13 @@ function OnStart() {
 
   m1_tilt_start = MP_M1.TILT_F;
   m2_tilt_start = MP_M2.TILT_F;
-  rib_tilt_start = MP_RIB.TILT_LOW;
+  // Ribalta (padrão altar-lenta): apagada posiciona em TILT_ALTAR (esconde o motor
+  // viajando); na fase visível recua devagar até TILT_LOW.
+  rib_tilt_start = MP_RIB.TILT_ALTAR;
+  rib_tilt_end = MP_RIB.TILT_LOW;
 
   m1_tilt_end = travelEnd(m1_tilt_start, MP_M1.TILT_A);
   m2_tilt_end = travelEnd(m2_tilt_start, MP_M2.TILT_A);
-  rib_tilt_end = travelEnd(rib_tilt_start, MP_RIB.TILT_HIGH);
 }
 
 
@@ -292,13 +301,13 @@ function OnExecute() {
       applyMovingRepositionTop();
     }
 
-    // Grid ribalta: function → speed → tilt
+    // Grid ribalta: function → speed → tilt — recuo suave (smoothstep) de ALTAR até LOW
     mp_applyRibaltaPair(
       r1_function, r2_function,
       r1_speed, r2_speed,
       r1_tilt, r2_tilt,
       RIB_DESCEND_SPEED,
-      lerp(rib_tilt_start, rib_tilt_end, p)
+      lerp(rib_tilt_start, rib_tilt_end, smoothstep(p))
     );
 
     ch(r1_dimmer, ribDim);
@@ -338,7 +347,7 @@ function OnTerminate() {
   ch(m2_tilt, 0);
   ch(m2_speed, 0);
 
-  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, rib_tilt_start);
+  mp_zeroRibaltaPair(r1_function, r2_function, r1_speed, r2_speed, r1_tilt, r2_tilt, MP_RIB.TILT_LOW);
 
   ch(r1_dimmer, 0);
   ch(r2_dimmer, 0);

@@ -80,15 +80,18 @@ function computeDirectedBroadcast(ip, netmask) {
 }
 
 /**
- * Retorna todas as interfaces IPv4 não-loopback e não link-local disponíveis.
+ * Retorna todas as interfaces IPv4 não-loopback disponíveis.
+ *
+ * Inclui link-local (169.254.x.x): é o endereço que o SO auto-atribui quando
+ * o PC está ligado direto no SL3000 por cabo, sem roteador/DHCP no meio —
+ * cenário comum de rig de DMX. Descartar essa faixa (como era antes) deixava
+ * esse cenário sem nenhum socket de broadcast dirigido. [bug A-05]
  */
 function listActiveIPv4Interfaces() {
   const result = [];
   for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const addr of addrs) {
       if (addr.family !== 'IPv4' || addr.internal) continue;
-      // Ignora link-local (169.254.x.x) — autoconfiguração sem DHCP, inútil para Art-Net
-      if (addr.address.startsWith('169.254.')) continue;
       result.push({
         name,
         address:   addr.address,
